@@ -730,9 +730,10 @@ class Studio:
 
     def _run_title_frame(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
-        source = project["shots"][0].get("keyframe")
+        anchor = anchor_of(project)  # the title is carved into the film's anchor frame
+        source = anchor.get("keyframe") if anchor else None
         if not source:
-            raise RuntimeError("Shot 1 needs a keyframe before the in-world title can be made")
+            raise RuntimeError("The anchor shot needs a frame before the in-world title can be made")
         unit = project.get("title_shot") or {"seed": random.randrange(1, 2**31)}
         unit.setdefault("seed", random.randrange(1, 2**31))
         seed, material = take_seed(unit, "keyframe"), self.title_material(project)
@@ -746,7 +747,8 @@ class Studio:
             project = self.load(job["project"])
             unit = project.setdefault("title_shot", {})
             unit.setdefault("seed", seed)
-            add_take(unit, "keyframe", name, prompt=prompt, seed=seed)
+            add_take(unit, "keyframe", name, prompt=prompt, seed=seed,
+                     recipe={"kind": "title", "anchor": {"shot": anchor["id"], "image": source}})
             project["film"] = None
             self.save(project)
 

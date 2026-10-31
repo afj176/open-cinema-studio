@@ -450,3 +450,5 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); fon
 .identity-note p.pending { color: var(--faint); font-style: italic; }
 .recipe-told { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .recipe-told b { color: var(--text); font-weight: 600; }
+.title-stale { margin: 0; padding: 8px 10px; border-radius: var(--r-sm); font-size: 12px; color: #f3d39a;
+  background: rgba(240, 180, 76, .12); border: 1px solid rgba(240, 180, 76, .35); }

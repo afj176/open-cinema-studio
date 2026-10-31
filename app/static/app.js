@@ -663,6 +663,8 @@ function paintTitleShot() {
     if (frames.length > 1) { box.append("Frame"); frames.forEach((t, n) => chip(`K${n + 1}`, "keyframe", t, t.name === unit.keyframe)); }
     if (vids.length > 1) { const s = document.createElement("span"); s.className = "sep"; box.append(s, "Motion"); vids.forEach((t, n) => chip(`S${n + 1}`, "video", t, t.name === unit.video)); }
   }
+  const made = (unit.takes?.keyframe || []).find(t => t.name === unit.keyframe)?.recipe;
+  $("#titleStale").hidden = !(unit.keyframe && (!made || made.anchor?.image !== anchorShot()?.keyframe));
   const busy = busyFor(j => j.kind.startsWith("title_"));
   $("#makeTitle").disabled = $("#rerollTitleMotion").disabled = !!busy;
   $("#makeTitle").textContent = busy ? (busy.state === "running" ? `${busy.label} · ${Math.round(busy.elapsed)}s` : "Queued…")
