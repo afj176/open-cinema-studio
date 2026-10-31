@@ -60,6 +60,8 @@ examples["07_motion_title_over_shot.json"] = graphs.motion_overlay_graph(
 examples["08_motion_kinetic_cards.json"] = graphs.cards_graph(
     "Two stone kings.\nOne storm.\nOne last beacon.\nMade with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5",
     "70mm epic", 1280, 704, "open-cinema/cards", 1.1)
+examples["10_ai_lead_writer_gemma4.json"] = graphs.lead_writer_graph(
+    "write", "The Colossus Pass", SCENE, "70mm epic", seed=7)
 examples["09_inworld_title_frame.json"] = graphs.title_frame_graph(
     director.title_frame_prompt("The Colossus Pass", director.TITLE_MATERIALS["70mm epic"]), 909,
     "establishing_keyframe.png", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")

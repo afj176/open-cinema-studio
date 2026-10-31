@@ -21,6 +21,7 @@ MODELS = {
     "ltx_vae": "ltx-2.5-video-vae-bf16.safetensors",
     "ltx_audio_vae": "ltx-2.5-audio-vae-bf16.safetensors",
     "ltx_upscaler": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+    "writer": "gemma4_e4b_it_fp8_scaled.safetensors",  # Gemma 4 E4B-it (Apache-2.0), text + image understanding
 }
 
 # Distilled two-stage schedule: base pass at half resolution, x2 latent
@@ -275,3 +276,23 @@ SCORE_SIZE = (768, 448)  # the trailer score only needs LTX's audio, so the pict
 def score_graph(start_image: str, prompt: str, seed: int, seconds: float, prefix: str) -> dict[str, Any]:
     """A continuous LTX 2.5 soundtrack for the trailer: one long, small render whose audio is the score."""
     return shot_graph(start_image, prompt, seed, "16:9", seconds, prefix, size=SCORE_SIZE)
+
+
+def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str = "", photo: str | None = None,
+                      seed: int = 1) -> dict[str, Any]:
+    """Gemma 4 E4B writes the lead (and continuity notes) through ComfyUI's native TextGenerate."""
+    graph = {
+        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "2": node("OpenCinemaLeadBrief", mode=mode, title=title, world=world, look=look, draft=draft),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=320, sampling_mode="on",
+                  **{"sampling_mode.temperature": 0.65, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
+                     "sampling_mode.min_p": 0.05, "sampling_mode.repetition_penalty": 1.05,
+                     "sampling_mode.seed": seed}),
+        "4": node("OpenCinemaParseLead", text=["3", 0]),
+        "lead": node("PreviewAny", source=["4", 0]),
+        "continuity": node("PreviewAny", source=["4", 1]),
+    }
+    if photo:
+        graph["5"] = node("LoadImage", image=photo)
+        graph["3"]["inputs"]["image"] = ["5", 0]
+    return graph

@@ -134,6 +134,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.queue_film(m.group(1), bool(options.get("redo"))))
             if m := re.fullmatch(r"/api/projects/(\w+)/cast", route):
                 return self._json(studio.enqueue("cast", m.group(1), None, "Casting"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/write-lead", route):
+                mode = json.loads(self._body() or b"{}").get("mode", "write")
+                if mode not in director.LEAD_MODES:
+                    return self._json({"error": f"unknown mode {mode}"}, 400)
+                label = {"write": "Writing the lead", "refine": "Refining the lead", "from photo": "Describing the cast photo",
+                         "continuity": "Writing continuity notes"}[mode]
+                return self._json(studio.enqueue("write_lead", m.group(1), None, label, mode=mode))
+            if m := re.fullmatch(r"/api/projects/(\w+)/undo-lead", route):
+                return self._json(studio.undo_lead(m.group(1)))
             if m := re.fullmatch(r"/api/projects/(\w+)/title-shot", route):
                 options = json.loads(self._body() or b"{}")
                 return self._json(studio.queue_title_shot(m.group(1), frame=options.get("frame", True)))

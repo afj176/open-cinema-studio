@@ -775,6 +775,47 @@ class Studio:
             project["trailer"] = name
             self.save(project)
 
+    # ---------- AI lead writer ----------
+    def _run_write_lead(self, job: dict[str, Any], tick) -> None:
+        """Gemma 4 E4B writes (or refines, or describes from the casting photo) the lead and continuity notes."""
+        project = self.load(job["project"])
+        mode = job.get("mode", "write")
+        draft = project.get("cast", "")
+        photo = None
+        if mode == "from photo":
+            if not project.get("reference"):
+                raise RuntimeError("Add a cast photo first")
+            photo = self._upload(project["id"], project["reference"])
+        if mode == "continuity" and not draft.strip():
+            mode = "write"  # nothing to distil yet: write the lead and its continuity together
+        graph = graphs.lead_writer_graph(mode, project["title"], project["scene"], project["look"], draft, photo,
+                                         seed=random.randrange(1, 2**31))
+        record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=600)
+        read = lambda key: "".join(record["outputs"].get(key, {}).get("text", [""])).strip()
+        lead, continuity = read("lead"), read("continuity")
+        if mode == "continuity" and not continuity:  # a bare list without its "CONTINUITY:" prefix
+            continuity, lead = lead, ""
+        if not lead and not continuity:
+            raise RuntimeError("The writer returned nothing; try again")
+        with self.lock:
+            fresh = self.load(job["project"])
+            fresh.setdefault("lead_history", []).append({"cast": fresh.get("cast", ""),
+                                                         "continuity": fresh.get("continuity", "")})
+            fresh["lead_history"] = fresh["lead_history"][-10:]
+            if mode != "continuity" and lead:
+                fresh["cast"] = lead
+            if continuity:
+                fresh["continuity"] = continuity
+            self.save(fresh)
+
+    def undo_lead(self, project_id: str) -> dict[str, Any]:
+        with self.lock:
+            project = self.load(project_id)
+            if project.get("lead_history"):
+                previous = project["lead_history"].pop()
+                project["cast"], project["continuity"] = previous["cast"], previous["continuity"]
+            return self.save(project)
+
     def _run_motion_preview(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
         files = self.comfy.run(graphs.title_preview_graph(project["title"], project["look"],

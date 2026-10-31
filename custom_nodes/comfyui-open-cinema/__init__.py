@@ -194,12 +194,59 @@ class OpenCinemaTypeSheet:
         return (_to_tensor(frame),)
 
 
+class OpenCinemaLeadBrief:
+    """Writes the instruction for an LLM (e.g. Gemma 4 E4B in TextGenerate) to create the film's lead:
+    from the world, refining a draft, from a casting photo, or just the continuity notes."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from .director import LEAD_MODES
+        return {"required": {
+            "mode": (list(LEAD_MODES), {"default": "write"}),
+            "title": ("STRING", {"default": "The Colossus Pass"}),
+            "world": ("STRING", {"multiline": True, "default": ""}),
+            "look": LOOK_INPUT,
+        }, "optional": {
+            "draft": ("STRING", {"multiline": True, "default": "",
+                                 "tooltip": "Your draft (refine) or the lead description (continuity)"}),
+        }}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "build"
+    CATEGORY = "Open Cinema"
+
+    def build(self, mode, title, world, look, draft=""):
+        from .director import lead_brief
+        return (lead_brief(mode, title, world, look, draft),)
+
+
+class OpenCinemaParseLead:
+    """Splits the LLM's reply into the lead description and the continuity notes."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"text": ("STRING", {"forceInput": True})}}
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("lead", "continuity")
+    FUNCTION = "parse"
+    CATEGORY = "Open Cinema"
+
+    def parse(self, text):
+        from .director import parse_lead
+        return parse_lead(text)
+
+
 NODE_CLASS_MAPPINGS = {"OpenCinemaShot": OpenCinemaShot, "OpenCinemaShotLength": OpenCinemaShotLength,
+                       "OpenCinemaLeadBrief": OpenCinemaLeadBrief, "OpenCinemaParseLead": OpenCinemaParseLead,
                        "OpenCinemaTitleOverlay": OpenCinemaTitleOverlay, "OpenCinemaShotStamp": OpenCinemaShotStamp,
                        "OpenCinemaCards": OpenCinemaCards, "OpenCinemaTitlePreview": OpenCinemaTitlePreview,
                        "OpenCinemaTypeSheet": OpenCinemaTypeSheet}
 NODE_DISPLAY_NAME_MAPPINGS = {"OpenCinemaShot": "Open Cinema Shot (camera direction)",
                               "OpenCinemaShotLength": "Open Cinema Shot Length",
+                              "OpenCinemaLeadBrief": "Open Cinema Lead Brief (for an LLM)",
+                              "OpenCinemaParseLead": "Open Cinema Parse Lead",
                               "OpenCinemaTitleOverlay": "Open Cinema Title Overlay",
                               "OpenCinemaShotStamp": "Open Cinema Shot Stamp",
                               "OpenCinemaCards": "Open Cinema Cards (kinetic type)",

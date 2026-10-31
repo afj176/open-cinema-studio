@@ -61,8 +61,17 @@
             <span class="portrait-busy" id="castBusy" hidden></span>
           </label>
           <div class="lead-fields">
-            <label>Who carries the film?<textarea id="cast" class="grow" rows="5" placeholder="A wiry courier in her twenties, silver bob, scar through left eyebrow, red reflective jacket…"></textarea></label>
-            <label>Continuity notes<textarea id="continuity" class="grow" rows="2" placeholder="Details that must never change: crimson cloak, silver circlet…"></textarea></label>
+            <div class="ai-field" id="castField">
+              <div class="field-head"><span>Who carries the film?</span>
+                <span class="ai-actions"><button id="aiPhoto" class="ai small" type="button" hidden>Describe photo</button><button id="aiLead" class="ai small" type="button">✨ Write with AI</button></span></div>
+              <textarea id="cast" class="grow" rows="5" placeholder="A wiry courier in her twenties, silver bob, scar through left eyebrow, red reflective jacket… or let the AI cast someone for this world."></textarea>
+            </div>
+            <div class="ai-field" id="continuityField">
+              <div class="field-head"><span>Continuity notes</span>
+                <span class="ai-actions"><button id="aiContinuity" class="ai small" type="button">✨ From the lead</button></span></div>
+              <textarea id="continuity" class="grow" rows="2" placeholder="Details that must never change: crimson cloak, silver circlet…"></textarea>
+            </div>
+            <div class="ai-status" id="aiStatus"><button id="aiUndo" class="link" type="button" hidden>Undo AI change</button><span class="hint">Written locally by Gemma 4 E4B (open, Apache-2.0)</span></div>
             <div class="row-actions"><button id="castBtn" class="ghost">Cast from description</button><label class="ghost button">Upload photo<input type="file" id="refInput2" accept="image/*" hidden></label></div>
           </div>
         </div>

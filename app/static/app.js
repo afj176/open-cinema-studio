@@ -177,6 +177,37 @@ function paintPortrait() {
   $("#castBusy").hidden = !job;
   if (job) $("#castBusy").textContent = job.state === "running" ? `Casting · ${Math.round(job.elapsed)}s` : "Casting · queued";
   $("#castBtn").textContent = project.reference ? "Re-cast from description" : "Cast from description";
+  paintLeadAI();
+}
+
+function paintLeadAI() {
+  const job = busyFor(j => j.kind === "write_lead");
+  const status = job ? (job.state === "running" ? `${job.label}… ${Math.round(job.elapsed)}s` : `${job.label} · queued`) : "";
+  const castWriting = !!job && job.mode !== "continuity";
+  $("#castField").classList.toggle("writing", castWriting);
+  $("#castField").dataset.status = status;
+  $("#continuityField").classList.toggle("writing", !!job);
+  $("#continuityField").dataset.status = castWriting ? "" : status;
+  for (const id of ["aiLead", "aiPhoto", "aiContinuity"]) $("#" + id).disabled = !!job;
+  $("#aiLead").textContent = (project.cast || "").trim() ? "✨ Refine" : "✨ Write with AI";
+  $("#aiLead").title = (project.cast || "").trim() ? "Keep your details and make them camera-ready" : "Cast a lead who belongs in this world";
+  $("#aiPhoto").hidden = !project.reference;
+  $("#aiUndo").hidden = !(project.lead_history || []).length;
+}
+
+async function writeLead(mode) {
+  await flush();
+  await post(`/api/projects/${project.id}/write-lead`, { mode });
+  poll();
+}
+
+function adoptLead(fresh) {
+  for (const [key, field] of [["cast", "#castField"], ["continuity", "#continuityField"]]) {
+    if (project[key] === fresh[key]) continue;
+    project[key] = fresh[key];
+    const ta = $("#" + key); ta.value = fresh[key] || ""; grow(ta);
+    $(field).classList.remove("fresh"); void $(field).offsetWidth; $(field).classList.add("fresh");
+  }
 }
 
 // ---------------------------------------------------------------- shots: storyboard
@@ -564,6 +595,8 @@ function mergeServer(fresh, rerender) {
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed }));
   for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference"]) project[k] = fresh[k];
+  if ((fresh.lead_history || []).length !== (project.lead_history || []).length) adoptLead(fresh);  // the AI (or undo) changed the lead
+  project.lead_history = fresh.lead_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
 }
 
@@ -629,7 +662,7 @@ $("#cancelAll").onclick = () => post("/api/cancel").then(poll);
 $("#renderFilm").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/render`); toast("Rendering everything that's missing"); poll(); };
 
 for (const id of ["title", "scene", "continuity", "cast"]) $("#" + id).oninput = e => {
-  project[id] = e.target.value; if (id === "title") renderHeader(); save();
+  project[id] = e.target.value; if (id === "title") renderHeader(); if (id === "cast") paintLeadAI(); save();
 };
 $("#castBtn").onclick = async () => {
   if (!project.cast?.trim()) { $("#cast").focus(); toast("Describe the lead first"); return; }
@@ -641,6 +674,10 @@ drop.ondragover = e => { e.preventDefault(); drop.classList.add("drag"); };
 drop.ondragleave = () => drop.classList.remove("drag");
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove("drag"); uploadReference(e.dataTransfer.files[0]); };
 $("#addShot").onclick = addShot;
+$("#aiLead").onclick = () => writeLead((project.cast || "").trim() ? "refine" : "write");
+$("#aiPhoto").onclick = () => writeLead("from photo");
+$("#aiContinuity").onclick = () => writeLead("continuity");
+$("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-lead`)); };
 
 $$("#viewerTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; renderViewer(); });
 $("#finish").onchange = e => { project.finish = e.target.checked; save(); };

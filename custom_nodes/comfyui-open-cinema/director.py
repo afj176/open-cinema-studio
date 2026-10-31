@@ -183,6 +183,66 @@ def score_prompt(look: str, title: str) -> str:
                  "silence. Studio-recorded instrumental music only: no ambience, no weather, no voices")
 
 
+LEAD_MODES = ("write", "refine", "from photo", "continuity")
+
+_LEAD_FORMAT = (
+    "Reply with exactly two lines and nothing else:\n"
+    "LEAD: one paragraph of 40 to 70 words describing only what a camera sees: approximate age, build, face and "
+    "skin, distinctive features, hair, the exact wardrobe with colours and materials, and one signature prop. "
+    "Present tense, concrete visual details only. No name, no backstory, no personality or emotion words.\n"
+    "CONTINUITY: 4 to 6 short comma-separated details that must never change from shot to shot, such as key "
+    "wardrobe colours, the hairstyle and the signature prop."
+)
+
+
+def lead_brief(mode: str, title: str, world: str, look: str, draft: str = "") -> str:
+    """Instruction for an open LLM (Gemma 4 E4B via ComfyUI TextGenerate) to write the film's lead."""
+    film = (f"THE WORLD OF THE FILM (the character must belong to this exact setting, era and culture): "
+            f"{world or 'not specified'}\nFilm title: {title or 'Untitled'}\n"
+            f"Visual look: {look} ({LOOKS.get(look, '')})")
+    if mode == "continuity":
+        return ("You are the script supervisor on a feature film. From the lead character description below, list "
+                "the 4 to 6 visual details that must never change from shot to shot (key wardrobe colours, "
+                "hairstyle, distinctive features, signature prop).\n\n"
+                f"Lead: {draft}\n\nReply with exactly one line and nothing else:\nCONTINUITY: comma-separated details")
+    if mode == "from photo":
+        return ("You are the costume and continuity supervisor on a feature film. The attached image is the "
+                "casting photo of the film's lead. Describe this exact person as they appear, so an image model "
+                "can recreate them in every shot.\n\n" + film + "\n\n" + _LEAD_FORMAT)
+    if mode == "refine" and draft.strip():
+        return ("You are the casting director and costume designer on a feature film. Improve the director's "
+                "draft description of the lead for an image model: keep every detail the director wrote exactly "
+                "(the same garments, colours and objects; a torch stays a torch), make vague details specific, and "
+                "add what is missing (age, build, face, hair, exact wardrobe colours "
+                "and materials, a signature prop) so it fits the world and look.\n\n" + film +
+                f"\nDirector's draft: {draft}\n\n" + _LEAD_FORMAT)
+    return ("You are the casting director and costume designer on a feature film. Read the world below "
+            "carefully, then invent a striking, memorable lead character who could only exist in it: their "
+            "clothing, materials, props and technology must match its era and setting exactly. Give them one "
+            "bold wardrobe colour that will stand out in wide shots.\n\n" + film + "\n\n" + _LEAD_FORMAT)
+
+
+def parse_lead(text: str) -> tuple[str, str]:
+    """Split the model's reply into (lead, continuity); tolerant of extra words around the two lines."""
+    lead, continuity = "", ""
+    for line in text.replace("**", "").splitlines():
+        clean = line.strip().lstrip("-* ").strip()
+        upper = clean.upper()
+        if upper.startswith("LEAD:"):
+            lead = clean[5:].strip()
+        elif upper.startswith("CONTINUITY:"):
+            continuity = clean[11:].strip()
+        elif lead and not continuity and clean and not upper.startswith(("CONTINUITY", "LEAD")):
+            lead += " " + clean  # the paragraph wrapped onto more lines
+    if not lead and not continuity:  # small models often drop the labels: a short comma list last is continuity
+        lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+        if len(lines) >= 2 and lines[-1].count(",") >= 2 and len(lines[-1]) < 240:
+            lead, continuity = " ".join(lines[:-1]), lines[-1]
+        else:
+            lead = text.strip()
+    return lead.strip().strip('"'), continuity.strip().strip('"').rstrip(".")
+
+
 def _join(*parts: str) -> str:
     return " ".join(part.strip().rstrip(".") + "." for part in parts if part and part.strip())
 

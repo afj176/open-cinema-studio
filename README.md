@@ -84,8 +84,9 @@ Every model in the pipeline allows commercial use. Nothing is research-only.
 | `latent_upscale_models` | `ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors` | [Lightricks/LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) | LTX-2.x Community License |
 | `diffusion_models` | `seedvr2_3b_int8_convrot.safetensors` (1080p master) | [Comfy-Org/SeedVR2](https://huggingface.co/Comfy-Org/SeedVR2) | Apache-2.0 |
 | `vae` | `seedvr2_ema_vae_fp16.safetensors` (1080p master) | [Comfy-Org/SeedVR2](https://huggingface.co/Comfy-Org/SeedVR2) | Apache-2.0 |
+| `text_encoders` | `gemma4_e4b_it_fp8_scaled.safetensors` (AI lead writer) | [Comfy-Org/gemma-4](https://huggingface.co/Comfy-Org/gemma-4) | Apache-2.0 |
 
-The LTX 2.5 repo is gated, so accept its terms on Hugging Face before downloading. Together the models take about 75 GB of disk.
+The LTX 2.5 repo is gated, so accept its terms on Hugging Face before downloading. Together the models take about 84 GB of disk.
 
 Why these models: on the Artificial Analysis leaderboards, HiDream-O1-Image is the strongest MIT/Apache text-to-image model that runs on a 24 GB GPU, and Qwen-Image-Edit-2511 is the strongest Apache-licensed multi-reference editor. A few open models score higher, but they are research-only or non-commercial, so this project doesn't use them. LTX 2.5 is the newest LTX, and it generates video and audio together.
 
@@ -107,6 +108,12 @@ Why these models: on the Artificial Analysis leaderboards, HiDream-O1-Image is t
 - **Look** sets the film's color and lens language. It goes into every keyframe and motion prompt.
 - **Lead character**: describe your lead, then press **Cast from description**, or let **Render film** cast them automatically. You can drop a photo instead, and every shot keeps that face.
 - **Continuity notes** are the few details that must never change, such as a prop or a scar.
+- **✨ AI lead writer:** a local open LLM, **Gemma 4 E4B-it** (Apache-2.0) running through ComfyUI's native `TextGenerate` node, writes the lead and the continuity notes. It has three modes:
+  - **Write with AI** invents a lead who belongs to your world, era and look.
+  - **Refine** keeps every detail you wrote and makes it camera-ready.
+  - **Describe photo** describes your cast photo exactly.
+
+  **✨ From the lead** distills the continuity notes from the lead. Every change can be undone. In ComfyUI, the *Open Cinema Lead Brief* and *Open Cinema Parse Lead* nodes wrap `TextGenerate` (workflow `10_ai_lead_writer_gemma4.json`).
 - **Lead** (per shot): untick it for landscape or object shots. Those shots are generated free of people, and every shot with the lead says she is the only person in frame, which keeps busy backgrounds from filling with extras.
 - **Shots**: each shot has an action, a size, a camera move (shown live in the little viewfinder), its length in seconds, and sound.
   - **New keyframe** re-rolls only that shot's frame. **Upload** uses your own frame. **Render shot** animates it.
@@ -141,6 +148,7 @@ A 6-shot, 25-second film renders in about 11 minutes. Mastering it in 1080p adds
 - `07_motion_title_over_shot.json`: main title over a shot (input `shot.mp4`), audio kept
 - `08_motion_kinetic_cards.json`: kinetic type cards (`LABEL | TEXT` per line)
 - `09_inworld_title_frame.json`: an in-world title built into a frame (input `establishing_keyframe.png`), with the type sheet as Picture 2
+- `10_ai_lead_writer_gemma4.json`: Gemma 4 E4B writes a lead and continuity notes from a world (Lead Brief → TextGenerate → Parse Lead)
 
 ## License
 

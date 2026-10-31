@@ -337,3 +337,20 @@ details.prompts p { font: 12px/1.55 var(--mono); color: #bdb9b0; background: rgb
 
 textarea.grow { overflow: hidden; resize: none; }
 .add-card { font: 600 14px var(--sans); }
+
+/* AI writer */
+.ai-field { display: flex; flex-direction: column; gap: 6px; position: relative; }
+.field-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.ai-actions { display: flex; gap: 6px; }
+button.ai { padding: 4px 11px; font-size: 11px; border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
+button.ai:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.ai-field.writing textarea { color: transparent; background:
+  linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--accent) 16%, transparent) 50%, transparent 80%) 0 0 / 200% 100%,
+  rgba(0,0,0,.28); animation: shimmer 1.3s linear infinite; }
+.ai-field.writing::after { content: attr(data-status); position: absolute; left: 12px; bottom: 12px; font: 600 12px var(--mono); color: var(--accent); }
+@keyframes shimmer { to { background-position: -200% 0, 0 0; } }
+.ai-field.fresh textarea { animation: glow 1.6s var(--ease); }
+@keyframes glow { 0% { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); } }
+.ai-status { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
