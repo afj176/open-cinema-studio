@@ -1,0 +1,68 @@
+{
+  "1": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    }
+  },
+  "2": {
+    "class_type": "OpenCinemaLeadBrief",
+    "inputs": {
+      "mode": "write",
+      "title": "The Colossus Pass",
+      "world": "The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.",
+      "look": "70mm epic",
+      "draft": ""
+    }
+  },
+  "3": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "2",
+        0
+      ],
+      "max_length": 320,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.65,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 7
+    }
+  },
+  "4": {
+    "class_type": "OpenCinemaParseLead",
+    "inputs": {
+      "text": [
+        "3",
+        0
+      ]
+    }
+  },
+  "lead": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        0
+      ]
+    }
+  },
+  "continuity": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        1
+      ]
+    }
+  }
+}

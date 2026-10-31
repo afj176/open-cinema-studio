@@ -71,7 +71,7 @@
 
     <div class="story-grid">
       <article class="glass lead-card">
-        <div class="card-head"><h2 class="serif">The lead</h2><span class="hint">Every shot keeps this face</span></div>
+        <div class="card-head"><h2 class="serif">The lead</h2><span class="hint" id="leadUsageHint">Every shot with the lead uses this face</span></div>
         <div class="lead-body">
           <div class="portrait-col">
             <label class="portrait" id="refDrop">
@@ -98,6 +98,12 @@
             </div>
           </div>
         </div>
+        <div class="identity-note" id="identityNote" hidden>
+          <div class="field-head"><span>What every shot is told about this face</span>
+            <button id="redescribe" class="link" type="button">Describe again</button></div>
+          <p id="identityText"></p>
+        </div>
+        <div class="lead-usage" id="leadUsage" hidden></div>
       </article>
 
       <article class="glass look-card ai-field" id="lookField">

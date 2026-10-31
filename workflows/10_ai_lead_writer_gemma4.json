@@ -1,68 +1,382 @@
 {
-  "1": {
-    "class_type": "CLIPLoader",
-    "inputs": {
-      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
-      "type": "stable_diffusion",
-      "device": "default"
+ "last_node_id": 6,
+ "last_link_id": 5,
+ "nodes": [
+  {
+   "id": 2,
+   "type": "OpenCinemaLeadBrief",
+   "pos": [
+    60,
+    160
+   ],
+   "size": [
+    300,
+    190
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "links": [
+      2
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Open Cinema Lead Brief (for an LLM)",
+   "properties": {
+    "Node name for S&R": "OpenCinemaLeadBrief"
+   },
+   "widgets_values": [
+    "write",
+    "The Colossus Pass",
+    "The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.",
+    "70mm epic",
+    ""
+   ]
   },
-  "2": {
-    "class_type": "OpenCinemaLeadBrief",
-    "inputs": {
-      "mode": "write",
-      "title": "The Colossus Pass",
-      "world": "A storm-battered lighthouse on a black rock coast at dusk. The keeper is a woman in a yellow oilskin coat carrying a brass storm lantern.",
-      "look": "70mm epic",
-      "draft": ""
+  {
+   "id": 4,
+   "type": "OpenCinemaParseLead",
+   "pos": [
+    60,
+    390
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 3,
+     "widget": {
+      "name": "text"
+     }
     }
+   ],
+   "outputs": [
+    {
+     "name": "lead",
+     "type": "STRING",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "continuity",
+     "type": "STRING",
+     "links": [
+      5
+     ],
+     "slot_index": 1
+    }
+   ],
+   "title": "Open Cinema Parse Lead",
+   "properties": {
+    "Node name for S&R": "OpenCinemaParseLead"
+   },
+   "widgets_values": [
+    ""
+   ]
   },
-  "3": {
-    "class_type": "TextGenerate",
-    "inputs": {
-      "clip": [
-        "1",
-        0
-      ],
-      "prompt": [
-        "2",
-        0
-      ],
-      "max_length": 320,
-      "sampling_mode": "on",
-      "sampling_mode.temperature": 0.65,
-      "sampling_mode.top_k": 64,
-      "sampling_mode.top_p": 0.95,
-      "sampling_mode.min_p": 0.05,
-      "sampling_mode.repetition_penalty": 1.05,
-      "sampling_mode.seed": 7
+  {
+   "id": 1,
+   "type": "CLIPLoader",
+   "pos": [
+    470,
+    160
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      1
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Load CLIP",
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "gemma4_e4b_it_fp8_scaled.safetensors",
+    "stable_diffusion",
+    "default"
+   ]
   },
-  "4": {
-    "class_type": "OpenCinemaParseLead",
-    "inputs": {
-      "text": [
-        "3",
-        0
-      ]
+  {
+   "id": 3,
+   "type": "TextGenerate",
+   "pos": [
+    880,
+    160
+   ],
+   "size": [
+    300,
+    550
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 1
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 2,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
     }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    320,
+    "on",
+    0.65,
+    64,
+    0.95,
+    0.05,
+    1.05,
+    7,
+    0.0,
+    false,
+    true,
+    "auto",
+    ""
+   ]
   },
-  "lead": {
-    "class_type": "PreviewAny",
-    "inputs": {
-      "source": [
-        "4",
-        0
-      ]
+  {
+   "id": 5,
+   "type": "PreviewAny",
+   "pos": [
+    1290,
+    160
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 4
     }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Preview as Text",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
   },
-  "continuity": {
-    "class_type": "PreviewAny",
-    "inputs": {
-      "source": [
-        "4",
-        1
-      ]
+  {
+   "id": 6,
+   "type": "PreviewAny",
+   "pos": [
+    1290,
+    294
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 5
     }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Preview as Text",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
   }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "CLIP"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "STRING"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "STRING"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   0,
+   "STRING"
+  ],
+  [
+   5,
+   4,
+   1,
+   6,
+   0,
+   "STRING"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Open Cinema",
+   "bounding": [
+    40,
+    100,
+    340,
+    452
+   ],
+   "color": "#b06634",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Models",
+   "bounding": [
+    450,
+    100,
+    340,
+    222
+   ],
+   "color": "#444444",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Prompt",
+   "bounding": [
+    860,
+    100,
+    340,
+    630
+   ],
+   "color": "#8a6d3b",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    1270,
+    100,
+    340,
+    308
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
 }

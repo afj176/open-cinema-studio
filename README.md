@@ -40,7 +40,7 @@ Everything runs locally on open weights, with no partner nodes and no closed API
 | `app/` | Web studio: a stdlib-only Python server, a GPU job queue and the UI, all driving ComfyUI over its HTTP API |
 | `app/graphs.py` | The ComfyUI graphs (core nodes only): keyframe, coverage, and LTX shot with audio |
 | `custom_nodes/comfyui-open-cinema/` | **Open Cinema** node pack: camera-direction vocabulary as ComfyUI nodes. *Open Cinema Shot* turns scene, action, shot size, camera move, look and sound into keyframe, coverage and motion prompts. *Open Cinema Shot Length* converts seconds to LTX-valid frame counts |
-| `workflows/` | The same graphs as API-format JSON you can drop into ComfyUI |
+| `workflows/` | The same graphs as laid-out ComfyUI canvases (groups, titles, notes), plus `api/` JSON and example `inputs/` |
 
 The camera language is the core of the app. `director.py` maps 22 camera moves, 12 shot sizes and 12 film looks to phrasing that LTX 2.5 and Qwen follow reliably. In the UI, each camera move also has a tiny animated viewfinder preview.
 
@@ -107,7 +107,12 @@ Why these models: on the Artificial Analysis leaderboards, HiDream-O1-Image is t
 
 - **✨ Generate the whole story:** type a spark (or nothing) and Gemma 4 E4B writes the whole Story page: title, logline, world, a look with its own colour palette, the lead and continuity notes. Then it casts the lead's portrait. Each field also has its own ✨ (Title, Logline, World, Look & colours) that rewrites just that field so it stays consistent with the rest. **Undo AI change** reverts only what the AI touched. In ComfyUI, the *Open Cinema Story Brief* and *Open Cinema Parse Story* nodes wrap `TextGenerate` (workflow `11_ai_story_writer_gemma4.json`).
 - **Look** sets the film's color and lens language. It goes into every keyframe and motion prompt. **Colours** let you tune the film's background, ink, accent and glow. They tint the studio and every title, card and HUD overlay. Picking a look brings back that look's colours.
-- **Lead character**: describe your lead, then press **Cast from description**, or let **Render film** cast them automatically. You can drop a photo instead, and every shot keeps that face.
+- **Lead character**: describe your lead, then press **Cast from description**, or let **Render film** cast them automatically. You can drop a photo instead. The portrait is the identity source of truth for every shot with the lead:
+  - Gemma 4 E4B looks at the portrait and writes **what every shot is told about this face** (skin tone, face shape, eyes, hair, age). It's shown under the lead, and every frame and motion prompt carries it.
+  - The **anchor** (shot 1 unless you press *Set as anchor* on another shot) is painted by HiDream-O1 for the best world frame, then an **identity pass** (Qwen-Image-Edit-2511) recasts its person as the portrait.
+  - Every other shot is a new camera setup made from two pictures: the anchor frame (world and light) and the portrait (face and wardrobe).
+  - The lead card shows which shots the lead is in, and flags any whose frame was made with an older portrait.
+- **How it was made**: every shot's inspector shows the exact inputs of its current frame (the portrait, the anchor frame, HiDream's frame before the identity pass), the model steps, and the prompts. Before a frame exists, it shows what the next one will be made from. Storyboard cards mark the anchor (⚓ ANCHOR), which anchor each shot came from (⚓ 01), the lead's face, and frames that no longer match (LEAD CHANGED, ANCHOR RE-FRAMED).
 - **Continuity notes** are the few details that must never change, such as a prop or a scar.
 - **✨ AI lead writer:** a local open LLM, **Gemma 4 E4B-it** (Apache-2.0) running through ComfyUI's native `TextGenerate` node, writes the lead and the continuity notes. It has three modes:
   - **Write with AI** invents a lead who belongs to your world, era and look.
@@ -137,18 +142,21 @@ A 6-shot, 25-second film renders in about 11 minutes. Mastering it in 1080p adds
 
 ## Running single steps in ComfyUI
 
-`workflows/` holds the exact graphs the app sends. Regenerate them with `python tools/export_workflows.py`.
+`workflows/` holds the exact graphs the app sends, as **laid-out canvases**: nodes flow left to right in colour-coded groups (*The lead → Picture 2*, *Anchor frame → Picture 1*, Models, Prompt, Sample, Output), inputs are titled, and a note explains the recipe. Every canvas converts back to exactly the graph the app runs. `workflows/api/` has the same graphs as API JSON for scripting, and `workflows/inputs/` has example images (copy them into ComfyUI's `input` folder).
 
-- `00_cast_portrait_hidream_o1.json`: cast reference portrait
-- `01_keyframe_hidream_o1.json`: establishing keyframe
-- `02_coverage_qwen_image_edit_2511.json`: a new setup of the same scene (inputs are `establishing_keyframe.png` and `cast_portrait.png`)
+Regenerate with `python tools/export_workflows.py` while the studio's ComfyUI runs on :8288. It also installs the canvases into that ComfyUI's **Workflows** sidebar (`open-cinema/`) and the example inputs into its input folder.
+
+- `00_cast_portrait_hidream_o1.json`: the lead's casting portrait
+- `01_keyframe_hidream_o1.json`: the anchor's world frame
+- `12_identity_pass_qwen_edit_2511.json`: recasts the person in that frame as the lead (HiDream frame → Picture 1, the lead → Picture 2)
+- `02_coverage_qwen_image_edit_2511.json`: a new camera setup from the anchor frame (Picture 1) and the lead (Picture 2)
 - `03_shot_ltx25_i2v_audio.json`: image-to-video with audio and camera direction
 - `04_shot_ltx25_keyframe_to_keyframe.json`: lands the shot on a chosen end frame
 - `05_director_node_keyframe_to_keyframe.json`: the same shot, with its motion prompt written by the **Open Cinema Shot** node (requires the node pack)
 - `06_master_1080p_seedvr2.json`: SeedVR2 1080p master of a finished film (input `film.mp4`), audio kept
 - `07_motion_title_over_shot.json`: main title over a shot (input `shot.mp4`), audio kept
 - `08_motion_kinetic_cards.json`: kinetic type cards (`LABEL | TEXT` per line)
-- `09_inworld_title_frame.json`: an in-world title built into a frame (input `establishing_keyframe.png`), with the type sheet as Picture 2
+- `09_inworld_title_frame.json`: an in-world title built into a frame (input `oc_anchor_frame.jpg`), with the type sheet as Picture 2
 - `10_ai_lead_writer_gemma4.json`: Gemma 4 E4B writes a lead and continuity notes from a world (Lead Brief → TextGenerate → Parse Lead)
 - `11_ai_story_writer_gemma4.json`: Gemma 4 E4B writes a whole story page (title, logline, world, look, palette, lead, continuity) from a spark (Story Brief → TextGenerate → Parse Story)
 

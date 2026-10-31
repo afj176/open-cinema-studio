@@ -1,0 +1,125 @@
+{
+  "1": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    }
+  },
+  "2": {
+    "class_type": "OpenCinemaStoryBrief",
+    "inputs": {
+      "target": "everything",
+      "idea": "two stone kings guard the last mountain pass before a storm",
+      "title": "",
+      "logline": "",
+      "world": "",
+      "look": "",
+      "lead": ""
+    }
+  },
+  "3": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "2",
+        0
+      ],
+      "max_length": 900,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.8,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 7
+    }
+  },
+  "4": {
+    "class_type": "OpenCinemaParseStory",
+    "inputs": {
+      "text": [
+        "3",
+        0
+      ],
+      "target": "everything"
+    }
+  },
+  "title": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        0
+      ]
+    }
+  },
+  "logline": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        1
+      ]
+    }
+  },
+  "world": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        2
+      ]
+    }
+  },
+  "look": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        3
+      ]
+    }
+  },
+  "palette": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        4
+      ]
+    }
+  },
+  "lead": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        5
+      ]
+    }
+  },
+  "continuity": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        6
+      ]
+    }
+  },
+  "trailer": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        7
+      ]
+    }
+  }
+}

@@ -1,134 +1,678 @@
 {
-  "1": {
-    "class_type": "CheckpointLoaderSimple",
-    "inputs": {
-      "ckpt_name": "hidream_o1_image_fp8_scaled.safetensors"
-    }
+ "last_node_id": 12,
+ "last_link_id": 14,
+ "nodes": [
+  {
+   "id": 12,
+   "type": "MarkdownNote",
+   "pos": [
+    60,
+    120
+   ],
+   "size": [
+    360,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "How this works",
+   "properties": {},
+   "widgets_values": [
+    "## 1 \u00b7 The lead\nHiDream-O1 paints a casting portrait from the lead description, on a plain grey backdrop.\n\nThis portrait is the identity source of truth: it goes in as **Picture 2** of every frame that has the lead."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
   },
-  "2": {
-    "class_type": "ModelNoiseScale",
-    "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "noise_scale": 8.0
+  {
+   "id": 1,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    490,
+    160
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      3,
+      4
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      13
+     ],
+     "slot_index": 2
     }
+   ],
+   "title": "Load Checkpoint",
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    "hidream_o1_image_fp8_scaled.safetensors"
+   ]
   },
-  "3": {
-    "class_type": "HiDreamO1PatchSeamSmoothing",
-    "inputs": {
-      "model": [
-        "2",
-        0
-      ],
-      "start_percent": 0.8,
-      "end_percent": 1.0,
-      "pattern": "single_shift",
-      "passes": "ramp_2_4",
-      "blend": "median",
-      "strength": 1.0
+  {
+   "id": 2,
+   "type": "ModelNoiseScale",
+   "pos": [
+    490,
+    342
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
     }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      2,
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "ModelNoiseScale",
+   "properties": {
+    "Node name for S&R": "ModelNoiseScale"
+   },
+   "widgets_values": [
+    8.0
+   ]
   },
-  "4": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": [
-        "1",
-        1
-      ],
-      "text": "Three-quarter body shot, eye-level, front view. A casting reference photograph of a single person standing alone and facing the camera with a neutral expression. A woman in her forties with auburn hair, weathered face, yellow oilskin coat and hood. The background is one seamless, plain, light grey colour that fills the whole frame, with no equipment, props or edges visible. Even, soft, frontal lighting. Natural photograph with sharp, detailed skin and hair, true-to-life colours, no text."
+  {
+   "id": 3,
+   "type": "HiDreamO1PatchSeamSmoothing",
+   "pos": [
+    490,
+    500
+   ],
+   "size": [
+    300,
+    238
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 2
     }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "HiDream-O1 Patch Seam Smoothing",
+   "properties": {
+    "Node name for S&R": "HiDreamO1PatchSeamSmoothing"
+   },
+   "widgets_values": [
+    0.8,
+    1.0,
+    "single_shift",
+    "ramp_2_4",
+    "median",
+    1.0
+   ]
   },
-  "5": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": [
-        "1",
-        1
-      ],
-      "text": "illustration, painting, cartoon, anime, 3d render, CGI, video game, oversaturated, HDR, low quality, blurry, deformed, extra limbs, extra fingers, plastic skin, readable text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, film crew, lighting equipment"
+  {
+   "id": 4,
+   "type": "CLIPTextEncode",
+   "pos": [
+    900,
+    160
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "CLIP Text Encode (Prompt)",
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "Three-quarter body shot, eye-level, front view. A casting reference photograph of a single person standing alone and facing the camera with a neutral expression. Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible. The background is one seamless, plain, light grey colour that fills the whole frame, with no equipment, props or edges visible. Even, soft, frontal lighting. Natural photograph with sharp, detailed skin and hair, true-to-life colours, no text."
+   ]
   },
-  "6": {
-    "class_type": "EmptyHiDreamO1LatentImage",
-    "inputs": {
-      "width": 1728,
-      "height": 2304,
-      "batch_size": 1
+  {
+   "id": 5,
+   "type": "CLIPTextEncode",
+   "pos": [
+    900,
+    318
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 4
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "CLIP Text Encode (Prompt)",
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "illustration, painting, cartoon, anime, 3d render, CGI, video game, oversaturated, HDR, low quality, blurry, deformed, extra limbs, extra fingers, plastic skin, readable text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, film crew, lighting equipment"
+   ]
   },
-  "7": {
-    "class_type": "BasicScheduler",
-    "inputs": {
-      "model": [
-        "2",
-        0
-      ],
-      "scheduler": "normal",
-      "steps": 40,
-      "denoise": 1.0
+  {
+   "id": 6,
+   "type": "EmptyHiDreamO1LatentImage",
+   "pos": [
+    1310,
+    160
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      11
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Empty HiDream-O1 Latent Image",
+   "properties": {
+    "Node name for S&R": "EmptyHiDreamO1LatentImage"
+   },
+   "widgets_values": [
+    1728,
+    2304,
+    1
+   ]
   },
-  "8": {
-    "class_type": "KSamplerSelect",
-    "inputs": {
-      "sampler_name": "dpmpp_2m_sde_gpu"
+  {
+   "id": 7,
+   "type": "BasicScheduler",
+   "pos": [
+    1310,
+    342
+   ],
+   "size": [
+    300,
+    166
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 5
     }
+   ],
+   "outputs": [
+    {
+     "name": "SIGMAS",
+     "type": "SIGMAS",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "BasicScheduler",
+   "properties": {
+    "Node name for S&R": "BasicScheduler"
+   },
+   "widgets_values": [
+    "normal",
+    40,
+    1.0
+   ]
   },
-  "9": {
-    "class_type": "SamplerCustom",
-    "inputs": {
-      "model": [
-        "3",
-        0
-      ],
-      "add_noise": true,
-      "noise_seed": 7,
-      "cfg": 5.0,
-      "positive": [
-        "4",
-        0
-      ],
-      "negative": [
-        "5",
-        0
-      ],
-      "sampler": [
-        "8",
-        0
-      ],
-      "sigmas": [
-        "7",
-        0
-      ],
-      "latent_image": [
-        "6",
-        0
-      ]
+  {
+   "id": 8,
+   "type": "KSamplerSelect",
+   "pos": [
+    1310,
+    548
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "SAMPLER",
+     "type": "SAMPLER",
+     "links": [
+      9
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "KSamplerSelect",
+   "properties": {
+    "Node name for S&R": "KSamplerSelect"
+   },
+   "widgets_values": [
+    "dpmpp_2m_sde_gpu"
+   ]
   },
-  "10": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": [
-        "9",
-        0
-      ],
-      "vae": [
-        "1",
-        2
-      ]
+  {
+   "id": 9,
+   "type": "SamplerCustom",
+   "pos": [
+    1310,
+    682
+   ],
+   "size": [
+    300,
+    334
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 6
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 7
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 8
+    },
+    {
+     "name": "sampler",
+     "type": "SAMPLER",
+     "link": 9
+    },
+    {
+     "name": "sigmas",
+     "type": "SIGMAS",
+     "link": 10
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 11
     }
+   ],
+   "outputs": [
+    {
+     "name": "output",
+     "type": "LATENT",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "denoised_output",
+     "type": "LATENT",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Save lead portrait",
+   "properties": {
+    "Node name for S&R": "SamplerCustom"
+   },
+   "widgets_values": [
+    true,
+    7,
+    "fixed",
+    5.0
+   ]
   },
-  "11": {
-    "class_type": "SaveImage",
-    "inputs": {
-      "images": [
-        "10",
-        0
-      ],
-      "filename_prefix": "open-cinema/cast"
+  {
+   "id": 10,
+   "type": "VAEDecode",
+   "pos": [
+    1720,
+    160
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 12
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 13
     }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "VAE Decode",
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 11,
+   "type": "SaveImage",
+   "pos": [
+    1720,
+    318
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 14
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Save Image",
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "open-cinema/cast"
+   ]
   }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "MODEL"
+  ],
+  [
+   3,
+   1,
+   1,
+   4,
+   0,
+   "CLIP"
+  ],
+  [
+   4,
+   1,
+   1,
+   5,
+   0,
+   "CLIP"
+  ],
+  [
+   5,
+   2,
+   0,
+   7,
+   0,
+   "MODEL"
+  ],
+  [
+   6,
+   3,
+   0,
+   9,
+   0,
+   "MODEL"
+  ],
+  [
+   7,
+   4,
+   0,
+   9,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   5,
+   0,
+   9,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   9,
+   8,
+   0,
+   9,
+   3,
+   "SAMPLER"
+  ],
+  [
+   10,
+   7,
+   0,
+   9,
+   4,
+   "SIGMAS"
+  ],
+  [
+   11,
+   6,
+   0,
+   9,
+   5,
+   "LATENT"
+  ],
+  [
+   12,
+   9,
+   0,
+   10,
+   0,
+   "LATENT"
+  ],
+  [
+   13,
+   1,
+   2,
+   10,
+   1,
+   "VAE"
+  ],
+  [
+   14,
+   10,
+   0,
+   11,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Models",
+   "bounding": [
+    470,
+    100,
+    340,
+    658
+   ],
+   "color": "#444444",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Prompt",
+   "bounding": [
+    880,
+    100,
+    340,
+    356
+   ],
+   "color": "#8a6d3b",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Sample",
+   "bounding": [
+    1290,
+    100,
+    340,
+    936
+   ],
+   "color": "#335f55",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    1700,
+    100,
+    340,
+    356
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
 }

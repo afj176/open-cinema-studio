@@ -1,205 +1,995 @@
 {
-  "1": {
-    "class_type": "UNETLoader",
-    "inputs": {
-      "unet_name": "qwen_image_edit_2511_int8_convrot.safetensors",
-      "weight_dtype": "default"
+ "last_node_id": 17,
+ "last_link_id": 23,
+ "nodes": [
+  {
+   "id": 7,
+   "type": "LoadImage",
+   "pos": [
+    60,
+    160
+   ],
+   "size": [
+    300,
+    378
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
     }
+   ],
+   "title": "Load Image",
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "oc_anchor_frame.jpg"
+   ]
   },
-  "1l": {
-    "class_type": "LoraLoaderModelOnly",
-    "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
-      "strength_model": 1.0
+  {
+   "id": 17,
+   "type": "OpenCinemaTypeSheet",
+   "pos": [
+    470,
+    160
+   ],
+   "size": [
+    300,
+    166
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      8,
+      13
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Open Cinema Type Sheet (title reference)",
+   "properties": {
+    "Node name for S&R": "OpenCinemaTypeSheet"
+   },
+   "widgets_values": [
+    "The Colossus Pass",
+    "70mm epic",
+    1344,
+    768
+   ]
   },
-  "2": {
-    "class_type": "ModelSamplingAuraFlow",
-    "inputs": {
-      "model": [
-        "1l",
-        0
-      ],
-      "shift": 3.1
+  {
+   "id": 1,
+   "type": "UNETLoader",
+   "pos": [
+    880,
+    160
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      1
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Load Diffusion Model",
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "qwen_image_edit_2511_int8_convrot.safetensors",
+    "default"
+   ]
   },
-  "3": {
-    "class_type": "CFGNorm",
-    "inputs": {
-      "model": [
-        "2",
-        0
-      ],
-      "strength": 1.0
+  {
+   "id": 2,
+   "type": "LoraLoaderModelOnly",
+   "pos": [
+    880,
+    318
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 1
     }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Load LoRA",
+   "properties": {
+    "Node name for S&R": "LoraLoaderModelOnly"
+   },
+   "widgets_values": [
+    "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+    1.0
+   ]
   },
-  "4": {
-    "class_type": "CLIPLoader",
-    "inputs": {
-      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-      "type": "qwen_image",
-      "device": "default"
+  {
+   "id": 3,
+   "type": "ModelSamplingAuraFlow",
+   "pos": [
+    880,
+    500
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 2
     }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "ModelSamplingAuraFlow",
+   "properties": {
+    "Node name for S&R": "ModelSamplingAuraFlow"
+   },
+   "widgets_values": [
+    3.1,
+    "flow"
+   ]
   },
-  "5": {
-    "class_type": "VAELoader",
-    "inputs": {
-      "vae_name": "qwen_image_vae.safetensors"
+  {
+   "id": 4,
+   "type": "CFGNorm",
+   "pos": [
+    880,
+    682
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 3
     }
+   ],
+   "outputs": [
+    {
+     "name": "patched_model",
+     "type": "MODEL",
+     "links": [
+      17
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "CFGNorm",
+   "properties": {
+    "Node name for S&R": "CFGNorm"
+   },
+   "widgets_values": [
+    1.0,
+    false
+   ]
   },
-  "6": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "establishing_keyframe.png"
+  {
+   "id": 5,
+   "type": "CLIPLoader",
+   "pos": [
+    880,
+    864
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      5,
+      10
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Load CLIP",
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "qwen_image",
+    "default"
+   ]
   },
-  "7": {
-    "class_type": "FluxKontextImageScale",
-    "inputs": {
-      "image": [
-        "6",
-        0
-      ]
+  {
+   "id": 6,
+   "type": "VAELoader",
+   "pos": [
+    880,
+    1046
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      6,
+      11,
+      16,
+      22
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Load VAE",
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "qwen_image_vae.safetensors"
+   ]
   },
-  "8": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "4",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ],
-      "image1": [
-        "7",
-        0
-      ],
-      "prompt": "Picture 2 shows the exact title lettering \"THE COLOSSUS PASS\". Add exactly this lettering to the film frame in Picture 1 as monumental letters deeply carved into the ancient weathered rock face, as if cut by a lost civilisation. Copy the letters from Picture 2 precisely: the same words, the same spelling (T-H-E C-O-L-O-S-S-U-S P-A-S-S), the same order and line layout, appearing only once. Place the lettering on a real surface in the scene where it would truly exist, such as a rock face, wall, building or sign (only light-based lettering may float in the air), large and clearly readable, following that surface's perspective, light and weather. Keep everything else in the frame unchanged: same composition, framing, subjects and colours. No other text.",
-      "image2": [
-        "16",
-        0
-      ]
+  {
+   "id": 9,
+   "type": "TextEncodeQwenImageEditPlus",
+   "pos": [
+    1290,
+    160
+   ],
+   "size": [
+    300,
+    214
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 5
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 6
+    },
+    {
+     "name": "image1",
+     "type": "IMAGE",
+     "link": 7
+    },
+    {
+     "name": "image2",
+     "type": "IMAGE",
+     "link": 8
+    },
+    {
+     "name": "image3",
+     "type": "IMAGE",
+     "link": null
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Text Encode Qwen Image Edit Plus",
+   "properties": {
+    "Node name for S&R": "TextEncodeQwenImageEditPlus"
+   },
+   "widgets_values": [
+    "Picture 2 shows the exact title lettering \"THE COLOSSUS PASS\". Add exactly this lettering to the film frame in Picture 1 as monumental letters deeply carved into the ancient weathered rock face, as if cut by a lost civilisation. Copy the letters from Picture 2 precisely: the same words, the same spelling (T-H-E C-O-L-O-S-S-U-S P-A-S-S), the same order and line layout, appearing only once. Place the lettering on a real surface in the scene where it would truly exist, such as a rock face, wall, building or sign (only light-based lettering may float in the air), large and clearly readable, following that surface's perspective, light and weather. Keep everything else in the frame unchanged: same composition, framing, subjects and colours. No other text."
+   ]
   },
-  "9": {
-    "class_type": "FluxKontextMultiReferenceLatentMethod",
-    "inputs": {
-      "conditioning": [
-        "8",
-        0
-      ],
-      "reference_latents_method": "index_timestep_zero"
+  {
+   "id": 10,
+   "type": "FluxKontextMultiReferenceLatentMethod",
+   "pos": [
+    1290,
+    414
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 9
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      18
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Edit Model Reference Method",
+   "properties": {
+    "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+   },
+   "widgets_values": [
+    "index_timestep_zero"
+   ]
   },
-  "10": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "4",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ],
-      "image1": [
-        "7",
-        0
-      ],
-      "prompt": "",
-      "image2": [
-        "16",
-        0
-      ]
+  {
+   "id": 11,
+   "type": "TextEncodeQwenImageEditPlus",
+   "pos": [
+    1290,
+    572
+   ],
+   "size": [
+    300,
+    214
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 10
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 11
+    },
+    {
+     "name": "image1",
+     "type": "IMAGE",
+     "link": 12
+    },
+    {
+     "name": "image2",
+     "type": "IMAGE",
+     "link": 13
+    },
+    {
+     "name": "image3",
+     "type": "IMAGE",
+     "link": null
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      14
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Text Encode Qwen Image Edit Plus",
+   "properties": {
+    "Node name for S&R": "TextEncodeQwenImageEditPlus"
+   },
+   "widgets_values": [
+    ""
+   ]
   },
-  "11": {
-    "class_type": "FluxKontextMultiReferenceLatentMethod",
-    "inputs": {
-      "conditioning": [
-        "10",
-        0
-      ],
-      "reference_latents_method": "index_timestep_zero"
+  {
+   "id": 12,
+   "type": "FluxKontextMultiReferenceLatentMethod",
+   "pos": [
+    1290,
+    826
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 14
     }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      19
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Edit Model Reference Method",
+   "properties": {
+    "Node name for S&R": "FluxKontextMultiReferenceLatentMethod"
+   },
+   "widgets_values": [
+    "index_timestep_zero"
+   ]
   },
-  "12": {
-    "class_type": "VAEEncode",
-    "inputs": {
-      "pixels": [
-        "7",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ]
+  {
+   "id": 8,
+   "type": "FluxKontextImageScale",
+   "pos": [
+    1700,
+    160
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 4
     }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      7,
+      12,
+      15
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "FluxKontextImageScale",
+   "properties": {
+    "Node name for S&R": "FluxKontextImageScale"
+   },
+   "widgets_values": []
   },
-  "13": {
-    "class_type": "KSampler",
-    "inputs": {
-      "model": [
-        "3",
-        0
-      ],
-      "positive": [
-        "9",
-        0
-      ],
-      "negative": [
-        "11",
-        0
-      ],
-      "latent_image": [
-        "12",
-        0
-      ],
-      "seed": 909,
-      "steps": 6,
-      "cfg": 1.0,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "denoise": 1.0
+  {
+   "id": 13,
+   "type": "VAEEncode",
+   "pos": [
+    1700,
+    294
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "pixels",
+     "type": "IMAGE",
+     "link": 15
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 16
     }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "VAE Encode",
+   "properties": {
+    "Node name for S&R": "VAEEncode"
+   },
+   "widgets_values": []
   },
-  "14": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": [
-        "13",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ]
+  {
+   "id": 14,
+   "type": "KSampler",
+   "pos": [
+    1700,
+    452
+   ],
+   "size": [
+    300,
+    334
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 17
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 18
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 19
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 20
     }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      21
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "KSampler",
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    909,
+    "fixed",
+    6,
+    1.0,
+    "euler",
+    "simple",
+    1.0
+   ]
   },
-  "15": {
-    "class_type": "SaveImage",
-    "inputs": {
-      "images": [
-        "14",
-        0
-      ],
-      "filename_prefix": "open-cinema/inworld_title"
+  {
+   "id": 15,
+   "type": "VAEDecode",
+   "pos": [
+    2110,
+    160
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 21
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 22
     }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      23
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "VAE Decode",
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   },
+   "widgets_values": []
   },
-  "16": {
-    "class_type": "OpenCinemaTypeSheet",
-    "inputs": {
-      "title": "The Colossus Pass",
-      "look": "70mm epic",
-      "width": 1344,
-      "height": 768
+  {
+   "id": 16,
+   "type": "SaveImage",
+   "pos": [
+    2110,
+    318
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 23
     }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Save Image",
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "open-cinema/inworld_title"
+   ]
   }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "MODEL"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "MODEL"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "MODEL"
+  ],
+  [
+   4,
+   7,
+   0,
+   8,
+   0,
+   "IMAGE"
+  ],
+  [
+   5,
+   5,
+   0,
+   9,
+   0,
+   "CLIP"
+  ],
+  [
+   6,
+   6,
+   0,
+   9,
+   1,
+   "VAE"
+  ],
+  [
+   7,
+   8,
+   0,
+   9,
+   2,
+   "IMAGE"
+  ],
+  [
+   8,
+   17,
+   0,
+   9,
+   3,
+   "IMAGE"
+  ],
+  [
+   9,
+   9,
+   0,
+   10,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   10,
+   5,
+   0,
+   11,
+   0,
+   "CLIP"
+  ],
+  [
+   11,
+   6,
+   0,
+   11,
+   1,
+   "VAE"
+  ],
+  [
+   12,
+   8,
+   0,
+   11,
+   2,
+   "IMAGE"
+  ],
+  [
+   13,
+   17,
+   0,
+   11,
+   3,
+   "IMAGE"
+  ],
+  [
+   14,
+   11,
+   0,
+   12,
+   0,
+   "CONDITIONING"
+  ],
+  [
+   15,
+   8,
+   0,
+   13,
+   0,
+   "IMAGE"
+  ],
+  [
+   16,
+   6,
+   0,
+   13,
+   1,
+   "VAE"
+  ],
+  [
+   17,
+   4,
+   0,
+   14,
+   0,
+   "MODEL"
+  ],
+  [
+   18,
+   10,
+   0,
+   14,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   19,
+   12,
+   0,
+   14,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   20,
+   13,
+   0,
+   14,
+   3,
+   "LATENT"
+  ],
+  [
+   21,
+   14,
+   0,
+   15,
+   0,
+   "LATENT"
+  ],
+  [
+   22,
+   6,
+   0,
+   15,
+   1,
+   "VAE"
+  ],
+  [
+   23,
+   15,
+   0,
+   16,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Inputs",
+   "bounding": [
+    40,
+    100,
+    340,
+    458
+   ],
+   "color": "#3f789e",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Open Cinema",
+   "bounding": [
+    450,
+    100,
+    340,
+    246
+   ],
+   "color": "#b06634",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Models",
+   "bounding": [
+    860,
+    100,
+    340,
+    1060
+   ],
+   "color": "#444444",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Prompt",
+   "bounding": [
+    1270,
+    100,
+    340,
+    864
+   ],
+   "color": "#8a6d3b",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Sample",
+   "bounding": [
+    1680,
+    100,
+    340,
+    706
+   ],
+   "color": "#335f55",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    2090,
+    100,
+    340,
+    356
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
 }

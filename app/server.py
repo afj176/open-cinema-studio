@@ -143,6 +143,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.enqueue("write_lead", m.group(1), None, label, mode=mode))
             if m := re.fullmatch(r"/api/projects/(\w+)/undo-(?:lead|story)", route):
                 return self._json(studio.undo_story(m.group(1)))
+            if m := re.fullmatch(r"/api/projects/(\w+)/describe-lead", route):
+                return self._json(studio.enqueue("describe_lead", m.group(1), None, "Describing the lead's face"))
             if m := re.fullmatch(r"/api/projects/(\w+)/write-story", route):
                 target = json.loads(self._body() or b"{}").get("target", "everything")
                 if target not in director.STORY_TARGETS:

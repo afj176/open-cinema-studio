@@ -183,7 +183,7 @@ def score_prompt(look: str, title: str) -> str:
                  "silence. Studio-recorded instrumental music only: no ambience, no weather, no voices")
 
 
-LEAD_MODES = ("write", "refine", "from photo", "continuity")
+LEAD_MODES = ("write", "refine", "from photo", "continuity", "identity")
 
 _LEAD_FORMAT = (
     "Reply with exactly two lines and nothing else:\n"
@@ -205,6 +205,13 @@ def lead_brief(mode: str, title: str, world: str, look: str, draft: str = "") ->
                 "the 4 to 6 visual details that must never change from shot to shot (key wardrobe colours, "
                 "hairstyle, distinctive features, signature prop).\n\n"
                 f"Lead: {draft}\n\nReply with exactly one line and nothing else:\nCONTINUITY: comma-separated details")
+    if mode == "identity":
+        return ("You are a casting director. The attached image is the casting photo of a film's lead. Describe only "
+                "what makes this exact person recognisable, so an image model paints the same face in every shot: "
+                "skin tone, face shape, eyes and eye colour, eyebrows, nose, lips, facial hair, hair colour, "
+                "texture and style, approximate age and build. Be specific and plain (for example 'light olive "
+                "skin', 'narrow face with high cheekbones'). No clothing, no props, no background, no emotion.\n\n"
+                "Reply with exactly one line and nothing else:\nLEAD: 20 to 40 comma-separated words")
     if mode == "from photo":
         return ("You are the costume and continuity supervisor on a feature film. The attached image is the "
                 "casting photo of the film's lead. Describe this exact person as they appear, so an image model "
@@ -379,8 +386,20 @@ def cast_keyframe_prompt(scene: str, action: str, shot_size: str, look: str, con
                  "Ignore the studio backdrop of Picture 1. No text, no borders")
 
 
+def identity_prompt(continuity: str = "", identity: str = "") -> str:
+    """Identity pass for Qwen-Image-Edit-2511: Picture 1 is a finished frame, Picture 2 the lead's portrait."""
+    return _join("Replace the person in Picture 1 with the person from Picture 2",
+                 "Their face is the face of Picture 2, not the face from Picture 1: the same facial structure, eyes, "
+                 "eye colour and skin tone, and the same hair, build and wardrobe as Picture 2",
+                 identity and "The lead: " + identity, continuity,
+                 "Keep everything else in Picture 1 exactly as it is: the composition, camera angle, framing, pose, "
+                 "body position, scale of the person, action, props, background, lighting and colour grade",
+                 "Light the person naturally by the scene of Picture 1. Ignore the studio backdrop of Picture 2. "
+                 "No text, no borders")
+
+
 def coverage_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
-                    camera_move: str = "", lead: bool = True) -> str:
+                    camera_move: str = "", lead: bool = True, world: str = "", identity: str = "") -> str:
     """Instruction for Qwen-Image-Edit-2511 to shoot a new setup of the film shown in Picture 1 (cast in Picture 2)."""
     cast = ("The lead is the person from Picture 2 with exactly the same face, hair and wardrobe. Picture 2 is "
             "only an identity reference: take their pose, expression and body language from this shot's action, "
@@ -390,11 +409,12 @@ def coverage_prompt(action: str, shot_size: str, look: str, continuity: str = ""
         "Picture 1 is a frame from a film. Create a different shot from the same film: " +
         ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x),
         "In this shot: " + action if action else "",
+        world and "The setting is the world of Picture 1: " + world,
         "Put the camera in a completely new position with a new composition; do not copy the layout of Picture 1. "
         "If the action happens in another place, show that place",
         (cast + ", in the same world, era, weather and lighting mood as Picture 1" if lead else
          "The same world, era, weather and lighting mood as Picture 1"),
-        people_note(lead), lead and continuity,
+        people_note(lead), lead and identity and "The lead: " + identity, lead and continuity,
         LOOKS.get(look, look) and "Same color grade: " + LOOKS.get(look, look),
         "Cinematic film still, no text, no borders")
 

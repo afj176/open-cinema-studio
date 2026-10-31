@@ -1,37 +1,189 @@
 {
-  "1": {
-    "class_type": "OpenCinemaCards",
-    "inputs": {
-      "lines": "Two stone kings.\nOne storm.\nOne last beacon.\nMade with open models | HiDream-O1 \u00b7 Qwen-Image-Edit \u00b7 LTX 2.5",
-      "look": "70mm epic",
-      "width": 1280,
-      "height": 704,
-      "fps": 24.0,
-      "seconds_per_card": 1.1,
-      "seed": 5,
-      "palette": ""
+ "last_node_id": 3,
+ "last_link_id": 2,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "OpenCinemaCards",
+   "pos": [
+    60,
+    160
+   ],
+   "size": [
+    300,
+    262
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ],
+     "slot_index": 0
     }
+   ],
+   "title": "Open Cinema Cards (kinetic type)",
+   "properties": {
+    "Node name for S&R": "OpenCinemaCards"
+   },
+   "widgets_values": [
+    "Two stone kings.\nOne storm.\nOne last beacon.\nMade with open models | HiDream-O1 \u00b7 Qwen-Image-Edit \u00b7 LTX 2.5",
+    "70mm epic",
+    1280,
+    704,
+    24.0,
+    1.1,
+    5,
+    ""
+   ]
   },
-  "2": {
-    "class_type": "CreateVideo",
-    "inputs": {
-      "images": [
-        "1",
-        0
-      ],
-      "fps": 24.0
+  {
+   "id": 2,
+   "type": "CreateVideo",
+   "pos": [
+    470,
+    160
+   ],
+   "size": [
+    300,
+    214
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
     }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Create Video",
+   "properties": {
+    "Node name for S&R": "CreateVideo"
+   },
+   "widgets_values": [
+    24.0,
+    "auto",
+    "sRGB",
+    "none"
+   ]
   },
-  "3": {
-    "class_type": "SaveVideo",
-    "inputs": {
-      "video": [
-        "2",
-        0
-      ],
-      "filename_prefix": "open-cinema/cards",
-      "format": "mp4",
-      "codec": "h264"
+  {
+   "id": 3,
+   "type": "SaveVideo",
+   "pos": [
+    470,
+    414
+   ],
+   "size": [
+    300,
+    214
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 2
     }
+   ],
+   "outputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Save Video",
+   "properties": {
+    "Node name for S&R": "SaveVideo"
+   },
+   "widgets_values": [
+    "open-cinema/cards",
+    "mp4",
+    "",
+    "h264",
+    ""
+   ]
   }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Open Cinema",
+   "bounding": [
+    40,
+    100,
+    340,
+    342
+   ],
+   "color": "#b06634",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    450,
+    100,
+    340,
+    548
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
 }

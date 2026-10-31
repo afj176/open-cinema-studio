@@ -74,7 +74,7 @@ def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
 
 
 def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: str,
-                   second_reference: str | None = None) -> dict[str, Any]:
+                   second_reference: str | None = None, keep_layout: bool = False) -> dict[str, Any]:
     """New camera setup of the same film with Qwen-Image-Edit-2511 + 4-step Lightning.
 
     Picture 1 is the world, Picture 2 (optional) the cast. It samples onto an empty canvas at
@@ -82,7 +82,7 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
     and world but not the composition.
     """
     width, height = COVERAGE_SIZES[aspect]
-    graph = {
+    graph: dict[str, Any] = {
         "1": node("UNETLoader", unet_name=MODELS["qwen_edit"], weight_dtype="default"),
         "1l": node("LoraLoaderModelOnly", model=["1", 0], lora_name=MODELS["qwen_lightning"], strength_model=1.0),
         "2": node("ModelSamplingAuraFlow", model=["1l", 0], shift=3.1),
@@ -97,7 +97,9 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
         "10": node("TextEncodeQwenImageEditPlus", clip=["4", 0], vae=["5", 0], image1=["7", 0], prompt=""),
         "11": node("FluxKontextMultiReferenceLatentMethod", conditioning=["10", 0],
                    reference_latents_method="index_timestep_zero"),
-        "12": node("EmptySD3LatentImage", width=width, height=height, batch_size=1),
+        # an edit keeps Picture 1's layout (start from it); a new setup starts from an empty canvas
+        "12": node("VAEEncode", pixels=["7", 0], vae=["5", 0]) if keep_layout else
+        node("EmptySD3LatentImage", width=width, height=height, batch_size=1),
         "13": node("KSampler", model=["3", 0], positive=["9", 0], negative=["11", 0], latent_image=["12", 0],
                    seed=seed, steps=4, cfg=1.0, sampler_name="euler", scheduler="simple", denoise=1.0),
         "14": node("VAEDecode", samples=["13", 0], vae=["5", 0]),
@@ -109,6 +111,12 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
         for encoder in ("8", "10"):
             graph[encoder]["inputs"]["image2"] = ["17", 0]
     return graph
+
+
+def identity_graph(prompt: str, seed: int, frame: str, lead: str, prefix: str, aspect: str) -> dict[str, Any]:
+    """Identity pass: Qwen-Image-Edit-2511 recasts the person in a finished frame (Picture 1) as the
+    film's lead (Picture 2), keeping the frame's composition, light and world."""
+    return coverage_graph(prompt, seed, frame, prefix, aspect, second_reference=lead, keep_layout=True)
 
 
 def frames_for(seconds: float, fps: int) -> int:

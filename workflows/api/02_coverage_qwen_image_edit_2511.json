@@ -1,0 +1,206 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "1l": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "2": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "1l",
+        0
+      ],
+      "shift": 3.1
+    }
+  },
+  "3": {
+    "class_type": "CFGNorm",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "strength": 1.0
+    }
+  },
+  "4": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_anchor_frame.jpg"
+    }
+  },
+  "7": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "6",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ],
+      "prompt": "Picture 1 is a frame from a film. Create a different shot from the same film: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Put the camera in a completely new position with a new composition; do not copy the layout of Picture 1. If the action happens in another place, show that place. The lead is the person from Picture 2 with exactly the same face, hair and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with full energy and emotion, in the same world, era, weather and lighting mood as Picture 1. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic film still, no text, no borders.",
+      "image2": [
+        "17",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": {
+      "conditioning": [
+        "8",
+        0
+      ],
+      "reference_latents_method": "index_timestep_zero"
+    }
+  },
+  "10": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ],
+      "prompt": "",
+      "image2": [
+        "17",
+        0
+      ]
+    }
+  },
+  "11": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ],
+      "reference_latents_method": "index_timestep_zero"
+    }
+  },
+  "12": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 1664,
+      "height": 928,
+      "batch_size": 1
+    }
+  },
+  "13": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "positive": [
+        "9",
+        0
+      ],
+      "negative": [
+        "11",
+        0
+      ],
+      "latent_image": [
+        "12",
+        0
+      ],
+      "seed": 202,
+      "steps": 4,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "14": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "13",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ]
+    }
+  },
+  "15": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "14",
+        0
+      ],
+      "filename_prefix": "open-cinema/coverage"
+    }
+  },
+  "16": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_lead_portrait.jpg"
+    }
+  },
+  "17": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "16",
+        0
+      ]
+    }
+  }
+}

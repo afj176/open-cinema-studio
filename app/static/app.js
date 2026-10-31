@@ -38,6 +38,37 @@ let presets, project, projects = [], jobs = [], saveTimer, selected = null;
 let stage = store.get("stage") || "story", view = "film", screen = "master";
 const media = name => name ? `/media/${project.id}/${encodeURIComponent(name)}` : "";
 const shotIndex = id => project.shots.findIndex(s => s.id === id);
+const shotLabel = id => { const i = shotIndex(id); return i < 0 ? "a deleted shot" : `Shot ${String(i + 1).padStart(2, "0")}`; };
+
+// ---------------------------------------------------------------- lineage: what each frame is made from
+function anchorShot() {  // the shot whose frame sets the world for every other shot (mirrors studio.anchor_of)
+  return project.shots.find((s, i) => s.id === project.anchor && !(i > 0 && s.transition === "continue"))
+    || project.shots[0] || null;
+}
+const recipeOf = shot => (shot.takes?.keyframe || []).find(t => t.name === shot.keyframe)?.recipe || null;
+const leadIn = shot => shot.lead !== false && !!project.reference;
+
+function plannedRecipe(shot, i) {  // what the next New frame will be made from
+  const anchor = anchorShot();
+  if (i > 0 && shot.transition === "continue") return { kind: "continue", from: project.shots[i - 1].id, steps: [`Last frame of shot ${i}`] };
+  const lead = leadIn(shot) ? project.reference : null;
+  if (anchor && anchor.id !== shot.id && anchor.keyframe)
+    return { kind: "coverage", lead, anchor: { shot: anchor.id, image: anchor.keyframe }, steps: ["Qwen-Image-Edit 2511 · new camera setup · 4 steps"] };
+  return { kind: "establishing", lead, steps: ["HiDream-O1 · world frame · 40 steps", ...(lead ? ["Qwen-Image-Edit 2511 · identity pass · 4 steps"] : [])] };
+}
+
+function staleness(shot) {  // why the current frame no longer matches the film ("" when it does)
+  const r = recipeOf(shot);
+  if (!shot.keyframe || !r) return "";
+  if (leadIn(shot) && (r.kind === "establishing" || r.kind === "coverage") && r.lead !== project.reference)
+    return r.lead ? "Lead changed" : "Made before the lead";
+  if (r.kind === "coverage" && r.anchor && anchorShot()?.id !== shot.id) {  // the anchor isn't measured against itself
+    const a = anchorShot();
+    if (!a || a.id !== r.anchor.shot) return "Anchor changed";
+    if (a.keyframe !== r.anchor.image) return "Anchor re-framed";
+  }
+  return "";
+}
 const active = j => j.state === "queued" || j.state === "running";
 const busyFor = test => jobs.find(j => j.project === project.id && active(j) && test(j));
 
@@ -208,6 +239,14 @@ function paintPortrait() {
   if (job) $("#castBusy").textContent = job.state === "running" ? `Casting · ${Math.round(job.elapsed)}s` : "Casting · queued";
   $("#castBtn").textContent = project.reference ? "Re-cast from description" : "Cast from description";
   paintLeadAI();
+  paintLeadUsage();
+  // Gemma's description of the portrait: the words every frame and shot prompt carries about this face
+  const describing = busyFor(j => j.kind === "describe_lead" || (j.kind === "cast" && j.state === "running"));
+  const note = project.lead_identity_of === project.reference ? project.lead_identity : "";
+  $("#identityNote").hidden = !project.reference;
+  $("#identityText").textContent = describing ? "Looking at the portrait…" : note || "Not described yet. Render film describes it first, or press Describe again.";
+  $("#identityText").classList.toggle("pending", !note || !!describing);
+  $("#redescribe").disabled = !!describing;
 }
 
 const STORY_TARGET_FIELDS = {
@@ -284,7 +323,8 @@ function renderBoard() {
     card.tabIndex = 0;
     card.innerHTML = `<div class="media"><img alt="" hidden><video muted loop playsinline preload="none" hidden></video>
       <div class="empty">No frame yet</div><div class="busy" hidden></div>
-      <span class="num">${String(i + 1).padStart(2, "0")}</span><span class="badges"></span></div>
+      <span class="num">${String(i + 1).padStart(2, "0")}</span><span class="badges"></span>
+      <img class="lead-dot" alt="" title="The lead is in this shot" hidden></div>
       <div class="meta"><p class="action"></p><div class="facts"><span class="mini-cam"><span class="cam-scene"><span></span></span></span>
       <span class="move"></span><span>·</span><span class="size"></span><span>·</span><span class="secs"></span></div></div>`;
     card.onclick = () => select(shot.id);
@@ -318,7 +358,14 @@ function paintCard(card, shot, i) {
   const badges = [];
   if (i > 0 && shot.transition !== "cut") badges.push(`<span class="badge">${JOINT_NAME[shot.transition].toUpperCase()}</span>`);
   if (shot.lead === false) badges.push(`<span class="badge">NO LEAD</span>`);
+  const r = recipeOf(shot), stale = staleness(shot);
+  if (anchorShot()?.id === shot.id) badges.push(`<span class="badge anchor" title="Sets the world and light for every other shot">⚓ ANCHOR</span>`);
+  else if (r?.anchor) badges.push(`<span class="badge" title="World and light from ${shotLabel(r.anchor.shot)}">⚓ ${shotLabel(r.anchor.shot).slice(5)}</span>`);
+  if (stale) badges.push(`<span class="badge warn" title="Press New frame to rebuild it">${stale.toUpperCase()}</span>`);
   if (shot.video) badges.push(`<span class="badge accent">▶</span>`);
+  const dot = $(".lead-dot", card);
+  dot.hidden = !leadIn(shot);
+  if (leadIn(shot) && dot.dataset.src !== project.reference) { dot.src = media(project.reference); dot.dataset.src = project.reference; }
   const last = jobs.filter(j => j.project === project.id && j.shot === shot.id).at(-1);
   if (last?.state === "failed") badges.push(`<span class="badge fail" title="${escapeHtml(last.error)}">FAILED</span>`);
   $(".badges", card).innerHTML = badges.join("");
@@ -377,7 +424,11 @@ function renderInspector() {
       <label class="button ghost">Upload frame<input type="file" accept="image/*" hidden data-act="upload"></label>
       <button class="primary" data-act="video">Render shot</button>
     </div>
-    <details class="prompts"><summary>Prompts the models receive</summary><div class="prompt-body"></div></details>`;
+    <section class="recipe">
+      <div class="recipe-head"><span class="strip-label">How it was made</span><span class="anchor-ctl"></span></div>
+      <div class="recipe-body"></div>
+      <details class="prompts"><summary>Prompts the models receive</summary><div class="prompt-body"></div></details>
+    </section>`;
   $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || "";
   requestAnimationFrame(() => growAll(ins));
   for (const field of $$("[data-k]", ins)) {
@@ -441,16 +492,80 @@ function paintInspector() {
     $$(".take", strips).forEach(b => b.onclick = async () =>
       mergeServer(await post(`/api/projects/${project.id}/shots/${shot.id}/take`, { kind: b.dataset.kind, name: b.dataset.name }), true));
   }
+  paintRecipe(shot, i);
   const kp = frames.find(t => t.name === shot.keyframe)?.prompt || shot.keyframe_prompt;
   const mp = vids.find(t => t.name === shot.video)?.prompt || shot.motion_prompt;
   const pb = $(".prompt-body", ins);
   const psig = (kp || "") + "|" + (mp || "");
   if (pb.dataset.sig !== psig) {
     pb.dataset.sig = psig;
+    const ip = recipeOf(shot)?.identity_prompt;
     pb.innerHTML = (kp ? `<div class="strip-label">Frame</div><p>${escapeHtml(kp)}</p>` : "") +
+      (ip ? `<div class="strip-label">Identity pass</div><p>${escapeHtml(ip)}</p>` : "") +
       (mp ? `<div class="strip-label">Motion &amp; sound</div><p>${escapeHtml(mp)}</p>` : "") ||
       `<p class="hint">Prompts appear after the first render.</p>`;
   }
+}
+
+function paintRecipe(shot, i) {
+  const ins = $("#inspector"), body = $(".recipe-body", ins);
+  if (!body) return;
+  const made = recipeOf(shot), r = made || (shot.keyframe ? null : plannedRecipe(shot, i));
+  const anchor = anchorShot(), isAnchor = anchor?.id === shot.id, stale = staleness(shot);
+  const sig = JSON.stringify([made, r, stale, isAnchor, shot.keyframe, shot.video, shot.seconds, shot.camera_move,
+    shot.sound, project.reference, anchor?.keyframe]);
+  if (body.dataset.sig === sig) return;
+  body.dataset.sig = sig;
+  $(".anchor-ctl", ins).innerHTML = isAnchor
+    ? `<span class="anchor-pill" title="Every other shot takes its world and light from this frame">⚓ Anchor</span>`
+    : i > 0 && shot.transition === "continue" ? "" : `<button type="button" class="link" data-pin>Set as anchor</button>`;
+  const pin = $("[data-pin]", ins);
+  if (pin) pin.onclick = () => { project.anchor = shot.id; save(true); toast(`${shotLabel(shot.id)} is now the anchor`); };
+  if (!r) {  // a frame from before lineage was recorded
+    body.innerHTML = `<p class="hint">This frame was made before lineage was recorded. Press New frame to rebuild it from the lead${isAnchor ? "" : " and the anchor"}.</p>`;
+    return;
+  }
+  const ing = (src, title, sub, go) => `<button type="button" class="ingredient" data-go="${go}">
+    ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "Story world" ? "¶" : "↺"}</span>`}
+    <b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></button>`;
+  const inputs = [];
+  if (r.lead) inputs.push(ing(media(r.lead), "The lead", "Face and wardrobe", "story"));
+  if (r.anchor) inputs.push(ing(media(r.anchor.image), `⚓ ${shotLabel(r.anchor.shot)}`, "World and light", "shot:" + r.anchor.shot));
+  if (r.kind === "establishing" || r.kind === "photo") inputs.push(ing("", "Story world", "World, action and look", "story"));
+  if (r.kind === "continue") inputs.push(ing(media(project.shots[shotIndex(r.from)]?.keyframe), shotLabel(r.from), "Its last frame", "shot:" + r.from));
+  if (r.kind === "upload") inputs.push(ing(media(shot.keyframe), "Your frame", "Uploaded", ""));
+  const steps = [...(r.steps || [])];
+  const video = `LTX 2.5 · ${shot.seconds}s · ${shot.camera_move.toLowerCase()}${shot.sound ? " · with sound" : ""}`;
+  body.innerHTML = `
+    <p class="recipe-when">${made ? "Made from" : "The next frame will be made from"}</p>
+    ${stale ? `<div class="recipe-stale"><span>${stale}: this frame no longer matches the film.</span><button type="button" class="ghost small" data-refresh>New frame</button></div>` : ""}
+    <div class="ingredients">${inputs.join("")}</div>
+    ${r.identity ? `<p class="recipe-told"><b>Told about the lead:</b> ${escapeHtml(r.identity)}</p>` : ""}
+    ${r.base ? `<div class="recipe-base"><img src="${media(r.base)}" alt=""><span>HiDream's frame, before the identity pass cast the lead</span></div>` : ""}
+    <ol class="recipe-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}
+      <li class="${shot.video ? "" : "next"}">${escapeHtml(video)}${shot.video ? "" : " · press Render shot"}</li></ol>
+    ${!leadIn(shot) && shot.lead !== false ? `<p class="hint">No lead portrait yet: cast one on the Story page so every shot keeps the same face.</p>` : ""}`;
+  $$("[data-go]", body).forEach(b => b.onclick = () => {
+    const go = b.dataset.go;
+    if (go === "story") { setStage("story"); $("#refDrop").scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else if (go.startsWith("shot:")) select(go.slice(5));
+  });
+  const refresh = $("[data-refresh]", body);
+  if (refresh) refresh.onclick = () => queueShot(shot, "keyframe");
+}
+
+function paintLeadUsage() {  // the Story page shows where the lead appears and which frames are out of date
+  const box = $("#leadUsage"), using = project.shots.map((s, i) => ({ s, i })).filter(({ s }) => s.lead !== false);
+  const stale = using.filter(({ s }) => staleness(s)).length;
+  $("#leadUsageHint").textContent = !project.reference ? "Cast the lead so every shot keeps one face"
+    : `In ${using.length} of ${project.shots.length} shot${project.shots.length === 1 ? "" : "s"}` + (stale ? ` · ${stale} need${stale === 1 ? "s" : ""} a new frame` : "");
+  box.hidden = !project.reference || !using.length;
+  const sig = JSON.stringify(using.map(({ s }) => [s.id, s.keyframe, staleness(s)]));
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.innerHTML = using.map(({ s, i }) => `<button type="button" class="usage ${staleness(s) ? "stale" : ""}" data-id="${s.id}" title="${staleness(s) || "Uses this lead"}">
+    ${s.keyframe ? `<img src="${media(s.keyframe)}" alt="">` : `<span></span>`}<small>${String(i + 1).padStart(2, "0")}${staleness(s) ? " · re-frame" : ""}</small></button>`).join("");
+  $$(".usage", box).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
 }
 
 // ---------------------------------------------------------------- edit
@@ -683,7 +798,8 @@ function mergeServer(fresh, rerender) {
   }
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed }));
-  for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference"]) project[k] = fresh[k];
+  for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
+    "lead_identity", "lead_identity_of"]) project[k] = fresh[k];
   if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
   project.story_history = fresh.story_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
@@ -772,6 +888,7 @@ $("#aiContinuity").onclick = () => writeLead("continuity");
 $("#trailerUndo").onclick = () => $("#aiUndo").onclick();
 $("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-story`)); };
 $("#aiEverything").onclick = () => writeStory("everything");
+$("#redescribe").onclick = async () => { await post(`/api/projects/${project.id}/describe-lead`); poll(); };
 $$("[data-ai]").forEach(b => b.onclick = () => writeStory(b.dataset.ai));
 $("#idea").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); writeStory("everything"); } };
 $$("[data-pal]").forEach(input => input.oninput = () => {
