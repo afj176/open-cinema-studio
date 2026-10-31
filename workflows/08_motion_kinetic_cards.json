@@ -1,0 +1,36 @@
+{
+  "1": {
+    "class_type": "OpenCinemaCards",
+    "inputs": {
+      "lines": "Two stone kings.\nOne storm.\nOne last beacon.\nMade with open models | HiDream-O1 \u00b7 Qwen-Image-Edit \u00b7 LTX 2.5",
+      "look": "70mm epic",
+      "width": 1280,
+      "height": 704,
+      "fps": 24.0,
+      "seconds_per_card": 1.1,
+      "seed": 5
+    }
+  },
+  "2": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "1",
+        0
+      ],
+      "fps": 24.0
+    }
+  },
+  "3": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "2",
+        0
+      ],
+      "filename_prefix": "open-cinema/cards",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}

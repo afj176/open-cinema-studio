@@ -1,0 +1,10 @@
+# Point ComfyUI at the Open Cinema models and custom nodes.
+# Copy to extra_model_paths.yaml next to ComfyUI's main.py (or pass
+# --extra-model-paths-config <this file>) and fix base_path.
+open_cinema:
+  base_path: D:/models/open-cinema
+  diffusion_models: diffusion_models
+  text_encoders: text_encoders
+  vae: vae
+  latent_upscale_models: latent_upscale_models
+  custom_nodes: D:/open-cinema-studio/custom_nodes

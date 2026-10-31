@@ -1,0 +1,207 @@
+"""Open Cinema: camera-direction nodes for building multi-shot films in ComfyUI."""
+
+from .director import (CAMERA_MOVES, LOOKS, SHOT_SIZES, cast_prompt, coverage_prompt, keyframe_prompt,
+                       motion_prompt)
+
+
+class OpenCinemaShot:
+    """One shot of a shot list: emits the three prompts the Open Cinema pipeline needs."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "scene": ("STRING", {"multiline": True, "default": "A rain-soaked neon alley at night."}),
+            "action": ("STRING", {"multiline": True, "default": "A detective in a trench coat lights a cigarette."}),
+            "shot_size": (list(SHOT_SIZES), {"default": "Medium"}),
+            "camera_move": (list(CAMERA_MOVES), {"default": "Dolly in"}),
+            "look": (list(LOOKS), {"default": "Anamorphic blockbuster"}),
+            "sound": ("STRING", {"multiline": True, "default": "rain on metal, distant sirens"}),
+        }, "optional": {
+            "continuity": ("STRING", {"multiline": True, "default": ""}),
+            "lead_in_shot": ("BOOLEAN", {"default": True}),
+            "cast": ("STRING", {"multiline": True, "default": "",
+                                "tooltip": "Describe the lead. When set, coverage prompts expect the cast "
+                                           "portrait as Picture 2."}),
+        }}
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("keyframe_prompt", "coverage_prompt", "motion_prompt", "cast_prompt")
+    FUNCTION = "build"
+    CATEGORY = "Open Cinema"
+
+    def build(self, scene, action, shot_size, camera_move, look, sound, continuity="", lead_in_shot=True, cast=""):
+        return (keyframe_prompt(scene, action, shot_size, look, camera_move, lead_in_shot),
+                coverage_prompt(action, shot_size, look, continuity, has_cast=bool(cast.strip()) and lead_in_shot,
+                                camera_move=camera_move, lead=lead_in_shot),
+                motion_prompt(action, camera_move, sound, look, cast, shot_size, continuity, lead_in_shot),
+                cast_prompt(cast, scene, look))
+
+
+class OpenCinemaShotLength:
+    """Seconds to an LTX-valid frame count (8n+1)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"seconds": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 20.0, "step": 0.5}),
+                             "fps": ("INT", {"default": 24, "min": 8, "max": 60})}}
+
+    RETURN_TYPES = ("INT", "FLOAT")
+    RETURN_NAMES = ("frames", "fps")
+    FUNCTION = "frames"
+    CATEGORY = "Open Cinema"
+
+    def frames(self, seconds, fps):
+        return (max(9, round(seconds * fps / 8) * 8 + 1), float(fps))
+
+
+# ---------------------------------------------------------------- motion graphics
+
+def _to_numpy(images):
+    return images.detach().cpu().float().numpy()
+
+
+def _to_tensor(frames):
+    import torch
+    return torch.from_numpy(frames.astype("float32"))
+
+
+def _split_lines(text):
+    """'LABEL | TEXT' per line; a line without a bar is just TEXT."""
+    texts, labels = [], []
+    for raw in text.splitlines():
+        if not raw.strip():
+            continue
+        label, bar, body = raw.partition("|")
+        texts.append((body if bar else label).strip())
+        labels.append(label.strip() if bar else "")
+    return texts, labels
+
+
+LOOK_INPUT = (list(LOOKS), {"default": "70mm epic", "tooltip": "Motion graphics take on this film look's palette"})
+
+
+class OpenCinemaTitleOverlay:
+    """Main title over footage: glowing line streak, title slam on impact, typed subtitle, HUD."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE",), "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 120.0}),
+            "title": ("STRING", {"default": "The Colossus Pass"}),
+            "subtitle": ("STRING", {"default": "A film made with open models"}),
+            "look": LOOK_INPUT,
+            "start": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 10.0, "step": 0.05}),
+            "hold": ("FLOAT", {"default": 3.2, "min": 0.5, "max": 20.0, "step": 0.1}),
+        }}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "render"
+    CATEGORY = "Open Cinema/Motion"
+
+    def render(self, images, fps, title, subtitle, look, start, hold):
+        from . import motion
+        return (_to_tensor(motion.title_overlay(_to_numpy(images), fps, title, subtitle, look, start, hold)),)
+
+
+class OpenCinemaShotStamp:
+    """HUD slate on a shot: corner brackets and a typed label with one highlighted phrase."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE",), "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 120.0}),
+            "text": ("STRING", {"default": "SHOT 03 · LOW ANGLE · TILT UP"}),
+            "highlight": ("STRING", {"default": "TILT UP"}),
+            "look": LOOK_INPUT,
+        }}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "render"
+    CATEGORY = "Open Cinema/Motion"
+
+    def render(self, images, fps, text, highlight, look):
+        from . import motion
+        return (_to_tensor(motion.stamp_overlay(_to_numpy(images), fps, text, highlight, look)),)
+
+
+class OpenCinemaCards:
+    """Full-frame kinetic type cards, hard cut on each line. One line per card: 'LABEL | TEXT'."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "lines": ("STRING", {"multiline": True, "default": "Two kings.\nOne beacon.\nThe Colossus Pass"}),
+            "look": LOOK_INPUT,
+            "width": ("INT", {"default": 1280, "min": 256, "max": 4096, "step": 16}),
+            "height": ("INT", {"default": 704, "min": 256, "max": 4096, "step": 16}),
+            "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 120.0}),
+            "seconds_per_card": ("FLOAT", {"default": 1.1, "min": 0.3, "max": 10.0, "step": 0.05}),
+            "seed": ("INT", {"default": 5, "min": 0, "max": 2**31 - 1}),
+        }}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "render"
+    CATEGORY = "Open Cinema/Motion"
+
+    def render(self, lines, look, width, height, fps, seconds_per_card, seed):
+        from . import motion
+        texts, labels = _split_lines(lines)
+        if not texts:
+            raise ValueError("Open Cinema Cards needs at least one line of text")
+        frames = motion.cards(texts, fps, width, height, look, seconds_per_card,
+                              labels if any(labels) else None, seed)
+        return (_to_tensor(frames),)
+
+
+class OpenCinemaTitlePreview:
+    """One representative title frame in a look, for quick previews."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"title": ("STRING", {"default": "The Colossus Pass"}), "look": LOOK_INPUT,
+                             "width": ("INT", {"default": 1280, "min": 256, "max": 4096, "step": 16}),
+                             "height": ("INT", {"default": 704, "min": 256, "max": 4096, "step": 16})}}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "render"
+    CATEGORY = "Open Cinema/Motion"
+
+    def render(self, title, look, width, height):
+        import numpy as np
+        from . import motion
+        frame = np.asarray(motion.preview(look, title, width, height), dtype="float32")[None] / 255.0
+        return (_to_tensor(frame),)
+
+
+class OpenCinemaTypeSheet:
+    """The title set in the look's typeface on a plain sheet: a spelling-perfect reference image for
+    image-edit models (e.g. Picture 2 when carving an in-world title)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"title": ("STRING", {"default": "The Colossus Pass"}), "look": LOOK_INPUT,
+                             "width": ("INT", {"default": 1344, "min": 256, "max": 4096, "step": 16}),
+                             "height": ("INT", {"default": 768, "min": 256, "max": 4096, "step": 16})}}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "render"
+    CATEGORY = "Open Cinema/Motion"
+
+    def render(self, title, look, width, height):
+        import numpy as np
+        from . import motion
+        frame = np.asarray(motion.type_sheet(title, look, width, height), dtype="float32")[None] / 255.0
+        return (_to_tensor(frame),)
+
+
+NODE_CLASS_MAPPINGS = {"OpenCinemaShot": OpenCinemaShot, "OpenCinemaShotLength": OpenCinemaShotLength,
+                       "OpenCinemaTitleOverlay": OpenCinemaTitleOverlay, "OpenCinemaShotStamp": OpenCinemaShotStamp,
+                       "OpenCinemaCards": OpenCinemaCards, "OpenCinemaTitlePreview": OpenCinemaTitlePreview,
+                       "OpenCinemaTypeSheet": OpenCinemaTypeSheet}
+NODE_DISPLAY_NAME_MAPPINGS = {"OpenCinemaShot": "Open Cinema Shot (camera direction)",
+                              "OpenCinemaShotLength": "Open Cinema Shot Length",
+                              "OpenCinemaTitleOverlay": "Open Cinema Title Overlay",
+                              "OpenCinemaShotStamp": "Open Cinema Shot Stamp",
+                              "OpenCinemaCards": "Open Cinema Cards (kinetic type)",
+                              "OpenCinemaTitlePreview": "Open Cinema Title Preview",
+                              "OpenCinemaTypeSheet": "Open Cinema Type Sheet (title reference)"}

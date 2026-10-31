@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Cinema Studio</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23111'/><circle cx='16' cy='16' r='8' fill='none' stroke='%23f5b83d' stroke-width='3'/><circle cx='16' cy='16' r='2.5' fill='%23f5b83d'/></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="aperture"></span>OPEN&nbsp;CINEMA <small>studio</small></div>
+  <div class="project-picker">
+    <select id="projectSelect" aria-label="Project"></select>
+    <button id="newProject" class="ghost">+ New film</button>
+  </div>
+  <div class="status">
+    <span id="comfyStatus" class="dot" title="ComfyUI"></span><span id="comfyLabel">ComfyUI</span>
+    <button id="queueToggle" class="ghost">Queue <b id="queueCount">0</b></button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel settings">
+    <h2>The film</h2>
+    <label>Title<input id="title" placeholder="Untitled film"></label>
+    <label>World &amp; story
+      <textarea id="scene" rows="5" placeholder="Where and when are we? Who is in it? e.g. A storm-battered lighthouse on a black rock coast in 1920s Scotland. The keeper, a weathered woman in a yellow oilskin coat."></textarea>
+    </label>
+    <label>Continuity notes
+      <textarea id="continuity" rows="2" placeholder="Things that must never change, e.g. her lantern is always lit, red scarf"></textarea>
+    </label>
+    <div class="label">Look</div>
+    <div id="looks" class="chips"></div>
+    <div class="label">Aspect</div>
+    <div id="aspects" class="chips small"></div>
+    <label class="check"><input type="checkbox" id="finish"> Film finish <span class="hint">grain, soft vignette, crisp edges on the final cut</span></label>
+    <label>Lead character
+      <textarea id="cast" rows="3" placeholder="Who carries the film? e.g. a wiry courier in her twenties, silver bob haircut, scar through left eyebrow, red reflective jacket"></textarea>
+    </label>
+    <div class="cast-row">
+      <div class="label">Cast reference</div>
+      <button id="castBtn" class="ghost tiny" type="button">Cast from description</button>
+    </div>
+    <label class="dropzone" id="refDrop">
+      <input type="file" id="refInput" accept="image/*" hidden>
+      <img id="refImg" alt="">
+      <span id="refText">Drop a photo of your lead, or cast one from the description. Every shot keeps this face.</span>
+    </label>
+  </aside>
+
+  <section class="board">
+    <div class="board-head">
+      <div>
+        <h2>Shot list</h2>
+        <p class="sub">Each shot gets a keyframe (HiDream-O1), coverage of the same cast and set (Qwen-Image-Edit-2511) and motion with sound (LTX 2.5).</p>
+      </div>
+      <div class="actions">
+        <button id="addShot" class="ghost">+ Shot</button>
+        <button id="renderFilm" class="primary">Render film</button>
+      </div>
+    </div>
+    <ol id="shots" class="shots"></ol>
+  </section>
+</main>
+
+<footer class="cutroom">
+  <div class="timeline" id="timeline"></div>
+  <div class="player-row">
+    <video id="film" controls playsinline></video>
+    <div class="film-meta">
+      <h3 id="filmTitle">Final cut</h3>
+      <p id="filmInfo" class="sub">Render the shots, then the final cut is stitched with every shot's audio.</p>
+      <div class="actions">
+        <button id="stitch" class="ghost">Re-stitch</button>
+        <a id="download" class="button ghost" download hidden>Download .mp4</a>
+        <button id="master" class="ghost" hidden>Master in 1080p</button>
+        <a id="downloadMaster" class="button primary" download hidden>Download 1080p master</a>
+      </div>
+    </div>
+  </div>
+
+  <section class="motion" aria-label="Titles and motion">
+    <div class="motion-head">
+      <div>
+        <h2>Titles &amp; Motion</h2>
+        <p class="sub">Kinetic type that takes on the film's look. Re-cut the film to apply.</p>
+      </div>
+      <div class="motion-preview">
+        <div class="swatches" id="lookSwatches" title="Palette from the film's look"></div>
+        <button id="mPreview" class="ghost tiny" type="button">Preview title</button>
+      </div>
+    </div>
+    <div class="motion-grid">
+      <article class="mcard" data-part="title">
+        <label class="switch"><input type="checkbox" id="mTitle"><span></span>Main title</label>
+        <div class="seg small" role="group" aria-label="Title style">
+          <button type="button" data-style="kinetic">Kinetic</button><button type="button" data-style="inworld">In-world (AI)</button>
+        </div>
+        <div class="title-kinetic">
+          <p class="hint">Slams in over the opening shot with the glowing line.</p>
+          <input id="mSubtitle" placeholder="Subtitle (typed under the title)">
+        </div>
+        <div class="title-inworld" hidden>
+          <p class="hint">The title becomes part of the world in the film's establishing frame, then comes alive.</p>
+          <input id="mMaterial" placeholder="Material">
+          <div class="inworld-media"><img id="titleFrame" alt="" hidden><video id="titleShot" muted loop playsinline hidden></video></div>
+          <div class="takes" id="titleTakes"></div>
+          <div class="inworld-actions">
+            <button id="makeTitle" class="ghost tiny" type="button">Make in-world title</button>
+            <button id="rerollTitleMotion" class="ghost tiny" type="button" hidden>New motion</button>
+          </div>
+        </div>
+      </article>
+      <article class="mcard" data-part="stamps">
+        <label class="switch"><input type="checkbox" id="mStamps"><span></span>Shot stamps</label>
+        <p class="hint">A HUD slate on every shot after the first.</p>
+        <code class="stamp-sample" id="stampSample">SHOT 03 · LOW ANGLE · <mark>TILT UP</mark></code>
+      </article>
+      <article class="mcard" data-part="credits">
+        <label class="switch"><input type="checkbox" id="mCredits"><span></span>End credits</label>
+        <p class="hint">One card per line &middot; <code>LABEL | TEXT</code> &middot; scored with the last shot's sound.</p>
+        <textarea id="mCreditsLines" rows="3"></textarea>
+      </article>
+      <article class="mcard trailer" data-part="trailer">
+        <div class="mcard-title">Trailer cut</div>
+        <p class="hint">Type cards between shots; every cut lands on a sound hit in the film's audio.</p>
+        <textarea id="mTrailerLines" rows="3"></textarea>
+        <button id="cutTrailer" class="primary" type="button">Cut trailer</button>
+      </article>
+    </div>
+    <div class="trailer-row" id="trailerRow" hidden>
+      <img id="mPreviewImg" alt="Title preview" hidden>
+      <video id="trailer" controls playsinline hidden></video>
+      <a id="downloadTrailer" class="button ghost" download hidden>Download trailer</a>
+    </div>
+  </section>
+</footer>
+
+<aside id="queue" class="queue" hidden>
+  <div class="queue-head"><h3>Render queue</h3><button id="cancelAll" class="ghost danger">Cancel</button></div>
+  <ul id="jobs"></ul>
+</aside>
+
+<template id="shotTpl">
+  <li class="shot">
+    <div class="num"></div>
+    <div class="media">
+      <div class="frame"><img alt=""><video muted loop playsinline></video><div class="empty">No keyframe yet</div><div class="busy"></div></div>
+      <div class="media-actions">
+        <button data-act="keyframe" class="ghost tiny">New keyframe</button>
+        <label class="ghost tiny button">Upload<input type="file" accept="image/*" hidden data-act="upload"></label>
+        <button data-act="video" class="ghost tiny">Render shot</button>
+      </div>
+      <div class="takes"></div>
+    </div>
+    <div class="fields">
+      <textarea data-k="action" rows="3" placeholder="What happens in this shot?"></textarea>
+      <div class="row">
+        <label>Size<select data-k="shot_size"></select></label>
+        <label>Camera<select data-k="camera_move"></select></label>
+        <div class="cam-preview" title="Camera move preview"><div class="cam-scene"><span></span></div></div>
+      </div>
+      <div class="row">
+        <label class="grow">Sound<input data-k="sound" placeholder="e.g. waves, wind, lantern creaks"></label>
+        <label class="secs">Secs<input data-k="seconds" type="number" min="2" max="10" step="1"></label>
+        <label class="check lead" title="Off for landscape or object shots without the lead"><input type="checkbox" data-k="lead"> Lead</label>
+      </div>
+      <div class="row between">
+        <div class="seg" role="group" aria-label="Transition in">
+          <button data-tr="cut">Cut to</button><button data-tr="dissolve">Dissolve</button><button data-tr="continue">Continue (one take)</button>
+        </div>
+        <div class="tools">
+          <button data-act="up" class="icon" title="Move up">&#8593;</button>
+          <button data-act="down" class="icon" title="Move down">&#8595;</button>
+          <button data-act="dup" class="icon" title="Duplicate">&#10697;</button>
+          <button data-act="del" class="icon danger" title="Delete">&#10005;</button>
+        </div>
+      </div>
+    </div>
+  </li>
+</template>
+<script src="/static/app.js"></script>
+</body>
+</html>

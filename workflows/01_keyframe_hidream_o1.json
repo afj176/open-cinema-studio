@@ -1,0 +1,134 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "hidream_o1_image_fp8_scaled.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "ModelNoiseScale",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "noise_scale": 8.0
+    }
+  },
+  "3": {
+    "class_type": "HiDreamO1PatchSeamSmoothing",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "start_percent": 0.8,
+      "end_percent": 1.0,
+      "pattern": "single_shift",
+      "passes": "ramp_2_4",
+      "blend": "median",
+      "strength": 1.0
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "1",
+        1
+      ],
+      "text": "extreme wide shot, the subject small in a vast environment. She stands alone on the wet rocks as waves explode behind her. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. A storm-battered lighthouse on a black rock coast at dusk. The keeper is a woman in a yellow oilskin coat carrying a brass storm lantern. shot on 35mm anamorphic lenses, oval bokeh, horizontal lens flares, teal and orange grade, high contrast. Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, real locations and people, no text or lettering in focus."
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "1",
+        1
+      ],
+      "text": "illustration, painting, cartoon, anime, 3d render, CGI, video game, oversaturated, HDR, low quality, blurry, deformed, extra limbs, extra fingers, plastic skin, readable text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, film crew, lighting equipment"
+    }
+  },
+  "6": {
+    "class_type": "EmptyHiDreamO1LatentImage",
+    "inputs": {
+      "width": 2560,
+      "height": 1440,
+      "batch_size": 1
+    }
+  },
+  "7": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "scheduler": "normal",
+      "steps": 40,
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "dpmpp_2m_sde_gpu"
+    }
+  },
+  "9": {
+    "class_type": "SamplerCustom",
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "add_noise": true,
+      "noise_seed": 101,
+      "cfg": 5.0,
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "sampler": [
+        "8",
+        0
+      ],
+      "sigmas": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "9",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "11": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "10",
+        0
+      ],
+      "filename_prefix": "open-cinema/keyframe"
+    }
+  }
+}
