@@ -311,6 +311,24 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
     return graph
 
 
+def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str, lead: str, continuity: str,
+                      shots: str, index: int = 1, count: int = 5, seed: int = 1) -> dict[str, Any]:
+    """Gemma 4 E4B writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
+    return {
+        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "2": node("OpenCinemaShotsBrief", mode=mode, count=count, index=index, title=title, logline=logline,
+                  world=world, look=look, lead=lead, continuity=continuity, shots=shots),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=110 * count if mode == "board" else 160,
+                  sampling_mode="on",
+                  **{"sampling_mode.temperature": 0.75, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
+                     "sampling_mode.min_p": 0.05, "sampling_mode.repetition_penalty": 1.05,
+                     "sampling_mode.seed": seed}),
+        "4": node("OpenCinemaParseShots", text=["3", 0]),
+        "shots": node("PreviewAny", source=["4", 0]),
+        "storyboard": node("PreviewAny", source=["4", 1]),
+    }
+
+
 def story_writer_graph(target: str, idea: str, title: str, logline: str, world: str, look: str, lead: str,
                        seed: int = 1) -> dict[str, Any]:
     """Gemma 4 E4B develops the story page (or one field of it) through ComfyUI's native TextGenerate."""

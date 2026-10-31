@@ -143,7 +143,12 @@
   <section class="stage" id="shots" hidden>
     <div class="stage-head">
       <div><p class="eyebrow">Storyboard</p><h1 class="serif" id="shotsHeading">Shots</h1></div>
-      <div class="row-actions"><button id="addShot" class="ghost">+ Add shot</button></div>
+      <div class="row-actions">
+        <button id="shotsUndo" class="link" type="button" hidden>Undo</button>
+        <span class="write-shots" title="Gemma 4 E4B plans the film shot by shot from the story: action, framing, camera move, length and sound">
+          <button id="writeShots" class="ai" type="button">✨ Write shots</button><select id="shotCount" aria-label="How many shots">
+          <option value="3">3</option><option value="4">4</option><option value="5" selected>5</option><option value="6">6</option><option value="8">8</option></select></span>
+        <button id="addShot" class="ghost">+ Add shot</button></div>
     </div>
     <div class="shots-layout">
       <div id="board" class="board"></div>
@@ -238,7 +243,7 @@
   </section>
 </main>
 
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" hidden><span></span><button class="link" type="button" hidden></button></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

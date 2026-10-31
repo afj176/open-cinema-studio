@@ -969,6 +969,56 @@ class Studio:
         if recast:  # the page is complete only with the lead's face; never replaces an uploaded photo
             self.enqueue("cast", job["project"], None, "Casting the new lead")
 
+    # ---------- AI shot writer ----------
+    def _run_write_shots(self, job: dict[str, Any], tick) -> None:
+        """Gemma 4 E4B writes the storyboard ("board"), the shot after the last ("next") or one shot again
+        ("rewrite"). Shots that already have a frame or a video are never replaced."""
+        project = self.load(job["project"])
+        mode, count = job.get("mode", "board"), int(job.get("count", 5))
+        shots = project["shots"]
+        index = next((n for n, s in enumerate(shots) if s["id"] == job.get("shot")), len(shots) - 1)
+        made = [s for s in shots if s.get("keyframe") or s.get("video") or (s.get("takes") or {}).get("keyframe")]
+        blank = [s for s in shots if s not in made and not s.get("action", "").strip()]
+        # the board replaces blank shots; it follows any shot you have written or rendered
+        context = [s for s in shots if s not in blank] if mode == "board" else shots
+        graph = graphs.shot_writer_graph(mode, project["title"], project.get("logline", ""), project["scene"],
+                                         project["look"], project.get("cast", ""), project.get("continuity", ""),
+                                         director.shot_list_text(context), index + 1, count,
+                                         seed=random.randrange(1, 2**31))
+        record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
+        written = json.loads("".join(record["outputs"].get("shots", {}).get("text", ["[]"])) or "[]")
+        if not written:
+            raise RuntimeError("The writer returned no shots; try again")
+        with self.lock:
+            fresh = self.load(job["project"])
+            fresh["shots_history"] = (fresh.get("shots_history") or [])[-9:] + [copy.deepcopy(fresh["shots"])]
+            if mode == "rewrite":
+                target = self._shot(fresh, job["shot"])
+                keep = {"transition": target["transition"]} if index == 0 else {}
+                target.update({k: v for k, v in written[0].items() if k in director.SHOT_FIELDS}, **keep)
+            elif mode == "next":
+                fresh["shots"].append(new_shot(takes={"keyframe": [], "video": []}, **written[0]))
+            else:
+                ids = {s["id"] for s in blank}
+                kept = [s for s in fresh["shots"] if s["id"] not in ids]
+                fresh["shots"] = kept + [new_shot(takes={"keyframe": [], "video": []}, **w) for w in written[:count]]
+            fresh["shots"][0]["transition"] = "cut"
+            self.save(fresh)
+
+    def undo_shots(self, project_id: str) -> dict[str, Any]:
+        """Put the storyboard back as it was before the last AI write (media made since is kept on its shot)."""
+        with self.lock:
+            project = self.load(project_id)
+            if project.get("shots_history"):
+                current = {s["id"]: s for s in project["shots"]}
+                previous = project["shots_history"].pop()
+                for shot in previous:
+                    if shot["id"] in current:
+                        for key in ("keyframe", "video", "takes"):
+                            shot[key] = current[shot["id"]].get(key, shot.get(key))
+                project["shots"] = previous
+            return self.save(project)
+
     def _run_motion_preview(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
         files = self.comfy.run(graphs.title_preview_graph(project["title"], project["look"],

@@ -1,0 +1,73 @@
+{
+  "1": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    }
+  },
+  "2": {
+    "class_type": "OpenCinemaShotsBrief",
+    "inputs": {
+      "mode": "board",
+      "count": 5,
+      "index": 1,
+      "title": "Glass Eye",
+      "logline": "In a sun-drenched glass city, a young artisan must craft a vision-lens capable of perceiving the invisible currents of the desert wind.",
+      "world": "The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.",
+      "look": "Golden hour",
+      "lead": "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.",
+      "continuity": "Thin build, indigo linen, dark braids, glowing crucible",
+      "shots": ""
+    }
+  },
+  "3": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "2",
+        0
+      ],
+      "max_length": 550,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.75,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 7
+    }
+  },
+  "4": {
+    "class_type": "OpenCinemaParseShots",
+    "inputs": {
+      "text": [
+        "3",
+        0
+      ]
+    }
+  },
+  "shots": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        0
+      ]
+    }
+  },
+  "storyboard": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        1
+      ]
+    }
+  }
+}

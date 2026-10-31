@@ -77,6 +77,9 @@ examples["09_inworld_title_frame.json"] = graphs.title_frame_graph(
     director.title_frame_prompt("The Colossus Pass", director.TITLE_MATERIALS["70mm epic"]), 909,
     "oc_world_plate.jpg", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")
 examples["12_world_plate_people_check_gemma4.json"] = graphs.people_check_graph("oc_world_plate.jpg", director.PEOPLE_CHECK)
+examples["13_ai_shot_writer_gemma4.json"] = graphs.shot_writer_graph(
+    "board", "Glass Eye", "In a sun-drenched glass city, a young artisan must craft a vision-lens capable of perceiving "
+    "the invisible currents of the desert wind.", SCENE, LOOK, CAST, CONTINUITY, "", count=5, seed=7)
 
 # What each canvas should say: groups (title, colour role, node ids), node titles and a note.
 LEAD = ("The lead → Picture 2", "lead", ["16", "17"])
@@ -93,6 +96,13 @@ ANNOTATE = {
         note="## 2 · The world\nHiDream-O1 paints the film's world as an **empty location plate**: nobody is in "
              "it.\n\nIt goes in as **Picture 1** of every shot, so the only face any shot ever sees is the lead's "
              "(Picture 2). The studio checks the plate is empty with **12 · people check** and re-rolls if not."),
+    "13_ai_shot_writer_gemma4.json": dict(
+        titles={"2": "Shots brief (board · next · rewrite)", "3": "Gemma 4 E4B writes the shots",
+                "shots": "Shots (JSON for the studio)", "storyboard": "Storyboard"},
+        note="## 0b · The shots\nGemma 4 E4B plans the film shot by shot from the story: what the camera sees, the "
+             "shot size, the camera move, the length, the sound, and whether the lead is in it.\n\n**mode**: "
+             "*board* writes `count` shots; *next* writes the shot after the board in `shots`; *rewrite* writes shot "
+             "`index` again to flow between its neighbours. Sizes and moves are snapped to the studio's presets."),
     "12_world_plate_people_check_gemma4.json": dict(
         titles={"2": "World plate", "3": "Is anyone in it? (YES / NO)"},
         note="## 2b · People check\nGemma 4 E4B looks at the world plate and answers YES or NO. A plate with "

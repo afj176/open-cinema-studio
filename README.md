@@ -106,6 +106,7 @@ Why these models: on the Artificial Analysis leaderboards, HiDream-O1-Image is t
 ## Using it
 
 - **✨ Generate the whole story:** type a spark (or nothing) and Gemma 4 E4B writes the whole Story page: title, logline, world, a look with its own colour palette, the lead and continuity notes. Then it casts the lead's portrait. Each field also has its own ✨ (Title, Logline, World, Look & colours) that rewrites just that field so it stays consistent with the rest. **Undo AI change** reverts only what the AI touched. In ComfyUI, the *Open Cinema Story Brief* and *Open Cinema Parse Story* nodes wrap `TextGenerate` (workflow `11_ai_story_writer_gemma4.json`).
+- **✨ Write shots:** on the Shots page, Gemma 4 E4B plans the film as 3 to 8 shots from the story, each with its action, shot size, camera move, length, sound and whether the lead is in it. It replaces blank shots and adds after any you've written or rendered, never touching them. **✨ Next shot** (at the end of the board) writes the beat that follows, and **✨ Rewrite** (beside a shot's action) writes that one shot again to flow between its neighbours. Every write can be undone. In ComfyUI: *Open Cinema Shots Brief* and *Open Cinema Parse Shots* (workflow `13_ai_shot_writer_gemma4.json`).
 - **Look** sets the film's color and lens language. It goes into every keyframe and motion prompt. **Colours** let you tune the film's background, ink, accent and glow. They tint the studio and every title, card and HUD overlay. Picking a look brings back that look's colours.
 - **Lead character**: describe your lead, then press **Cast from description**, or let **Render film** cast them automatically. You can drop a photo instead. The portrait is the identity source of truth for every shot with the lead:
   - Gemma 4 E4B looks at the portrait and writes **what every shot is told about this face** (skin tone, face shape, eyes, hair, age). It's shown under the lead, and every frame and motion prompt carries it.
@@ -159,6 +160,7 @@ Regenerate with `python tools/export_workflows.py` while the studio's ComfyUI ru
 - `09_inworld_title_frame.json`: an in-world title built into a frame (input `oc_world_plate.jpg`), with the type sheet as Picture 2
 - `10_ai_lead_writer_gemma4.json`: Gemma 4 E4B writes a lead and continuity notes from a world (Lead Brief → TextGenerate → Parse Lead)
 - `11_ai_story_writer_gemma4.json`: Gemma 4 E4B writes a whole story page (title, logline, world, look, palette, lead, continuity) from a spark (Story Brief → TextGenerate → Parse Story)
+- `13_ai_shot_writer_gemma4.json`: Gemma 4 E4B writes the storyboard from the story: action, size, camera move, length, sound and lead per shot (Shots Brief → TextGenerate → Parse Shots)
 
 ## License
 

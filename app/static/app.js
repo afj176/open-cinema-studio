@@ -328,10 +328,52 @@ function renderBoard() {
     board.appendChild(card);
     paintCard(card, shot, i);
   });
-  const add = document.createElement("button");
-  add.className = "add-card"; add.type = "button"; add.textContent = "+ Add shot";
-  add.onclick = addShot;
-  board.appendChild(add);
+  const end = document.createElement("div");
+  end.className = "add-card";
+  end.innerHTML = `<button type="button" class="add-plain">+ Add shot</button>
+    <button type="button" class="ai" data-next title="Gemma writes the beat that follows the last shot">✨ Next shot</button>`;
+  $(".add-plain", end).onclick = addShot;
+  $("[data-next]", end).onclick = () => writeShots("next");
+  board.appendChild(end);
+  paintShotWriter();
+}
+
+function paintShotWriter() {  // the ✨ buttons, and placeholder cards while the writer works
+  const job = busyFor(j => j.kind === "write_shots");
+  const status = job ? (job.state === "running" ? `${job.label} · ${Math.round(job.elapsed || 0)}s` : `${job.label} · queued`) : "";
+  $("#writeShots").disabled = !!job;
+  $("#shotCount").disabled = !!job;
+  $("#writeShots").textContent = job?.mode === "board" ? `Writing… ${Math.round(job.elapsed || 0)}s` : "✨ Write shots";
+  $("#shotsUndo").hidden = !!job || !(project.shots_history || []).length;
+  $$("[data-next], [data-act='rewrite']").forEach(b => { b.disabled = !!job; });
+  const board = $("#board"), end = $(".add-card", board);
+  const blanks = project.shots.filter(s => !s.action?.trim() && !s.keyframe && !s.video && !(s.takes?.keyframe || []).length);
+  const ghosts = !job ? 0 : job.mode === "board" ? Number(job.count) : job.mode === "next" ? 1 : 0;
+  // the board replaces blank shots, so hide them while their replacements are written
+  $$(".card", board).forEach(c => { c.hidden = ghosts > 0 && job.mode === "board" && blanks.some(s => s.id === c.dataset.id); });
+  $$(".card.ghost", board).forEach((g, n) => { if (n >= ghosts) g.remove(); });
+  for (let n = $$(".card.ghost", board).length; n < ghosts; n++) {
+    const g = document.createElement("article");
+    g.className = "card ghost";
+    g.innerHTML = `<div class="media"><div class="empty"></div></div><div class="meta"><p class="line"></p><p class="line short"></p></div>`;
+    board.insertBefore(g, end);
+  }
+  $$(".card.ghost .empty", board).forEach((e, n) => { e.textContent = n === 0 ? status : ""; });
+  const ins = $("#inspector"), rewriting = job?.mode === "rewrite" && job.shot === selected;
+  $(".ins-action", ins)?.classList.toggle("writing", !!rewriting);
+  if ($(".ins-action", ins)) $(".ins-action", ins).dataset.status = rewriting ? status : "";
+}
+
+async function writeShots(mode, shot) {
+  await flush();
+  await post(`/api/projects/${project.id}/write-shots`, { mode, shot: shot?.id, count: Number($("#shotCount").value) });
+  poll();
+}
+
+async function undoShots() {
+  await flush();
+  mergeServer(await post(`/api/projects/${project.id}/undo-shots`), true);
+  toast("Shots restored");
 }
 
 function paintCard(card, shot, i) {
@@ -373,6 +415,7 @@ function paintShotsHeading() {
 
 function paintBoard() {
   paintShotsHeading();
+  paintShotWriter();
   $$(".card", $("#board")).forEach(card => {
     const i = shotIndex(card.dataset.id);
     if (i >= 0) paintCard(card, project.shots[i], i);
@@ -399,7 +442,9 @@ function renderInspector() {
       <button class="ghost small danger" data-act="del" ${project.shots.length < 2 ? 'disabled title="A film needs at least one shot"' : 'title="Delete"'}>Delete</button></div></div>
     <div class="ins-media"></div>
     <div class="strips"></div>
-    <label>What happens<textarea class="grow" data-k="action" rows="3" placeholder="Describe the action, as you'd see it">${escapeHtml(shot.action)}</textarea></label>
+    <div class="ai-field ins-action"><div class="field-head"><span>What happens</span>
+      <button type="button" class="ai small" data-act="rewrite" title="Gemma rewrites this shot to flow from the one before into the one after">✨ ${shot.action?.trim() ? "Rewrite" : "Write"}</button></div>
+      <textarea class="grow" data-k="action" rows="3" placeholder="Describe the action, as you'd see it" aria-label="What happens">${escapeHtml(shot.action)}</textarea></div>
     <div class="cam-field"><label>Camera move<select data-k="camera_move">${opts(presets.camera_moves, shot.camera_move)}</select></label>
       <div class="cam-preview" title="Camera move preview"><div class="cam-scene"><span></span></div></div></div>
     <div class="field-row"><label>Shot size<select data-k="shot_size">${opts(presets.shot_sizes, shot.shot_size)}</select></label>
@@ -446,10 +491,17 @@ function renderInspector() {
     project.shots.splice(i + 1, 0, { ...shot, id: undefined, keyframe: null, video: null, takes: undefined, seed: undefined });
     save(true).then(() => select(project.shots[i + 1].id));
   };
-  $('[data-act="del"]', ins).onclick = () => {
-    if (project.shots.length > 1 && confirm(`Delete shot ${i + 1}?`)) {
-      project.shots.splice(i, 1); selected = project.shots[Math.max(0, i - 1)].id; save(true);
+  $('[data-act="rewrite"]', ins).onclick = () => writeShots("rewrite", shot);
+  const del = $('[data-act="del"]', ins);  // no confirm(): embedded browsers silently answer "no"
+  del.onclick = () => {
+    if (project.shots.length < 2) return;
+    if (!del.classList.contains("armed")) {
+      del.classList.add("armed"); del.textContent = `Delete shot ${i + 1}?`;
+      setTimeout(() => { del.classList.remove("armed"); del.textContent = "Delete"; }, 3000);
+      return;
     }
+    project.shots.splice(i, 1); selected = project.shots[Math.max(0, i - 1)].id; save(true);
+    toast(`Shot ${i + 1} deleted`);
   };
   paintInspector();
 }
@@ -804,7 +856,13 @@ async function flush() { clearTimeout(saveTimer); mergeServer(await post(`/api/p
 
 function mergeServer(fresh, rerender) {
   const sameShots = fresh.shots.length === project.shots.length && fresh.shots.every((s, i) => !project.shots[i].id || s.id === project.shots[i].id);
-  if (rerender || !sameShots) {
+  const wrote = (fresh.shots_history || []).length > (project.shots_history || []).length;
+  if (rerender || !sameShots || wrote) {
+    if (wrote) {
+      const added = fresh.shots.find(s => !project.shots.some(p => p.id === s.id));
+      if (added) selected = added.id;
+      toast(added ? "Shots written by Gemma" : "Shot rewritten", "Undo", undoShots);
+    }
     project = fresh;
     if (shotIndex(selected) < 0) selected = project.shots[0]?.id || null;
     renderBoard(); renderInspector(); renderTimeline(); renderViewer(); renderEditPanel(); renderScreen(); renderHeader(); applyTheme();
@@ -842,9 +900,12 @@ function addShot() {
 }
 
 let toastTimer;
-function toast(text) {
-  const t = $("#toast"); t.textContent = text; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+function toast(text, actionLabel, action) {
+  const t = $("#toast"), b = $("button", t);
+  $("span", t).textContent = text; t.hidden = false;
+  b.hidden = !action; b.textContent = actionLabel || "";
+  b.onclick = () => { t.hidden = true; action(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, action ? 6000 : 2600);
 }
 
 let lastSignature = "";
@@ -896,6 +957,8 @@ drop.ondragover = e => { e.preventDefault(); drop.classList.add("drag"); };
 drop.ondragleave = () => drop.classList.remove("drag");
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove("drag"); uploadReference(e.dataTransfer.files[0]); };
 $("#addShot").onclick = addShot;
+$("#writeShots").onclick = () => writeShots("board");
+$("#shotsUndo").onclick = undoShots;
 $("#aiLead").onclick = () => writeLead((project.cast || "").trim() ? "refine" : "write");
 $("#aiPhoto").onclick = () => writeLead("from photo");
 $("#aiContinuity").onclick = () => writeLead("continuity");

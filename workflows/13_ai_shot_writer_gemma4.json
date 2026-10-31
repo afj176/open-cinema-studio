@@ -1,0 +1,411 @@
+{
+ "last_node_id": 7,
+ "last_link_id": 5,
+ "nodes": [
+  {
+   "id": 7,
+   "type": "MarkdownNote",
+   "pos": [
+    60,
+    120
+   ],
+   "size": [
+    360,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "How this works",
+   "properties": {},
+   "widgets_values": [
+    "## 0b \u00b7 The shots\nGemma 4 E4B plans the film shot by shot from the story: what the camera sees, the shot size, the camera move, the length, the sound, and whether the lead is in it.\n\n**mode**: *board* writes `count` shots; *next* writes the shot after the board in `shots`; *rewrite* writes shot `index` again to flow between its neighbours. Sizes and moves are snapped to the studio's presets."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "OpenCinemaShotsBrief",
+   "pos": [
+    490,
+    160
+   ],
+   "size": [
+    300,
+    310
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Shots brief (board \u00b7 next \u00b7 rewrite)",
+   "properties": {
+    "Node name for S&R": "OpenCinemaShotsBrief"
+   },
+   "widgets_values": [
+    "board",
+    5,
+    1,
+    "Glass Eye",
+    "In a sun-drenched glass city, a young artisan must craft a vision-lens capable of perceiving the invisible currents of the desert wind.",
+    "The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.",
+    "Golden hour",
+    "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.",
+    "Thin build, indigo linen, dark braids, glowing crucible",
+    ""
+   ]
+  },
+  {
+   "id": 4,
+   "type": "OpenCinemaParseShots",
+   "pos": [
+    490,
+    510
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 3,
+     "widget": {
+      "name": "text"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "shots_json",
+     "type": "STRING",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "storyboard",
+     "type": "STRING",
+     "links": [
+      5
+     ],
+     "slot_index": 1
+    }
+   ],
+   "title": "Open Cinema Parse Shots",
+   "properties": {
+    "Node name for S&R": "OpenCinemaParseShots"
+   },
+   "widgets_values": [
+    ""
+   ]
+  },
+  {
+   "id": 1,
+   "type": "CLIPLoader",
+   "pos": [
+    900,
+    160
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Load CLIP",
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "gemma4_e4b_it_fp8_scaled.safetensors",
+    "stable_diffusion",
+    "default"
+   ]
+  },
+  {
+   "id": 3,
+   "type": "TextGenerate",
+   "pos": [
+    1310,
+    160
+   ],
+   "size": [
+    300,
+    550
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 1
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 2,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Gemma 4 E4B writes the shots",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    550,
+    "on",
+    0.75,
+    64,
+    0.95,
+    0.05,
+    1.05,
+    7,
+    0.0,
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
+   "id": 5,
+   "type": "PreviewAny",
+   "pos": [
+    1720,
+    160
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Shots (JSON for the studio)",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
+  },
+  {
+   "id": 6,
+   "type": "PreviewAny",
+   "pos": [
+    1720,
+    294
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Storyboard",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "CLIP"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "STRING"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "STRING"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   0,
+   "STRING"
+  ],
+  [
+   5,
+   4,
+   1,
+   6,
+   0,
+   "STRING"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Open Cinema",
+   "bounding": [
+    470,
+    100,
+    340,
+    572
+   ],
+   "color": "#b06634",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Models",
+   "bounding": [
+    880,
+    100,
+    340,
+    222
+   ],
+   "color": "#444444",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Prompt",
+   "bounding": [
+    1290,
+    100,
+    340,
+    630
+   ],
+   "color": "#8a6d3b",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    1700,
+    100,
+    340,
+    308
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
+}

@@ -270,6 +270,55 @@ class OpenCinemaParseStory:
         return tuple(fields.get(k, "") for k in self.RETURN_NAMES)
 
 
+class OpenCinemaShotsBrief:
+    """Writes the instruction for an LLM to plan the storyboard: the whole sequence ("board"), the shot that
+    comes next ("next"), or one shot again ("rewrite"). `shots` is the board so far, one numbered shot per line."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from .director import SHOT_MODES
+        return {"required": {"mode": (list(SHOT_MODES), {"default": "board"}),
+                             "count": ("INT", {"default": 5, "min": 2, "max": 8}),
+                             "index": ("INT", {"default": 1, "min": 1, "max": 99})},
+                "optional": {"title": ("STRING", {"default": ""}), "logline": ("STRING", {"default": ""}),
+                             "world": ("STRING", {"multiline": True, "default": ""}),
+                             "look": ("STRING", {"default": ""}),
+                             "lead": ("STRING", {"multiline": True, "default": ""}),
+                             "continuity": ("STRING", {"default": ""}),
+                             "shots": ("STRING", {"multiline": True, "default": ""})}}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "build"
+    CATEGORY = "Open Cinema"
+
+    def build(self, mode, count, index, title="", logline="", world="", look="", lead="", continuity="", shots=""):
+        from .director import shot_brief
+        return (shot_brief(mode, title, logline, world, look, lead, continuity, shots, index, count),)
+
+
+class OpenCinemaParseShots:
+    """Splits the LLM's reply into shots: JSON for the studio, and a readable storyboard."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"text": ("STRING", {"forceInput": True})}}
+
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("shots_json", "storyboard")
+    FUNCTION = "parse"
+    CATEGORY = "Open Cinema"
+
+    def parse(self, text):
+        import json
+        from .director import parse_shots
+        shots = parse_shots(text)
+        board = "\n\n".join(f"{n + 1}. {s['shot_size']} · {s['camera_move']} · {s['seconds']:g}s"
+                             f"{'' if s['lead'] else ' · no lead'}{' · one take' if s['transition'] == 'continue' else ''}"
+                             f"\n{s['action']}\nSound: {s['sound']}" for n, s in enumerate(shots))
+        return (json.dumps(shots), board)
+
+
 class OpenCinemaParseLead:
     """Splits the LLM's reply into the lead description and the continuity notes."""
 
@@ -290,6 +339,7 @@ class OpenCinemaParseLead:
 NODE_CLASS_MAPPINGS = {"OpenCinemaShot": OpenCinemaShot, "OpenCinemaShotLength": OpenCinemaShotLength,
                        "OpenCinemaLeadBrief": OpenCinemaLeadBrief, "OpenCinemaParseLead": OpenCinemaParseLead,
                        "OpenCinemaStoryBrief": OpenCinemaStoryBrief, "OpenCinemaParseStory": OpenCinemaParseStory,
+                       "OpenCinemaShotsBrief": OpenCinemaShotsBrief, "OpenCinemaParseShots": OpenCinemaParseShots,
                        "OpenCinemaTitleOverlay": OpenCinemaTitleOverlay, "OpenCinemaShotStamp": OpenCinemaShotStamp,
                        "OpenCinemaCards": OpenCinemaCards, "OpenCinemaTitlePreview": OpenCinemaTitlePreview,
                        "OpenCinemaTypeSheet": OpenCinemaTypeSheet}
@@ -299,6 +349,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {"OpenCinemaShot": "Open Cinema Shot (camera direct
                               "OpenCinemaParseLead": "Open Cinema Parse Lead",
                               "OpenCinemaStoryBrief": "Open Cinema Story Brief (for an LLM)",
                               "OpenCinemaParseStory": "Open Cinema Parse Story",
+                              "OpenCinemaShotsBrief": "Open Cinema Shots Brief (for an LLM)",
+                              "OpenCinemaParseShots": "Open Cinema Parse Shots",
                               "OpenCinemaTitleOverlay": "Open Cinema Title Overlay",
                               "OpenCinemaShotStamp": "Open Cinema Shot Stamp",
                               "OpenCinemaCards": "Open Cinema Cards (kinetic type)",

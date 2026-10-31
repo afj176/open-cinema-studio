@@ -150,6 +150,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.choose_world(m.group(1), name))
             if m := re.fullmatch(r"/api/projects/(\w+)/describe-lead", route):
                 return self._json(studio.enqueue("describe_lead", m.group(1), None, "Describing the lead's face"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/write-shots", route):
+                options = json.loads(self._body() or b"{}")
+                mode = options.get("mode", "board")
+                if mode not in director.SHOT_MODES:
+                    return self._json({"error": f"unknown mode {mode}"}, 400)
+                project = studio.load(m.group(1))
+                shot = options.get("shot")
+                number = next((i + 1 for i, s in enumerate(project["shots"]) if s["id"] == shot), 0)
+                label = {"board": "Writing the shots", "next": "Writing the next shot",
+                         "rewrite": f"Rewriting shot {number}"}[mode]
+                return self._json(studio.enqueue("write_shots", m.group(1), shot if mode == "rewrite" else None, label,
+                                                 mode=mode, count=max(2, min(8, int(options.get("count", 5))))))
+            if m := re.fullmatch(r"/api/projects/(\w+)/undo-shots", route):
+                return self._json(studio.undo_shots(m.group(1)))
             if m := re.fullmatch(r"/api/projects/(\w+)/write-story", route):
                 target = json.loads(self._body() or b"{}").get("target", "everything")
                 if target not in director.STORY_TARGETS:

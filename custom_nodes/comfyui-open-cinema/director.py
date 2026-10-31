@@ -349,6 +349,103 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
     return out
 
 
+# ---------------------------------------------------------------- AI shot writer
+SHOT_MODES = ("board", "next", "rewrite")
+SHOT_FIELDS = ("action", "shot_size", "camera_move", "seconds", "sound", "lead", "transition")
+
+
+def shot_line(shot: dict) -> str:
+    """One shot as the writer reads and writes it: action | size | move | seconds | sound | lead | transition."""
+    return " | ".join([str(shot.get("action", "")).replace("|", "/").strip() or "(empty)",
+                       shot.get("shot_size", "Wide"), shot.get("camera_move", "Static"),
+                       str(int(round(float(shot.get("seconds", 4) or 4)))), str(shot.get("sound", "")).replace("|", "/"),
+                       "yes" if shot.get("lead", True) is not False else "no",
+                       "continue" if shot.get("transition") == "continue" else "cut"])
+
+
+def shot_list_text(shots: list) -> str:
+    return "\n".join(f"{n + 1}. {shot_line(s)}" for n, s in enumerate(shots))
+
+
+def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", look: str = "", lead: str = "",
+               continuity: str = "", shots: str = "", index: int = 1, count: int = 5) -> str:
+    """Instruction for an open LLM (Gemma 4 E4B) to write the storyboard: the whole sequence, the next shot,
+    or one shot again. `shots` is the current board as numbered shot lines; `index` is 1-based."""
+    film = "\n".join(f"{k}: {v}" for k, v in (("Title", title), ("Logline", logline), ("World", world),
+                                                 ("Look", look), ("The lead", lead), ("Never changes", continuity))
+                     if v and v.strip())
+    fmt = ("SHOT: action | size | camera move | seconds | sound | lead | transition\n\n"
+           "action: one or two sentences of what the camera sees happen, present tense, concrete and physical: "
+           "what the lead does, what moves, what the light does. No dialogue, no thoughts, no names, no camera words.\n"
+           f"size: exactly one of: {', '.join(SHOT_SIZES)}\n"
+           f"camera move: exactly one of: {', '.join(CAMERA_MOVES)}\n"
+           "seconds: a whole number from 3 to 8\n"
+           "sound: what we hear, 4 to 12 words (ambience, effects, music); no dialogue\n"
+           "lead: yes if the lead is in the shot, no for a shot of only the place or an object\n"
+           "transition: cut, or continue only when the camera keeps rolling in one unbroken take from the shot before")
+    head = ("You are the director and storyboard artist of a short cinematic film made with AI. Every shot is one "
+            "moving image of a few seconds, generated from a still of the film's world and a photo of the lead, so "
+            "every shot happens in that world, with at most one person: the lead.\n\nTHE FILM\n" + (film or "(nothing yet)"))
+    board = f"\n\nTHE STORYBOARD SO FAR\n{shots}" if shots.strip() else ""
+    if mode == "next":
+        task = ("Write the ONE shot that comes next after the storyboard: the next beat of the story, with a "
+                "different size or camera move from the shot before so the cut feels deliberate.")
+        reply = "Reply with exactly one line and nothing else:\n"
+    elif mode == "rewrite":
+        task = (f"Rewrite shot {index} so it tells its beat better and flows from the shot before it into the shot "
+                f"after it. Keep its place in the story.")
+        reply = "Reply with exactly one line and nothing else:\n"
+    else:
+        count = max(2, min(8, int(count or 5)))
+        task = (f"Plan the film as a sequence of exactly {count} shots that tells the logline visually: open on the "
+                "world (a wide or aerial shot), introduce the lead, build to a striking moment with the lead's "
+                "signature prop, and end on a memorable final image. Vary the shot sizes and camera moves like a "
+                "great film editor: wide, then closer, then a detail; never the same size twice in a row." +
+                (" Replace the storyboard so far." if board else ""))
+        reply = f"Reply with exactly {count} lines, one per shot in order, and nothing else:\n"
+    return head + board + "\n\n" + task + "\n\n" + reply + fmt
+
+
+def _snap(value: str, options, fallback: str) -> str:
+    """The model's word for a size or move → the nearest preset."""
+    norm = lambda x: " ".join(x.lower().replace("-", " ").replace("shot", "").strip(" .").split())  # noqa: E731
+    v, keys = norm(value), list(options)
+    for k in keys:
+        if norm(k) == v:
+            return k
+    for k in sorted(keys, key=len, reverse=True):  # "medium close-up" before "medium"
+        if norm(k) in v:
+            return k
+    words = set(v.split())
+    best = max(keys, key=lambda k: len(words & set(norm(k).split())))
+    return best if words & set(norm(best).split()) else fallback
+
+
+def parse_shots(text: str) -> list[dict]:
+    """The writer's reply → shot dicts with known sizes and moves and a 2-10 s length. Tolerates missing
+    'SHOT:' labels, numbering, bullets and missing trailing fields."""
+    import re
+    shots = []
+    for raw in text.replace("**", "").splitlines():
+        line = re.sub(r"^\s*(?:[-*>]+\s*|#+\s+)?(?:shot\s*\d*\s*[:.)-]?|\d+\s*[.):-])\s*", "", raw, flags=re.I).strip()
+        parts = [x.strip().strip('"') for x in line.split("|")]
+        if len(parts) < 3 or len(parts[0]) < 8:
+            continue  # prose, headings or the format line echoed back
+        parts += [""] * (7 - len(parts))
+        if parts[0].lower().startswith("action"):
+            continue
+        try:
+            seconds = float(re.findall(r"\d+(?:\.\d+)?", parts[3])[0])
+        except IndexError:
+            seconds = 4.0
+        shots.append({"action": parts[0].rstrip(), "shot_size": _snap(parts[1], SHOT_SIZES, "Medium"),
+                      "camera_move": _snap(parts[2], CAMERA_MOVES, "Static"),
+                      "seconds": float(min(10, max(2, round(seconds)))), "sound": parts[4],
+                      "lead": not parts[5].lower().startswith("n"),
+                      "transition": "continue" if parts[6].lower().startswith("cont") else "cut"})
+    return shots
+
+
 def _join(*parts: str) -> str:
     return " ".join(part.strip().rstrip(".") + "." for part in parts if part and part.strip())
 
