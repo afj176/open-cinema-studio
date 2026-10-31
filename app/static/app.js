@@ -246,6 +246,7 @@ function renderMotionMedia() {
   }
   dl.href = media(project.trailer); dl.download = `${project.title} trailer.mp4`;
   row.hidden = !project.trailer && !project.motion_preview;
+  $("#newScore").hidden = !project.trailer_score;
   paintMotionCards();
 }
 
@@ -341,7 +342,7 @@ function mergeServer(fresh, rerender) {
   project.film = fresh.film; project.master = fresh.master; project.master_of = fresh.master_of;
   project.trailer = fresh.trailer; project.motion_preview = fresh.motion_preview;
   project.motion_defaults = fresh.motion_defaults;
-  project.title_shot = fresh.title_shot;
+  project.title_shot = fresh.title_shot; project.trailer_score = fresh.trailer_score;
   renderMotionMedia();
   renderTitleShot();
   if (project.reference !== fresh.reference) {
@@ -427,9 +428,11 @@ const queueTitle = frame => async () => {
 $("#makeTitle").onclick = queueTitle(true);
 $("#rerollTitleMotion").onclick = queueTitle(false);
 $("#mPreview").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/motion-preview`); poll(); };
-$("#cutTrailer").onclick = async () => {
-  await flush(); await post(`/api/projects/${project.id}/trailer`); $("#queue").hidden = false; poll();
+const cutTrailer = reroll => async () => {
+  await flush(); await post(`/api/projects/${project.id}/trailer`, { reroll }); $("#queue").hidden = false; poll();
 };
+$("#cutTrailer").onclick = cutTrailer(false);
+$("#newScore").onclick = cutTrailer(true);
 $("#master").onclick = async () => { await post(`/api/projects/${project.id}/master`); $("#queue").hidden = false; poll(); };
 $("#stitch").onclick =async () => { await post(`/api/projects/${project.id}/stitch`); poll(); };
 $("#queueToggle").onclick = () => { $("#queue").hidden = !$("#queue").hidden; };

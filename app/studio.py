@@ -55,23 +55,33 @@ def default_trailer(project: dict[str, Any]) -> str:
     return "\n".join(["Open Cinema presents", "A film in " + str(len(project["shots"])) + " shots"])
 
 
-def sound_hits(path: Path, lo: float, hi: float) -> float:
-    """Time of the strongest sound onset in [lo, hi] — where a trailer cut should land."""
+def onsets(path: Path, min_gap: float = 0.45) -> list[float]:
+    """Times of the clear hits in an audio track (energy jumps well above the recent level)."""
     pcm = subprocess.run([ffmpeg(), "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", "8000",
                           "-f", "s16le", "-"], capture_output=True, check=True).stdout
     samples = array.array("h")
     samples.frombytes(pcm[: len(pcm) // 2 * 2])
     window = 160  # 20 ms
     energy = [sum(x * x for x in samples[i:i + window]) / window for i in range(0, len(samples) - window, window)]
-    best, best_t = -1.0, lo
-    for i in range(6, len(energy)):
-        t = i * window / 8000
-        if not lo <= t <= hi:
-            continue
-        flux = energy[i] - sum(energy[i - 6:i]) / 6  # rise above the recent level
-        if flux > best:
-            best, best_t = flux, t
-    return best_t
+    flux = [max(0.0, energy[i] - sum(energy[max(0, i - 8):i]) / max(1, min(8, i))) for i in range(len(energy))]
+    if not flux:
+        return []
+    threshold = sorted(flux)[int(len(flux) * 0.9)] or 1.0
+    hits: list[float] = []
+    for i in range(1, len(flux) - 1):
+        if flux[i] >= threshold and flux[i] >= flux[i - 1] and flux[i] >= flux[i + 1]:
+            t = i * window / 8000
+            if not hits or t - hits[-1] >= min_gap:
+                hits.append(t)
+            elif flux[i] > flux[int(hits[-1] * 8000 / window)]:
+                hits[-1] = t
+    return hits
+
+
+def snap(target: float, hits: list[float], lo: float, hi: float) -> float:
+    """The hit nearest `target` inside [lo, hi], or `target` itself when the score has none there."""
+    near = [h for h in hits if lo <= h <= hi]
+    return min(near, key=lambda h: abs(h - target)) if near else target
 
 
 def new_shot(**fields: Any) -> dict[str, Any]:
@@ -275,9 +285,11 @@ class Studio:
         raise KeyError(f"shot {shot_id} not found")
 
     # ---------- jobs ----------
-    def enqueue(self, kind: str, project_id: str, shot_id: str | None = None, label: str = "") -> dict[str, Any]:
+    def enqueue(self, kind: str, project_id: str, shot_id: str | None = None, label: str = "",
+                **extra: Any) -> dict[str, Any]:
         job = {"id": uuid.uuid4().hex[:8], "kind": kind, "project": project_id, "shot": shot_id,
-               "label": label or kind, "state": "queued", "error": None, "elapsed": 0.0, "created": time.time()}
+               "label": label or kind, "state": "queued", "error": None, "elapsed": 0.0, "created": time.time(),
+               **extra}
         with self.lock:
             self.jobs.append(job)
             self.jobs = self.jobs[-200:]
@@ -675,48 +687,85 @@ class Studio:
             project["film"] = None
             self.save(project)
 
+    def _score(self, project: dict[str, Any], seconds: float, tick, reroll: bool = False) -> Path:
+        """The trailer's soundtrack: one continuous LTX render whose audio is the score (cached per take)."""
+        folder, unit = self.path(project["id"]), project.get("trailer_score") or {}
+        if unit.get("name") and not reroll and unit.get("seconds") == seconds and (folder / unit["name"]).is_file():
+            return folder / unit["name"]
+        # Start from the film's dark title card, not a scene: with no weather or crowd in frame, LTX scores music
+        # instead of ambience.
+        card = self.comfy.run(graphs.title_preview_graph(project["title"], project["look"],
+                                                         f"open-cinema/{project['id']}/score_card"), on_tick=tick)
+        start = f"score_card_{uuid.uuid4().hex[:6]}.png"
+        self.comfy.download(card[0], folder / start)
+        seed = (project["shots"][0]["seed"] + 7919 * (unit.get("takes", 0) + (1 if reroll else 0))) % 2**31
+        files = self.comfy.run(graphs.score_graph(self._upload(project["id"], start),
+                                                  director.score_prompt(project["look"], project["title"]), seed,
+                                                  seconds, f"open-cinema/{project['id']}/score"), on_tick=tick)
+        name = f"score_{uuid.uuid4().hex[:6]}.mp4"
+        self.comfy.download(files[0], folder / name)
+        with self.lock:
+            fresh = self.load(project["id"])
+            takes = (fresh.get("trailer_score") or {}).get("takes", 0) + 1
+            fresh["trailer_score"] = {"name": name, "seconds": seconds, "seed": seed, "takes": takes}
+            self.save(fresh)
+        return folder / name
+
     def _run_trailer(self, job: dict[str, Any], tick) -> None:
-        """Trailer cut: type cards between shots, every cut landing on a sound hit from the film's LTX audio."""
+        """Trailer cut: type cards between shots over one continuous LTX score, every cut landing on a hit."""
         project = self.load(job["project"])
         if not all(s.get("video") for s in project["shots"]):
             raise RuntimeError("Every shot needs a rendered video before cutting a trailer")
         folder, settings = self.path(project["id"]), motion_settings(project)
         _, _, width, height = graphs.ASPECTS[project["aspect"]]
         lines = [l.strip() for l in (settings["trailer"]["lines"] or default_trailer(project)).splitlines() if l.strip()]
-        card_len, clip_len, title_len = 0.9, 1.5, 2.4
-        shots = [folder / s["video"] for s in project["shots"]]
-        hits = [sound_hits(p, card_len, max(card_len, duration(p) - clip_len)) for p in shots]
+        card_len, clip_len, title_len = 0.9, 1.5, 2.6
+        plan: list[tuple[str, int, float]] = []  # (kind, index, length)
+        for k in range(len(project["shots"])):
+            if k < len(lines):
+                plan.append(("card", k, card_len))
+            plan.append(("shot", k, clip_len))
+        total = sum(length for _, _, length in plan) + title_len
+        job["label"] = "Trailer · composing the score"
+        score = self._score(project, round(total + 1.5), tick, reroll=bool(job.get("reroll")))
+        hits = onsets(score)
+        # lay the cut onto the score: each boundary snaps to the nearest hit around its planned time
+        bounds, t = [], 0.0
+        for _, _, length in plan:
+            t = snap(t + length, hits, t + length * 0.6, t + length * 1.5)
+            bounds.append(t)
+        end = min(duration(score) - 0.1, max(bounds[-1] + title_len, snap(bounds[-1] + title_len, hits,
+                                                                         bounds[-1] + 1.6, bounds[-1] + 3.4)))
+        job["label"] = "Trailer · cutting to the score"
         cards = self._cards(project, "\n".join(lines), width, height, card_len, tick, seed=21) if lines else None
-        title = self._cards(project, project["title"], width, height, title_len, tick, seed=33)
+        title = self._cards(project, project["title"], width, height, max(title_len, end - bounds[-1]), tick, seed=33)
+        shots = [folder / s["video"] for s in project["shots"]]
         inputs = [arg for p in shots for arg in ("-i", str(p))]
         c_in = len(shots)
         if cards:
             inputs += ["-i", str(cards)]
         t_in = c_in + (1 if cards else 0)
-        inputs += ["-i", str(title)]
+        inputs += ["-i", str(title), "-i", str(score)]
+        s_in = t_in + 1
         norm = "fps=24,format=yuv420p,settb=AVTB,setpts=PTS-STARTPTS"
-        anorm = lambda d: f"aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:d=0.02,afade=t=out:st={d - 0.03:.3f}:d=0.03"
-        parts, labels = [], []
-        for k, (hit, _) in enumerate(zip(hits, shots)):
-            if cards and k < len(lines):  # card, with this shot's sound leading in under it
-                parts.append(f"[{c_in}:v]trim=start={k * card_len:.3f}:duration={card_len},{norm}[cv{k}]")
-                parts.append(f"[{k}:a]atrim=start={hit - card_len:.3f}:duration={card_len},{anorm(card_len)}[ca{k}]")
-                labels.append(f"[cv{k}][ca{k}]")
-            parts.append(f"[{k}:v]trim=start={hit:.3f}:duration={clip_len},{norm}[sv{k}]")
-            parts.append(f"[{k}:a]atrim=start={hit:.3f}:duration={clip_len},{anorm(clip_len)}[sa{k}]")
-            labels.append(f"[sv{k}][sa{k}]")
-        last = len(shots) - 1
-        parts.append(f"[{t_in}:v]trim=duration={title_len},{norm}[tv]")
-        parts.append(f"[{last}:a]atrim=start={hits[last] + clip_len:.3f},aresample=48000,asetpts=PTS-STARTPTS,"
-                     f"aecho=0.8:0.6:200|420:0.5|0.3,apad,atrim=0:{title_len},"
-                     f"afade=t=out:st={title_len - 1.0:.3f}:d=1.0[ta]")
-        labels.append("[tv][ta]")
+        parts, labels, previous = [], [], 0.0
+        for (kind, k, _), bound in zip(plan, bounds):
+            length = bound - previous
+            if kind == "card":
+                parts.append(f"[{c_in}:v]trim=start={k * card_len:.3f}:duration={card_len},tpad=stop_mode=clone:"
+                             f"stop_duration=2,trim=duration={length:.3f},{norm}[p{len(labels)}]")
+            else:  # the middle of the shot, where its motion is
+                start = max(0.0, (duration(shots[k]) - length) / 2)
+                parts.append(f"[{k}:v]trim=start={start:.3f}:duration={length:.3f},{norm}[p{len(labels)}]")
+            labels.append(f"[p{len(labels)}]")
+            previous = bound
+        parts.append(f"[{t_in}:v]trim=duration={end - previous:.3f},{norm}[p{len(labels)}]")
+        labels.append(f"[p{len(labels)}]")
         finish = FILM_FINISH if project.get("finish") else "null"
-        parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=1:a=1[vc][ac]")
-        parts.append(f"[vc]{finish}[v]")
-        parts.append("[ac]loudnorm=I=-14:TP=-1.0:LRA=9,aresample=48000[a]")
+        parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=1:a=0,{finish}[v]")
+        parts.append(f"[{s_in}:a]aresample=48000,atrim=0:{end:.3f},asetpts=PTS-STARTPTS,"
+                     f"afade=t=out:st={max(0.0, end - 0.6):.3f}:d=0.6,loudnorm=I=-14:TP=-1.0:LRA=9,aresample=48000[a]")
         name = f"trailer_{uuid.uuid4().hex[:6]}.mp4"
-        job["label"] = "Trailer · cutting on sound hits"
         subprocess.run([ffmpeg(), "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(parts),
                         "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "17", "-preset", "medium",
                         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",

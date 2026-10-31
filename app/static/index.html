@@ -124,9 +124,12 @@
       </article>
       <article class="mcard trailer" data-part="trailer">
         <div class="mcard-title">Trailer cut</div>
-        <p class="hint">Type cards between shots; every cut lands on a sound hit in the film's audio.</p>
+        <p class="hint">Type cards between shots over a score composed by LTX; every cut lands on one of its hits.</p>
         <textarea id="mTrailerLines" rows="3"></textarea>
-        <button id="cutTrailer" class="primary" type="button">Cut trailer</button>
+        <div class="inworld-actions">
+          <button id="cutTrailer" class="primary" type="button">Cut trailer</button>
+          <button id="newScore" class="ghost tiny" type="button" hidden>New score</button>
+        </div>
       </article>
     </div>
     <div class="trailer-row" id="trailerRow" hidden>

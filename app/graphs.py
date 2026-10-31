@@ -117,9 +117,9 @@ def frames_for(seconds: float, fps: int) -> int:
 
 def shot_graph(start_image: str, prompt: str, seed: int, aspect: str, seconds: float, prefix: str,
                end_image: str | None = None, fps: int = 24, start_strength: float = 1.0,
-               end_strength: float = 1.0) -> dict[str, Any]:
+               end_strength: float = 1.0, size: tuple[int, int] | None = None) -> dict[str, Any]:
     """Image-to-video shot with synchronized audio, two-stage distilled LTX 2.5."""
-    _, _, width, height = ASPECTS[aspect]
+    width, height = size or ASPECTS[aspect][2:]
     frames = frames_for(seconds, fps)
     graph: dict[str, Any] = {
         "1": node("LoadImage", image=start_image),
@@ -267,3 +267,11 @@ def title_frame_graph(prompt: str, seed: int, frame: str, prefix: str, title: st
     for encoder in ("8", "10"):
         graph[encoder]["inputs"]["image2"] = ["16", 0]
     return graph
+
+
+SCORE_SIZE = (768, 448)  # the trailer score only needs LTX's audio, so the picture is rendered small
+
+
+def score_graph(start_image: str, prompt: str, seed: int, seconds: float, prefix: str) -> dict[str, Any]:
+    """A continuous LTX 2.5 soundtrack for the trailer: one long, small render whose audio is the score."""
+    return shot_graph(start_image, prompt, seed, "16:9", seconds, prefix, size=SCORE_SIZE)

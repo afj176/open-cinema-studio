@@ -27,7 +27,7 @@ Show the studio: the world, the lead character, the *70mm epic* look.
 > "Nothing gets overwritten. Every re-roll is a take you can pick from, like on set. SeedVR2 then masters each shot to 1080p and re-cuts the film."
 
 **2:15 – 2:35 · Titles & Motion.** Open the **Titles & Motion** panel. Switch the main title to **In-world (AI)** and show the title carved into the canyon, then toggle stamps and credits, press **Cut trailer** and play it.
-> "The title can be kinetic type in the film's look, or built into the world itself: here it's carved in stone by Qwen-Image-Edit, spelled right because our type sheet node hands it the exact lettering. The trailer cut puts tagline cards between shots, and every cut lands on a sound hit in the film's own audio."
+> "The title can be kinetic type in the film's look, or built into the world itself: here it's carved in stone by Qwen-Image-Edit, spelled right because our type sheet node hands it the exact lettering. For the trailer, LTX composes one continuous score, and every cut snaps to one of its hits."
 
 **2:35 – 2:45 · Close.** Play the beacon finale and credits of the 1080p master, then show the GitHub repo.
 > "Fork it, add camera moves, add looks. It's all open."

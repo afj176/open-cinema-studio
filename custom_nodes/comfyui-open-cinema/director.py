@@ -153,6 +153,36 @@ def title_motion_prompt(title: str, material: str, sound: str = "") -> str:
                  "Cinematic, awe-inspiring title shot, no cuts", sound and "Audio: " + sound)
 
 
+# Trailer score character per look; LTX composes it as the soundtrack of one continuous render.
+SCORE_STYLES: dict[str, str] = {
+    "Anamorphic blockbuster": "huge modern blockbuster trailer music with booming brass braams, hybrid synth pulses and "
+                              "pounding drums",
+    "70mm epic": "an epic orchestral trailer score with deep brass braams, thundering taiko drums, a choir and soaring "
+                 "strings",
+    "Noir": "a brooding jazz-noir trailer score with low double bass, muted trumpet, brushed drums and tension stabs",
+    "Neon cyberpunk": "a dark synthwave trailer score with pulsing bass, glitchy percussion and huge synth impacts",
+    "16mm indie": "an intimate indie trailer score with warm acoustic guitar, soft piano and a gentle build",
+    "Wes-style symmetry": "a whimsical trailer score with plucked strings, glockenspiel and a jaunty rhythm",
+    "Golden hour": "a hopeful, swelling trailer score with warm strings, piano and a rising choir",
+    "Horror": "a terrifying horror trailer score with dissonant strings, deep sub drops, heartbeat drums and sudden "
+              "screeching stingers",
+    "Documentary": "a restrained documentary trailer score with ambient piano and a steady pulse",
+    "Anime": "an energetic anime trailer score with driving drums, electric guitar and soaring strings",
+    "Claymation": "a playful trailer score with bouncy tuba, pizzicato strings and woodblock hits",
+    "None": "a hard-hitting modern trailer score with deep braams, risers and heavy impacts",
+}
+
+
+def score_prompt(look: str, title: str) -> str:
+    """LTX prompt for the trailer soundtrack. The picture (a title card) is throwaway; the audio is the point."""
+    music = SCORE_STYLES.get(look, SCORE_STYLES["None"])
+    return _join(f"A movie title card for \"{title}\" glows on a dark background; the camera slowly pushes in",
+                 f"Audio: {music}. A movie trailer soundtrack: it opens with a single deep boom, then a steady "
+                 "rhythm of heavy percussion hits about once per second, building in intensity with rising strings "
+                 "and brass, punctuated by huge cinematic impacts, ending on one massive final hit followed by "
+                 "silence. Studio-recorded instrumental music only: no ambience, no weather, no voices")
+
+
 def _join(*parts: str) -> str:
     return " ".join(part.strip().rstrip(".") + "." for part in parts if part and part.strip())
 

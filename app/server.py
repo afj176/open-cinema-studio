@@ -134,7 +134,10 @@ class Handler(BaseHTTPRequestHandler):
                 choice = json.loads(self._body() or b"{}")
                 return self._json(studio.choose_title_take(m.group(1), choice["kind"], choice["name"]))
             if m := re.fullmatch(r"/api/projects/(\w+)/trailer", route):
-                return self._json(studio.enqueue("trailer", m.group(1), None, "Trailer"))
+                options = json.loads(self._body() or b"{}")
+                job = studio.enqueue("trailer", m.group(1), None, "Trailer · new score" if options.get("reroll")
+                                     else "Trailer", reroll=bool(options.get("reroll")))
+                return self._json(job)
             if m := re.fullmatch(r"/api/projects/(\w+)/motion-preview", route):
                 return self._json(studio.enqueue("motion_preview", m.group(1), None, "Title preview"))
             if m := re.fullmatch(r"/api/projects/(\w+)/master", route):
