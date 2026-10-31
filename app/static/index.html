@@ -190,8 +190,9 @@
           <span class="hint">One card per line · <code>LABEL | TEXT</code></span>
         </div>
 
-        <div class="tm-block">
-          <div class="tm-title">Trailer</div>
+        <div class="tm-block ai-field" id="trailerField">
+          <div class="field-head"><span class="tm-title">Trailer</span>
+            <span class="ai-actions"><button id="trailerUndo" class="link" type="button" hidden>Undo</button><button class="ai small" data-ai="trailer" type="button">✨ Write cards</button></span></div>
           <textarea id="mTrailerLines" rows="3"></textarea>
           <div class="row-actions"><button id="cutTrailer" class="ghost small">Cut trailer</button><button id="newScore" class="ghost small" hidden>New score</button></div>
           <span class="hint">LTX composes the score; every cut lands on one of its hits.</span>

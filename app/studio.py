@@ -568,7 +568,7 @@ class Studio:
                 params = {"title": project["title"], "subtitle": settings["title"]["subtitle"], "look": look,
                           "start": 0.5, "hold": max(1.0, min(3.2, duration(clip) - 0.9)),
                           "palette": palette_string(project)}
-            elif index > 0 and settings["stamps"]["on"]:
+            elif settings["stamps"]["on"]:  # shot 1 too, unless the kinetic title is over it
                 move = shot["camera_move"].upper()
                 node_class = "OpenCinemaShotStamp"
                 params = {"text": f"SHOT {index + 1:02d} · {shot['shot_size'].upper()} · {move}",
@@ -741,19 +741,22 @@ class Studio:
         folder, settings = self.path(project["id"]), motion_settings(project)
         _, _, width, height = graphs.ASPECTS[project["aspect"]]
         lines = [l.strip() for l in (settings["trailer"]["lines"] or default_trailer(project)).splitlines() if l.strip()]
+        if lines and lines[-1].lower() == project["title"].strip().lower():
+            lines.pop()  # the title card closes the trailer anyway
         card_len, clip_len, title_len = 0.9, 1.5, 2.6
-        plan: list[tuple[str, int, float]] = []  # (kind, index, length)
-        for k in range(len(project["shots"])):
+        count = len(project["shots"])
+        plan: list[tuple[str, int, float, int]] = []  # (kind, index, length, repeat)
+        for k in range(max(count, len(lines))):  # every card gets a beat; shots come round again if needed
             if k < len(lines):
-                plan.append(("card", k, card_len))
-            plan.append(("shot", k, clip_len))
-        total = sum(length for _, _, length in plan) + title_len
+                plan.append(("card", k, card_len, 0))
+            plan.append(("shot", k % count, clip_len, k // count))
+        total = sum(entry[2] for entry in plan) + title_len
         job["label"] = "Trailer · composing the score"
         score = self._score(project, round(total + 1.5), tick, reroll=bool(job.get("reroll")))
         hits = onsets(score)
         # lay the cut onto the score: each boundary snaps to the nearest hit around its planned time
         bounds, t = [], 0.0
-        for _, _, length in plan:
+        for _, _, length, _ in plan:
             t = snap(t + length, hits, t + length * 0.6, t + length * 1.5)
             bounds.append(t)
         end = min(duration(score) - 0.1, max(bounds[-1] + title_len, snap(bounds[-1] + title_len, hits,
@@ -771,13 +774,13 @@ class Studio:
         s_in = t_in + 1
         norm = "fps=24,format=yuv420p,settb=AVTB,setpts=PTS-STARTPTS"
         parts, labels, previous = [], [], 0.0
-        for (kind, k, _), bound in zip(plan, bounds):
+        for (kind, k, _, repeat), bound in zip(plan, bounds):
             length = bound - previous
             if kind == "card":
                 parts.append(f"[{c_in}:v]trim=start={k * card_len:.3f}:duration={card_len},tpad=stop_mode=clone:"
                              f"stop_duration=2,trim=duration={length:.3f},{norm}[p{len(labels)}]")
-            else:  # the middle of the shot, where its motion is
-                start = max(0.0, (duration(shots[k]) - length) / 2)
+            else:  # the middle of the shot, where its motion is; a repeat shows another moment of it
+                start = max(0.0, (duration(shots[k]) - length) * (0.5, 0.12, 0.88, 0.3, 0.7)[repeat % 5])
                 parts.append(f"[{k}:v]trim=start={start:.3f}:duration={length:.3f},{norm}[p{len(labels)}]")
             labels.append(f"[p{len(labels)}]")
             previous = bound
@@ -852,15 +855,15 @@ class Studio:
                                           seed=random.randrange(1, 2**31))
         record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
         out = {k: "".join(record["outputs"].get(k, {}).get("text", [""])).strip()
-               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity")}
+               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")}
         wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity"),
                   "title": ("title",), "logline": ("logline",), "world": ("world",),
-                  "look": ("look", "palette")}[target]
+                  "look": ("look", "palette"), "trailer": ("trailer",)}[target]
         if not any(out[k] for k in wanted):
             raise RuntimeError("The writer returned nothing usable; try again")
         with self.lock:
             fresh = self.load(job["project"])
-            field = {"world": "scene", "lead": "cast"}
+            field = {"world": "scene", "lead": "cast", "trailer": "motion"}
             self._remember_story(fresh, tuple(field.get(k, k) for k in wanted) + (("palette",) if target == "look" else ()))
             for key in wanted:
                 value = out[key]
@@ -871,6 +874,10 @@ class Studio:
                     fresh["palette"] = {"bg": bg, "ink": ink, "accent": accent, "glow": glow}
                 elif key == "look":
                     fresh["look"] = value
+                elif key == "trailer":
+                    motion = fresh.setdefault("motion", {}) or {}
+                    motion.setdefault("trailer", {})["lines"] = value
+                    fresh["motion"] = motion
                 else:
                     fresh[field.get(key, key)] = value
             if target == "look" and not out["palette"]:

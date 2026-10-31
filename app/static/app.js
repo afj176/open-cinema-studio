@@ -212,9 +212,10 @@ function paintPortrait() {
 
 const STORY_TARGET_FIELDS = {
   everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField"],
-  title: ["titleField"], logline: ["loglineField"], world: ["worldField"], look: ["lookField"],
+  title: ["titleField"], logline: ["loglineField"], world: ["worldField"], look: ["lookField"], trailer: ["trailerField"],
 };
-const AI_FIELDS = ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField"];
+const AI_FIELDS = ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField",
+  "trailerField"];
 
 function paintLeadAI() {
   const job = busyFor(j => j.kind === "write_lead" || j.kind === "write_story");
@@ -233,6 +234,7 @@ function paintLeadAI() {
   $("#aiLead").title = (project.cast || "").trim() ? "Keep your details and make them camera-ready" : "Cast a lead who belongs in this world";
   $("#aiPhoto").hidden = !project.reference;
   $("#aiUndo").hidden = !(project.story_history || []).length;
+  $("#trailerUndo").hidden = !!job || !("motion" in ((project.story_history || []).at(-1) || {}));
 }
 
 async function writeStory(target) {
@@ -257,6 +259,9 @@ function adoptStory(fresh) {
     project[key] = fresh[key] || "";
     const el = $("#" + key); el.value = project[key]; if (el.tagName === "TEXTAREA") grow(el);
     flash(field);
+  }
+  if (JSON.stringify(project.motion || null) !== JSON.stringify(fresh.motion || null)) {
+    project.motion = fresh.motion; $("#mTrailerLines").value = motionState().trailer.lines; flash("trailerField");
   }
   const lookChanged = project.look !== fresh.look || JSON.stringify(project.palette || null) !== JSON.stringify(fresh.palette || null);
   project.look = fresh.look; project.palette = fresh.palette;
@@ -476,11 +481,14 @@ function renderViewer() {
   $("#viewerEmpty").hidden = !!src;
   const total = project.shots.reduce((s, x) => s + Number(x.seconds || 0), 0);
   const done = project.shots.filter(s => s.video).length;
-  $("#viewerInfo").textContent = src ? (view === "trailer" ? "Trailer · score composed by LTX" : `${project.shots.length} shots · about ${total}s`)
-    : `${done}/${project.shots.length} shots rendered`;
+  const length = v.duration > 0 && src ? `${Math.round(v.duration)}s` : `about ${total}s`;  // the cut adds titles and credits
+  $("#viewerInfo").textContent = src ? (view === "trailer" ? `Trailer · ${length} · score composed by LTX`
+    : `${project.shots.length} shot${project.shots.length === 1 ? "" : "s"} · ${length}`) : `${done}/${project.shots.length} shots rendered`;
   const cutting = busyFor(j => j.kind === "stitch");
   $("#stitch").disabled = !!cutting;
-  $("#stitch").textContent = cutting ? (cutting.state === "running" ? "Cutting…" : "Queued…") : project.film ? "Re-cut film" : "Cut film";
+  $("#stitch").textContent = cutting ? (cutting.state === "running" ? "Cutting…" : "Queued…")
+    : done < project.shots.length ? "Render & cut" : project.film ? "Re-cut film" : "Cut film";
+  $("#stitch").title = done < project.shots.length ? "Renders the missing shots, then cuts the film" : "";
 }
 
 function renderEditPanel() {
@@ -591,12 +599,14 @@ function renderTimeline() {
     c.ondrop = e => { e.preventDefault(); reorder(dragId, shot.id); };
     c.onclick = () => { setStage("shots"); select(shot.id); };
     pic.appendChild(c);
-    const label = i === 0 && m.title.on && !inworld ? "MAIN TITLE" : i > 0 && m.stamps.on ? `SHOT ${String(i + 1).padStart(2, "0")}` : "";
+    const kinetic = i === 0 && m.title.on && m.title.style !== "inworld";  // the cut puts the kinetic title on shot 1
+    const label = kinetic ? "MAIN TITLE" : m.stamps.on ? `SHOT ${String(i + 1).padStart(2, "0")}` : "";
     layer(shot.seconds, label, true);
   });
   if (m.credits.on) {
     pic.appendChild(Object.assign(document.createElement("button"), { className: "joint cut", textContent: JOINT.cut, disabled: true }));
-    pic.appendChild(clip(3, `<b>CREDITS</b><small>${(m.credits.lines || project.motion_defaults?.credits || "").split("\n").filter(Boolean).length} cards</small>`, ""));
+    const cards = (m.credits.lines || project.motion_defaults?.credits || "").split("\n").filter(Boolean).length;
+    pic.appendChild(clip(3, `<b>CREDITS</b><small>${cards} card${cards === 1 ? "" : "s"}</small>`, ""));
     layer(3, "CREDITS", true);
   }
 }
@@ -748,6 +758,7 @@ $("#addShot").onclick = addShot;
 $("#aiLead").onclick = () => writeLead((project.cast || "").trim() ? "refine" : "write");
 $("#aiPhoto").onclick = () => writeLead("from photo");
 $("#aiContinuity").onclick = () => writeLead("continuity");
+$("#trailerUndo").onclick = () => $("#aiUndo").onclick();
 $("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-story`)); };
 $("#aiEverything").onclick = () => writeStory("everything");
 $$("[data-ai]").forEach(b => b.onclick = () => writeStory(b.dataset.ai));
@@ -761,7 +772,14 @@ $("#paletteReset").onclick = () => { delete project.palette; project.palette = n
 
 $$("#viewerTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; renderViewer(); });
 $("#finish").onchange = e => { project.finish = e.target.checked; save(); };
-$("#stitch").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/stitch`); view = "film"; poll(); };
+$("#viewer").onloadedmetadata = () => renderViewer();
+$("#stitch").onclick = async () => {
+  await flush();
+  const complete = project.shots.every(s => s.video);  // missing shots render first, then the cut
+  await post(`/api/projects/${project.id}/${complete ? "stitch" : "render"}`);
+  if (!complete) toast("Rendering the missing shots, then cutting");
+  view = "film"; poll();
+};
 for (const id of ["mTitle", "mStamps", "mCredits"]) $("#" + id).onchange = saveMotion;
 for (const id of ["mSubtitle", "mMaterial", "mCreditsLines", "mTrailerLines"]) $("#" + id).oninput = saveMotion;
 $$("[data-style]").forEach(b => b.onclick = () => {

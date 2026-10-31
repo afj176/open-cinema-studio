@@ -244,8 +244,9 @@ def parse_lead(text: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------- AI story writer
-STORY_TARGETS = ("everything", "title", "logline", "world", "look")
-STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY")
+STORY_TARGETS = ("everything", "title", "logline", "world", "look", "trailer")
+STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY")  # "everything", in order
+_ALL_LABELS = STORY_LABELS + ("TRAILER",)
 
 _STORY_LINES = {
     "TITLE": "TITLE: an evocative film title of 1 to 5 words, no quotes",
@@ -260,9 +261,11 @@ _STORY_LINES = {
             "build, face, hair, the exact wardrobe with colours and materials, and one signature prop. No name, "
             "no backstory",
     "CONTINUITY": "CONTINUITY: 4 to 6 short comma-separated details of the lead that must never change between shots",
+    "TRAILER": "TRAILER: 4 to 6 trailer title cards separated by ' / ', each at most 6 words, building tension from "
+               "the world to the stakes, in the voice of a great movie trailer; the last card is the film's title",
 }
 _STORY_WANTS = {"everything": STORY_LABELS, "title": ("TITLE",), "logline": ("LOGLINE",), "world": ("WORLD",),
-                "look": ("LOOK", "PALETTE")}
+                "look": ("LOOK", "PALETTE"), "trailer": ("TRAILER",)}
 
 
 def story_brief(target: str, idea: str = "", title: str = "", logline: str = "", world: str = "", look: str = "",
@@ -273,7 +276,7 @@ def story_brief(target: str, idea: str = "", title: str = "", logline: str = "",
     known = [("The director's idea", idea), ("Title", title), ("Logline", logline), ("World", world),
              ("Look", look), ("Lead character", lead)]
     if target != "everything":  # keep the field being rewritten out of the context so it is truly new
-        skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look"}[target]
+        skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look"}.get(target)
         known = [(k, v) for k, v in known if k != skip]
     context = "\n".join(f"{k}: {v}" for k, v in known if v and v.strip())
     lines = "\n".join(_STORY_LINES[label].format(looks=", ".join(LOOKS)) for label in wants)
@@ -306,11 +309,13 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
             continue
         label, _, rest = line.partition(":")
         key = label.strip().upper()
-        if key in STORY_LABELS and _:
+        if key in _ALL_LABELS and _:
             current = key
             fields[key] = rest.strip()
         elif current in ("WORLD", "LEAD", "LOGLINE"):
             fields[current] += " " + line  # paragraph wrapped onto more lines
+        elif current == "TRAILER":
+            fields[current] += " / " + line  # one card per line instead of ' / '
     if not fields:
         lines = [_clean_line(l).strip('"') for l in text.replace("**", "").splitlines() if l.strip()]
         wants = _STORY_WANTS.get(target, STORY_LABELS)
@@ -319,7 +324,7 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
         elif target == "look" and lines:
             fields = {"LOOK": lines[0], "PALETTE": " ".join(lines[1:])}
         elif len(wants) == 1 and lines:
-            fields = {wants[0]: lines[0] if wants[0] == "TITLE" else " ".join(lines)}
+            fields = {wants[0]: lines[0] if wants[0] == "TITLE" else (" / " if wants[0] == "TRAILER" else " ").join(lines)}
     out = {k.lower(): v.strip().strip('"').strip() for k, v in fields.items()}
     if "look" in out:  # snap to a known look
         match = next((l for l in LOOKS if l.lower() == out["look"].lower()), None) or \
@@ -331,6 +336,9 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
         out["palette"] = ",".join(h.upper() for h in hexes[:4]) if len(hexes) >= 4 else ""
     if "continuity" in out:
         out["continuity"] = out["continuity"].rstrip(".")
+    if "trailer" in out:  # one card per line, as the trailer cards expect
+        cards = [c.strip().strip('"').strip() for c in out["trailer"].split("/")]
+        out["trailer"] = "\n".join(c for c in cards if c)
     return out
 
 

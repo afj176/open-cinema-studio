@@ -112,5 +112,14 @@
         6
       ]
     }
+  },
+  "trailer": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        7
+      ]
+    }
   }
 }

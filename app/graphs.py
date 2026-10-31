@@ -313,6 +313,6 @@ def story_writer_graph(target: str, idea: str, title: str, logline: str, world: 
                      "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": seed}),
         "4": node("OpenCinemaParseStory", text=["3", 0], target=target),
     }
-    for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity")):
+    for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")):
         graph[field] = node("PreviewAny", source=["4", index])
     return graph

@@ -258,8 +258,8 @@ class OpenCinemaParseStory:
         return {"required": {"text": ("STRING", {"forceInput": True})},
                 "optional": {"target": (list(STORY_TARGETS), {"default": "everything"})}}
 
-    RETURN_TYPES = ("STRING",) * 7
-    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity")
+    RETURN_TYPES = ("STRING",) * 8
+    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")
     FUNCTION = "parse"
     CATEGORY = "Open Cinema"
 

@@ -252,7 +252,7 @@ details.prompts p { font: 12px/1.55 var(--mono); color: #bdb9b0; background: rgb
 .edit-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
 .viewer { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .viewer-tabs { align-self: start; }
-.viewer-frame, .screen-frame { position: relative; aspect-ratio: 16/9; background: #000; border-radius: var(--r-sm); overflow: hidden; }
+.viewer-frame, .screen-frame { position: relative; aspect-ratio: var(--frame, 16/9); max-height: 70vh; margin-inline: auto; width: 100%; background: #000; border-radius: var(--r-sm); overflow: hidden; }
 .viewer-frame video, .screen-frame video { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewer-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 13px; text-align: center; padding: 20px; }
 .viewer-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
