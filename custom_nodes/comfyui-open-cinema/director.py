@@ -377,44 +377,36 @@ def keyframe_prompt(scene: str, action: str, shot_size: str, look: str, camera_m
                  "texture, real locations and people, no text or lettering in focus")
 
 
-def cast_keyframe_prompt(scene: str, action: str, shot_size: str, look: str, continuity: str = "") -> str:
-    """Establishing frame with the lead taken from a reference (Picture 1) for Qwen-Image-Edit-2511."""
-    return _join("Picture 1 shows the lead character. Create a cinematic film still: " +
-                 SHOT_SIZES.get(shot_size, shot_size), scene, action,
-                 "The lead is the person from Picture 1 with exactly the same face, hair and wardrobe, "
-                 "naturally lit by the scene", continuity, LOOKS.get(look, look),
-                 "Ignore the studio backdrop of Picture 1. No text, no borders")
+def world_plate_prompt(scene: str, look: str) -> str:
+    """The film's world for HiDream-O1: an empty location plate. Nobody is in it, so the only face any shot
+    ever sees is the lead's portrait."""
+    return _join("Wide establishing shot at eye level", scene,
+                 "The place is completely deserted and uninhabited: nobody is there, no people, no figures, "
+                 "no silhouettes", LOOKS.get(look, look),
+                 "Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, "
+                 "no text or lettering")
 
 
-def identity_prompt(continuity: str = "", identity: str = "") -> str:
-    """Identity pass for Qwen-Image-Edit-2511: Picture 1 is a finished frame, Picture 2 the lead's portrait."""
-    return _join("Replace the person in Picture 1 with the person from Picture 2",
-                 "Their face is the face of Picture 2, not the face from Picture 1: the same facial structure, eyes, "
-                 "eye colour and skin tone, and the same hair, build and wardrobe as Picture 2",
-                 identity and "The lead: " + identity, continuity,
-                 "Keep everything else in Picture 1 exactly as it is: the composition, camera angle, framing, pose, "
-                 "body position, scale of the person, action, props, background, lighting and colour grade",
-                 "Light the person naturally by the scene of Picture 1. Ignore the studio backdrop of Picture 2. "
-                 "No text, no borders")
+PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure, silhouette, face or body part "
+                "anywhere in it, even small or far away? Answer with exactly one word: YES or NO.")
 
 
-def coverage_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
-                    camera_move: str = "", lead: bool = True, world: str = "", identity: str = "") -> str:
-    """Instruction for Qwen-Image-Edit-2511 to shoot a new setup of the film shown in Picture 1 (cast in Picture 2)."""
-    cast = ("The lead is the person from Picture 2 with exactly the same face, hair and wardrobe. Picture 2 is "
-            "only an identity reference: take their pose, expression and body language from this shot's action, "
-            "not from Picture 2, and play it with full energy and emotion"
-            if has_cast else "The same characters with identical faces, hair and wardrobe")
+def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
+                camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "") -> str:
+    """A shot for Qwen-Image-Edit-2511: Picture 1 is the film's empty world plate (place, light, grade) and
+    Picture 2, when there is one, the lead's portrait (face, hair, wardrobe)."""
+    framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
+    who = ("The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. "
+           "Picture 2 is only an identity reference: take their pose, expression and body language from this shot's "
+           "action, not from Picture 2, and play it with full energy and emotion. Ignore the studio backdrop of "
+           "Picture 2" if has_cast else lead and cast and "The lead: " + cast)
     return _join(
-        "Picture 1 is a frame from a film. Create a different shot from the same film: " +
-        ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x),
+        "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: " + framing,
         "In this shot: " + action if action else "",
         world and "The setting is the world of Picture 1: " + world,
-        "Put the camera in a completely new position with a new composition; do not copy the layout of Picture 1. "
-        "If the action happens in another place, show that place",
-        (cast + ", in the same world, era, weather and lighting mood as Picture 1" if lead else
-         "The same world, era, weather and lighting mood as Picture 1"),
-        people_note(lead), lead and identity and "The lead: " + identity, lead and continuity,
+        "Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its place, era, "
+        "weather, light and colour",
+        lead and who, people_note(lead), lead and identity and "The lead: " + identity, lead and continuity,
         LOOKS.get(look, look) and "Same color grade: " + LOOKS.get(look, look),
         "Cinematic film still, no text, no borders")
 

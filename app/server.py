@@ -143,6 +143,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.enqueue("write_lead", m.group(1), None, label, mode=mode))
             if m := re.fullmatch(r"/api/projects/(\w+)/undo-(?:lead|story)", route):
                 return self._json(studio.undo_story(m.group(1)))
+            if m := re.fullmatch(r"/api/projects/(\w+)/world", route):
+                return self._json(studio.enqueue("world", m.group(1), None, "Painting the world"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/world/take", route):
+                name = json.loads(self._body() or b"{}").get("name", "")
+                return self._json(studio.choose_world(m.group(1), name))
             if m := re.fullmatch(r"/api/projects/(\w+)/describe-lead", route):
                 return self._json(studio.enqueue("describe_lead", m.group(1), None, "Describing the lead's face"))
             if m := re.fullmatch(r"/api/projects/(\w+)/write-story", route):

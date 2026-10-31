@@ -77,7 +77,7 @@
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "oc_hidream_frame.jpg"
+    "oc_world_plate.jpg"
    ]
   },
   {
@@ -97,13 +97,13 @@
    "inputs": [],
    "outputs": [
     {
-     "name": "keyframe_prompt",
+     "name": "world_plate_prompt",
      "type": "STRING",
      "links": [],
      "slot_index": 0
     },
     {
-     "name": "coverage_prompt",
+     "name": "shot_prompt",
      "type": "STRING",
      "links": [],
      "slot_index": 1

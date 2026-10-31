@@ -13,7 +13,7 @@ import urllib.request
 from typing import Any
 
 WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
-COLORS = {"inputs": "#3f789e", "lead": "#a1309b", "anchor": "#b58b2a", "models": "#444444", "prompt": "#8a6d3b",
+COLORS = {"inputs": "#3f789e", "lead": "#a1309b", "world": "#b58b2a", "models": "#444444", "prompt": "#8a6d3b",
           "sample": "#335f55", "output": "#2f6f3f", "cinema": "#b06634"}
 ROLE_OF_CLASS = {
     "CheckpointLoaderSimple": "models", "UNETLoader": "models", "CLIPLoader": "models", "VAELoader": "models",
@@ -28,8 +28,8 @@ ROLE_OF_CLASS = {
     "LoadImage": "inputs", "LoadVideo": "inputs", "LoadAudio": "inputs",
 }
 ROLE_TITLES = {"inputs": "Inputs", "models": "Models", "prompt": "Prompt", "sample": "Sample", "output": "Output",
-               "cinema": "Open Cinema", "lead": "The lead", "anchor": "Anchor"}
-ROLE_ORDER = ["inputs", "lead", "anchor", "cinema", "models", "prompt", "sample", "output"]
+               "cinema": "Open Cinema", "lead": "The lead", "world": "The world"}
+ROLE_ORDER = ["inputs", "world", "lead", "cinema", "models", "prompt", "sample", "output"]
 
 
 def object_info(base: str = "http://127.0.0.1:8288") -> dict[str, Any]:
@@ -132,7 +132,7 @@ def to_canvas(graph: dict[str, Any], info: dict[str, Any], titles: dict[str, str
                           "flags": {}, "order": 0, "mode": 0, "inputs": [], "outputs": [],
                           "title": titles.get(key) or info_c.get("display_name") or node["class_type"],
                           "properties": {"Node name for S&R": node["class_type"]},
-                          "widgets_values": _widgets(node["inputs"], info_c), "color": COLORS[role] if role in ("lead", "anchor") else None})
+                          "widgets_values": _widgets(node["inputs"], info_c), "color": COLORS[role] if role in ("lead", "world") else None})
             nodes[-1] = {k: v for k, v in nodes[-1].items() if v is not None}
             y += height + 40
         group_boxes.append({"title": title, "bounding": [x - 20, top - 60, col_w, y - top + 40],

@@ -1,11 +1,12 @@
 """Open Cinema: camera-direction nodes for building multi-shot films in ComfyUI."""
 
-from .director import (CAMERA_MOVES, LOOKS, SHOT_SIZES, cast_prompt, coverage_prompt, keyframe_prompt,
-                       motion_prompt)
+from .director import (CAMERA_MOVES, LOOKS, SHOT_SIZES, cast_prompt, motion_prompt, shot_prompt,
+                       world_plate_prompt)
 
 
 class OpenCinemaShot:
-    """One shot of a shot list: emits the three prompts the Open Cinema pipeline needs."""
+    """One shot of a shot list: the world plate, the shot frame (world plate = Picture 1, lead = Picture 2),
+    the motion, and the lead's casting portrait prompts."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -20,19 +21,19 @@ class OpenCinemaShot:
             "continuity": ("STRING", {"multiline": True, "default": ""}),
             "lead_in_shot": ("BOOLEAN", {"default": True}),
             "cast": ("STRING", {"multiline": True, "default": "",
-                                "tooltip": "Describe the lead. When set, coverage prompts expect the cast "
+                                "tooltip": "Describe the lead. When set, the shot prompt expects the lead's "
                                            "portrait as Picture 2."}),
         }}
 
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("keyframe_prompt", "coverage_prompt", "motion_prompt", "cast_prompt")
+    RETURN_NAMES = ("world_plate_prompt", "shot_prompt", "motion_prompt", "cast_prompt")
     FUNCTION = "build"
     CATEGORY = "Open Cinema"
 
     def build(self, scene, action, shot_size, camera_move, look, sound, continuity="", lead_in_shot=True, cast=""):
-        return (keyframe_prompt(scene, action, shot_size, look, camera_move, lead_in_shot),
-                coverage_prompt(action, shot_size, look, continuity, has_cast=bool(cast.strip()) and lead_in_shot,
-                                camera_move=camera_move, lead=lead_in_shot),
+        return (world_plate_prompt(scene, look),
+                shot_prompt(action, shot_size, look, continuity, has_cast=bool(cast.strip()) and lead_in_shot,
+                            camera_move=camera_move, lead=lead_in_shot, world=scene.split(". ")[0]),
                 motion_prompt(action, camera_move, sound, look, cast, shot_size, continuity, lead_in_shot),
                 cast_prompt(cast, scene, look))
 

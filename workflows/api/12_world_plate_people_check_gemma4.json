@@ -1,0 +1,41 @@
+{
+  "1": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_world_plate.jpg"
+    }
+  },
+  "3": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": "Look carefully at this image. Is there any person, human figure, silhouette, face or body part anywhere in it, even small or far away? Answer with exactly one word: YES or NO.",
+      "image": [
+        "2",
+        0
+      ],
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "answer": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "3",
+        0
+      ]
+    }
+  }
+}

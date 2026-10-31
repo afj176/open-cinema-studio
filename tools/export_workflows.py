@@ -37,13 +37,12 @@ CLOSE = "Close on his hands turning the glowing lens; light fractures into rainb
 examples = {
     "00_cast_portrait_hidream_o1.json": graphs.keyframe_graph(
         director.cast_prompt(CAST, SCENE, LOOK), 7, "16:9", "open-cinema/cast", size=graphs.CAST_SIZE),
-    "01_keyframe_hidream_o1.json": graphs.keyframe_graph(
-        director.keyframe_prompt(director._join(SCENE, "The lead: " + IDENTITY + ", " + CONTINUITY), ACTION, "Wide",
-                                 LOOK, "Dolly in"), 101, "16:9", "open-cinema/keyframe"),
-    "02_coverage_qwen_image_edit_2511.json": graphs.coverage_graph(
-        director.coverage_prompt(CLOSE, "Medium close-up", LOOK, CONTINUITY, has_cast=True, camera_move="Orbit left",
-                                 world=SCENE.split(". ")[0], identity=IDENTITY),
-        202, "oc_anchor_frame.jpg", "open-cinema/coverage", "16:9", second_reference="oc_lead_portrait.jpg"),
+    "01_world_plate_hidream_o1.json": graphs.keyframe_graph(
+        director.world_plate_prompt(SCENE, LOOK), 101, "16:9", "open-cinema/world"),
+    "02_shot_frame_qwen_image_edit_2511.json": graphs.coverage_graph(
+        director.shot_prompt(CLOSE, "Medium close-up", LOOK, CONTINUITY, has_cast=True, camera_move="Orbit left",
+                             world=SCENE.split(". ")[0], identity=IDENTITY),
+        202, "oc_world_plate.jpg", "open-cinema/shot_frame", "16:9", second_reference="oc_lead_portrait.jpg"),
     "03_shot_ltx25_i2v_audio.json": graphs.shot_graph(
         "oc_shot_keyframe.jpg", director.motion_prompt(ACTION, "Dolly in", "howling wind, crackling furnace", LOOK,
                                                        director._join(CAST, IDENTITY), "Wide", CONTINUITY),
@@ -51,12 +50,12 @@ examples = {
     "04_shot_ltx25_keyframe_to_keyframe.json": graphs.shot_graph(
         "oc_shot_keyframe.jpg", director.motion_prompt("The camera glides along the glass terrace toward the lead.",
                                                        "Truck right", "wind, glass chiming"), 404, "16:9", 5,
-        "open-cinema/k2k", end_image="oc_hidream_frame.jpg"),
+        "open-cinema/k2k", end_image="oc_world_plate.jpg"),
 }
 
 # The same keyframe-to-keyframe shot, with the motion prompt written by the Open Cinema Shot node.
 director_shot = graphs.shot_graph("oc_shot_keyframe.jpg", "", 505, "16:9", 5, "open-cinema/director",
-                                  end_image="oc_hidream_frame.jpg")
+                                  end_image="oc_world_plate.jpg")
 director_shot["40"] = graphs.node(
     "OpenCinemaShot", scene=SCENE, action="The camera rises over the glass terrace as the furnace flares.",
     shot_size="Wide", camera_move="Crane up", look=LOOK, sound="wind, the roar of the furnace",
@@ -76,11 +75,8 @@ examples["11_ai_story_writer_gemma4.json"] = graphs.story_writer_graph(
     "everything", "two stone kings guard the last mountain pass before a storm", "", "", "", "", "", seed=7)
 examples["09_inworld_title_frame.json"] = graphs.title_frame_graph(
     director.title_frame_prompt("The Colossus Pass", director.TITLE_MATERIALS["70mm epic"]), 909,
-    "oc_anchor_frame.jpg", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")
-
-examples["12_identity_pass_qwen_edit_2511.json"] = graphs.identity_graph(
-    director.identity_prompt(CONTINUITY, IDENTITY), 1212, "oc_hidream_frame.jpg", "oc_lead_portrait.jpg",
-    "open-cinema/identity", "16:9")
+    "oc_world_plate.jpg", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")
+examples["12_world_plate_people_check_gemma4.json"] = graphs.people_check_graph("oc_world_plate.jpg", director.PEOPLE_CHECK)
 
 # What each canvas should say: groups (title, colour role, node ids), node titles and a note.
 LEAD = ("The lead → Picture 2", "lead", ["16", "17"])
@@ -92,21 +88,21 @@ ANNOTATE = {
         note="## 1 · The lead\nHiDream-O1 paints a casting portrait from the lead description, on a plain grey "
              "backdrop.\n\nThis portrait is the identity source of truth: it goes in as **Picture 2** of every "
              "frame that has the lead."),
-    "01_keyframe_hidream_o1.json": dict(
-        note="## 2a · World frame\nHiDream-O1 paints the anchor shot from text: framing, action, world and look. "
-             "It can't see the lead's portrait, so the studio follows it with **12 · identity pass**."),
-    "12_identity_pass_qwen_edit_2511.json": dict(
-        groups=[("HiDream frame → Picture 1", "anchor", ["6", "7"]), LEAD],
-        titles={**EDIT_TITLES, "6": "HiDream world frame", "12": "Start from Picture 1 (keeps its layout)"},
-        note="## 2b · Identity pass\nQwen-Image-Edit-2511 recasts the person in HiDream's frame (**Picture 1**) "
-             "as the lead (**Picture 2**), keeping composition, pose, light and world.\n\nThe result is the "
-             "**anchor**: every other shot takes its world and light from it."),
-    "02_coverage_qwen_image_edit_2511.json": dict(
-        groups=[("Anchor frame → Picture 1", "anchor", ["6", "7"]), LEAD],
-        titles={**EDIT_TITLES, "6": "Anchor frame", "12": "Empty canvas (new composition)"},
-        note="## 3 · Coverage shot\nA new camera setup of the same film. **Picture 1** is the anchor frame (world, "
-             "light, grade); **Picture 2** is the lead (face, hair, wardrobe).\n\nIt samples onto an empty canvas so "
-             "the camera really moves instead of copying Picture 1's layout."),
+    "01_world_plate_hidream_o1.json": dict(
+        titles={"9": "Save world plate"},
+        note="## 2 · The world\nHiDream-O1 paints the film's world as an **empty location plate**: nobody is in "
+             "it.\n\nIt goes in as **Picture 1** of every shot, so the only face any shot ever sees is the lead's "
+             "(Picture 2). The studio checks the plate is empty with **12 · people check** and re-rolls if not."),
+    "12_world_plate_people_check_gemma4.json": dict(
+        titles={"2": "World plate", "3": "Is anyone in it? (YES / NO)"},
+        note="## 2b · People check\nGemma 4 E4B looks at the world plate and answers YES or NO. A plate with "
+             "anyone in it would put a second face into every shot, so the studio re-rolls it."),
+    "02_shot_frame_qwen_image_edit_2511.json": dict(
+        groups=[("The world → Picture 1", "world", ["6", "7"]), LEAD],
+        titles={**EDIT_TITLES, "6": "World plate", "12": "Empty canvas (the shot's own composition)"},
+        note="## 3 · A shot\nEvery shot is made from the same two pictures: **Picture 1** is the empty world plate "
+             "(place, light, grade) and **Picture 2** is the lead (face, hair, wardrobe), plus the shot's action and "
+             "camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."),
     "03_shot_ltx25_i2v_audio.json": dict(
         note="## 4 · Motion\nLTX 2.5 animates a frame into a shot with sound, in two stages (half resolution, then "
              "a x2 latent upscale)."),

@@ -1,6 +1,6 @@
 {
  "last_node_id": 19,
- "last_link_id": 24,
+ "last_link_id": 22,
  "nodes": [
   {
    "id": 19,
@@ -21,7 +21,7 @@
    "title": "How this works",
    "properties": {},
    "widgets_values": [
-    "## 2b \u00b7 Identity pass\nQwen-Image-Edit-2511 recasts the person in HiDream's frame (**Picture 1**) as the lead (**Picture 2**), keeping composition, pose, light and world.\n\nThe result is the **anchor**: every other shot takes its world and light from it."
+    "## 3 \u00b7 A shot\nEvery shot is made from the same two pictures: **Picture 1** is the empty world plate (place, light, grade) and **Picture 2** is the lead (face, hair, wardrobe), plus the shot's action and camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -57,12 +57,12 @@
      "slot_index": 1
     }
    ],
-   "title": "HiDream world frame",
+   "title": "World plate",
    "properties": {
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "oc_hidream_frame.jpg"
+    "oc_world_plate.jpg"
    ],
    "color": "#b58b2a"
   },
@@ -93,8 +93,7 @@
      "type": "IMAGE",
      "links": [
       7,
-      12,
-      15
+      12
      ],
      "slot_index": 0
     }
@@ -126,7 +125,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      24
+      22
      ],
      "slot_index": 0
     },
@@ -164,7 +163,7 @@
     {
      "name": "image",
      "type": "IMAGE",
-     "link": 24
+     "link": 22
     }
    ],
    "outputs": [
@@ -325,7 +324,7 @@
      "name": "patched_model",
      "type": "MODEL",
      "links": [
-      17
+      15
      ],
      "slot_index": 0
     }
@@ -397,8 +396,7 @@
      "links": [
       6,
       11,
-      16,
-      22
+      20
      ],
      "slot_index": 0
     }
@@ -467,7 +465,7 @@
     "Node name for S&R": "TextEncodeQwenImageEditPlus"
    },
    "widgets_values": [
-    "Replace the person in Picture 1 with the person from Picture 2. Their face is the face of Picture 2, not the face from Picture 1: the same facial structure, eyes, eye colour and skin tone, and the same hair, build and wardrobe as Picture 2. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Keep everything else in Picture 1 exactly as it is: the composition, camera angle, framing, pose, body position, scale of the person, action, props, background, lighting and colour grade. Light the person naturally by the scene of Picture 1. Ignore the studio backdrop of Picture 2. No text, no borders."
+    "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its place, era, weather, light and colour. The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with full energy and emotion. Ignore the studio backdrop of Picture 2. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic film still, no text, no borders."
    ]
   },
   {
@@ -496,7 +494,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      18
+      16
      ],
      "slot_index": 0
     }
@@ -594,7 +592,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      19
+      17
      ],
      "slot_index": 0
     }
@@ -609,52 +607,45 @@
   },
   {
    "id": 13,
-   "type": "VAEEncode",
+   "type": "EmptySD3LatentImage",
    "pos": [
     2130,
     160
    ],
    "size": [
     300,
-    118
+    142
    ],
    "flags": {},
    "order": 15,
    "mode": 0,
-   "inputs": [
-    {
-     "name": "pixels",
-     "type": "IMAGE",
-     "link": 15
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 16
-    }
-   ],
+   "inputs": [],
    "outputs": [
     {
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      20
+      18
      ],
      "slot_index": 0
     }
    ],
-   "title": "Start from Picture 1 (keeps its layout)",
+   "title": "Empty canvas (the shot's own composition)",
    "properties": {
-    "Node name for S&R": "VAEEncode"
+    "Node name for S&R": "EmptySD3LatentImage"
    },
-   "widgets_values": []
+   "widgets_values": [
+    1664,
+    928,
+    1
+   ]
   },
   {
    "id": 14,
    "type": "KSampler",
    "pos": [
     2130,
-    318
+    342
    ],
    "size": [
     300,
@@ -667,22 +658,22 @@
     {
      "name": "model",
      "type": "MODEL",
-     "link": 17
+     "link": 15
     },
     {
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 18
+     "link": 16
     },
     {
      "name": "negative",
      "type": "CONDITIONING",
-     "link": 19
+     "link": 17
     },
     {
      "name": "latent_image",
      "type": "LATENT",
-     "link": 20
+     "link": 18
     }
    ],
    "outputs": [
@@ -690,7 +681,7 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      21
+      19
      ],
      "slot_index": 0
     }
@@ -700,7 +691,7 @@
     "Node name for S&R": "KSampler"
    },
    "widgets_values": [
-    1212,
+    202,
     "fixed",
     4,
     1.0,
@@ -727,12 +718,12 @@
     {
      "name": "samples",
      "type": "LATENT",
-     "link": 21
+     "link": 19
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 22
+     "link": 20
     }
    ],
    "outputs": [
@@ -740,7 +731,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      23
+      21
      ],
      "slot_index": 0
     }
@@ -769,7 +760,7 @@
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 23
+     "link": 21
     }
    ],
    "outputs": [
@@ -785,7 +776,7 @@
     "Node name for S&R": "SaveImage"
    },
    "widgets_values": [
-    "open-cinema/identity"
+    "open-cinema/shot_frame"
    ]
   }
  ],
@@ -904,22 +895,6 @@
   ],
   [
    15,
-   8,
-   0,
-   13,
-   0,
-   "IMAGE"
-  ],
-  [
-   16,
-   6,
-   0,
-   13,
-   1,
-   "VAE"
-  ],
-  [
-   17,
    4,
    0,
    14,
@@ -927,7 +902,7 @@
    "MODEL"
   ],
   [
-   18,
+   16,
    10,
    0,
    14,
@@ -935,7 +910,7 @@
    "CONDITIONING"
   ],
   [
-   19,
+   17,
    12,
    0,
    14,
@@ -943,7 +918,7 @@
    "CONDITIONING"
   ],
   [
-   20,
+   18,
    13,
    0,
    14,
@@ -951,7 +926,7 @@
    "LATENT"
   ],
   [
-   21,
+   19,
    14,
    0,
    15,
@@ -959,7 +934,7 @@
    "LATENT"
   ],
   [
-   22,
+   20,
    6,
    0,
    15,
@@ -967,7 +942,7 @@
    "VAE"
   ],
   [
-   23,
+   21,
    15,
    0,
    16,
@@ -975,7 +950,7 @@
    "IMAGE"
   ],
   [
-   24,
+   22,
    17,
    0,
    18,
@@ -985,7 +960,7 @@
  ],
  "groups": [
   {
-   "title": "HiDream frame \u2192 Picture 1",
+   "title": "The world \u2192 Picture 1",
    "bounding": [
     470,
     100,
@@ -1038,7 +1013,7 @@
     2110,
     100,
     340,
-    572
+    596
    ],
    "color": "#335f55",
    "font_size": 22,

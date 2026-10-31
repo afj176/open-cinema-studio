@@ -112,12 +112,13 @@ def lead_identity(project: dict[str, Any]) -> str:
     return project.get("lead_identity", "") if project.get("lead_identity_of") == project.get("reference") else ""
 
 
-def anchor_of(project: dict[str, Any]) -> dict[str, Any] | None:
-    """The shot whose frame sets the world for every other shot: the pinned one, else shot 1."""
-    shots = project["shots"]
-    pinned = next((s for i, s in enumerate(shots) if s["id"] == project.get("anchor")
-                   and not (i > 0 and s.get("transition") == "continue")), None)
-    return pinned or (shots[0] if shots else None)
+def world_of(project: dict[str, Any]) -> dict[str, Any]:
+    """What the world plate depends on: if any of it changes, the plate is out of date."""
+    return {"scene": project.get("scene", ""), "look": project.get("look", ""), "aspect": project.get("aspect", "")}
+
+
+def world_plate(project: dict[str, Any]) -> str | None:
+    return (project.get("world") or {}).get("plate")
 
 
 def add_take(shot: dict[str, Any], kind: str, name: str, **info: Any) -> None:
@@ -266,7 +267,7 @@ class Studio:
         with self.lock:
             project = self.load(project_id)
             for key in ("title", "scene", "look", "aspect", "continuity", "cast", "finish", "motion", "idea",
-                        "logline", "palette", "anchor"):
+                        "logline", "palette"):
                 if key in data:
                     project[key] = data[key]
             if "shots" in data:
@@ -340,9 +341,9 @@ class Studio:
             jobs.append(self.enqueue("cast", project_id, None, "Casting"))
         elif project.get("reference") and not lead_identity(project):
             jobs.append(self.enqueue("describe_lead", project_id, None, "Describing the lead's face"))
-        anchor = anchor_of(project)
-        order = sorted(enumerate(project["shots"]), key=lambda pair: pair[1] is not anchor)  # the anchor first
-        for index, shot in order:
+        if not world_plate(project):  # every shot is made in the world plate, so it comes first
+            jobs.append(self.enqueue("world", project_id, None, "Painting the world"))
+        for index, shot in enumerate(project["shots"]):
             continues = shot["transition"] == "continue" and index > 0
             if not continues and (redo_keyframes or not shot.get("keyframe")):
                 jobs.append(self.enqueue("keyframe", project_id, shot["id"], f"Keyframe {index + 1}"))
@@ -433,64 +434,82 @@ class Studio:
     def _run_describe_lead(self, job: dict[str, Any], tick) -> None:
         self._describe_lead(job["project"], tick)
 
+    def _make_world(self, project_id: str, tick, job: dict[str, Any] | None = None) -> str:
+        """HiDream-O1 paints the film's world with nobody in it; Gemma checks it really is empty (re-rolling up
+        to three times), so the only face any shot ever sees is the lead's portrait."""
+        project = self.load(project_id)
+        world = project.get("world") or {}
+        seed = (world.get("seed") or random.randrange(1, 2**31)) + 1_000_003 * len(world.get("takes", []))
+        prompt = director.world_plate_prompt(project["scene"], project["look"])
+        folder = self.path(project_id)
+        for attempt in range(3):
+            if job:
+                job["label"] = "Painting the world" + (f" · try {attempt + 1}" if attempt else "")
+            files = self.comfy.run(graphs.keyframe_graph(prompt, seed + attempt, project["aspect"],
+                                                         f"open-cinema/{project_id}/world"), on_tick=tick)
+            name = f"world_{uuid.uuid4().hex[:6]}.png"
+            self.comfy.download(files[0], folder / name)
+            if job:
+                job["label"] = "Painting the world · checking it's empty"
+            record = self.comfy.wait(self.comfy.submit(graphs.people_check_graph(
+                self._upload(project_id, name), director.PEOPLE_CHECK)), on_tick=tick, timeout=600)
+            answer = "".join(record["outputs"].get("answer", {}).get("text", [""])).strip().upper()
+            empty = not answer.startswith("YES")
+            if empty or attempt == 2:
+                break
+        with self.lock:
+            fresh = self.load(project_id)
+            unit = fresh.setdefault("world", {})
+            unit.setdefault("seed", seed)
+            unit.setdefault("takes", []).append({"name": name, "prompt": prompt, "seed": seed + attempt,
+                                                 "of": world_of(fresh), "empty": empty})
+            unit["plate"] = name
+            fresh["film"] = None
+            self.save(fresh)
+        return name
+
+    def _run_world(self, job: dict[str, Any], tick) -> None:
+        self._make_world(job["project"], tick, job)
+
+    def choose_world(self, project_id: str, name: str) -> dict[str, Any]:
+        with self.lock:
+            project = self.load(project_id)
+            unit = project.get("world") or {}
+            if not any(t["name"] == name for t in unit.get("takes", [])):
+                raise KeyError(f"no world plate {name}")
+            unit["plate"], project["film"] = name, None
+            return self.save(project)
+
     def _run_keyframe(self, job: dict[str, Any], tick) -> None:
+        """Every shot is made from the same two pictures: the empty world plate (where) and the lead's portrait
+        (who). No frame ever shows the model a second face, so the lead stays one person across the film."""
         project = self.load(job["project"])
         index = next(i for i, s in enumerate(project["shots"]) if s["id"] == job["shot"])
         shot = project["shots"][index]
         look, scene, aspect = project["look"], project["scene"], project["aspect"]
         continuity = project.get("continuity", "")
         prefix = f"open-cinema/{project['id']}/key_{shot['id']}"
-        # Every other shot is built from ONE anchor frame (shot 1 unless pinned), never from the
-        # latest shot, so small drifts don't compound from shot to shot.
-        anchor_shot = anchor_of(project)
-        anchor = anchor_shot.get("keyframe") if anchor_shot and anchor_shot["id"] != shot["id"] else None
+        plate = world_plate(project) or self._make_world(project["id"], tick)
         lead = shot.get("lead", True)
         reference = project.get("reference") if lead else None
+        if reference and not lead_identity(project):  # a new portrait: describe its face before painting it
+            job["label"] = f"Keyframe {index + 1} · describing the lead"
+            self._describe_lead(project["id"], tick)
+            project = self.load(job["project"])
+        job["label"] = f"Keyframe {index + 1}"
         seed = take_seed(shot, "keyframe")
-        recipe: dict[str, Any] = {"lead": reference, "anchor": None, "base": None}
-        identity = False
-        if anchor:
-            # name the world as well as showing it, so a new camera setup never wanders off to another place
-            prompt = director.coverage_prompt(shot["action"], shot["shot_size"], look, continuity,
-                                              has_cast=bool(reference), camera_move=shot["camera_move"], lead=lead,
-                                              world=scene.split(". ")[0].strip().rstrip("."),
-                                              identity=lead_identity(project) if reference else "")
-            graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], anchor), prefix, aspect,
-                                          second_reference=self._upload(project["id"], reference) if reference else None)
-            recipe.update(kind="coverage", anchor={"shot": anchor_shot["id"], "image": anchor},
-                          steps=["Qwen-Image-Edit 2511 · new camera setup · 4 steps"])
-        elif reference and not project.get("cast", "").strip():
-            # Only a photo to go on: edit the person into the scene.
-            prompt = director.cast_keyframe_prompt(scene, shot["action"], shot["shot_size"], look, continuity)
-            graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], reference), prefix, aspect)
-            recipe.update(kind="photo", steps=["Qwen-Image-Edit 2511 · lead placed in the world · 4 steps"])
-        else:
-            # Text-to-image gives the best establishing frame; the cast portrait takes over from shot 2.
-            # A full description of the lead makes the model frame them large, so wide shots carry only
-            # the continuity essentials (or the description's first sentence): enough to be the same person.
-            cast = project.get("cast", "").strip()
-            if shot["shot_size"] in director.WIDE_SIZES:
-                cast = continuity.strip() or cast.split(". ")[0]
-            cast = director._join(lead_identity(project) if reference else "", cast).rstrip(".")
-            cast = cast and lead and "The lead: " + cast
-            prompt = director.keyframe_prompt(director._join(scene, cast), shot["action"], shot["shot_size"], look,
-                                              shot["camera_move"], lead)
-            graph = graphs.keyframe_graph(prompt, seed, project["aspect"], prefix)
-            identity = bool(reference)  # HiDream can't see the portrait: recast its person as the lead
-            recipe.update(kind="establishing", steps=["HiDream-O1 · world frame · 40 steps"])
+        identity = lead_identity(project) if reference else ""
+        prompt = director.shot_prompt(shot["action"], shot["shot_size"], look, continuity, has_cast=bool(reference),
+                                      camera_move=shot["camera_move"], lead=lead,
+                                      world=scene.split(". ")[0].strip().rstrip("."), identity=identity,
+                                      cast=project.get("cast", ""))
+        graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], plate), prefix, aspect,
+                                      second_reference=self._upload(project["id"], reference) if reference else None)
+        recipe = {"kind": "shot", "world": plate, "lead": reference, "identity": identity,
+                  "steps": ["Qwen-Image-Edit 2511 · the world + the lead · 4 steps"]}
         files = self.comfy.run(graph, on_tick=tick)
         name = f"key_{shot['id']}_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project["id"]) / name)
-        if identity:
-            job["label"] = f"Keyframe {index + 1} · casting the lead"
-            base, name = name, f"key_{shot['id']}_{uuid.uuid4().hex[:6]}.png"
-            identity_prompt = director.identity_prompt(continuity, lead_identity(project))
-            files = self.comfy.run(graphs.identity_graph(
-                identity_prompt, seed, self._upload(project["id"], base), self._upload(project["id"], reference),
-                prefix, aspect), on_tick=tick)
-            self.comfy.download(files[0], self.path(project["id"]) / name)
-            recipe.update(base=base, identity_prompt=identity_prompt, identity=lead_identity(project),
-                          steps=recipe["steps"] + ["Qwen-Image-Edit 2511 · identity pass · 4 steps"])
         with self.lock:
             project = self.load(job["project"])
             current = self._shot(project, shot["id"])
@@ -730,10 +749,7 @@ class Studio:
 
     def _run_title_frame(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
-        anchor = anchor_of(project)  # the title is carved into the film's anchor frame
-        source = anchor.get("keyframe") if anchor else None
-        if not source:
-            raise RuntimeError("The anchor shot needs a frame before the in-world title can be made")
+        source = world_plate(project) or self._make_world(project["id"], tick, job)  # carved into the world itself
         unit = project.get("title_shot") or {"seed": random.randrange(1, 2**31)}
         unit.setdefault("seed", random.randrange(1, 2**31))
         seed, material = take_seed(unit, "keyframe"), self.title_material(project)
@@ -748,7 +764,7 @@ class Studio:
             unit = project.setdefault("title_shot", {})
             unit.setdefault("seed", seed)
             add_take(unit, "keyframe", name, prompt=prompt, seed=seed,
-                     recipe={"kind": "title", "anchor": {"shot": anchor["id"], "image": source}})
+                     recipe={"kind": "title", "world": source})
             project["film"] = None
             self.save(project)
 

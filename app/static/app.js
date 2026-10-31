@@ -41,32 +41,24 @@ const shotIndex = id => project.shots.findIndex(s => s.id === id);
 const shotLabel = id => { const i = shotIndex(id); return i < 0 ? "a deleted shot" : `Shot ${String(i + 1).padStart(2, "0")}`; };
 
 // ---------------------------------------------------------------- lineage: what each frame is made from
-function anchorShot() {  // the shot whose frame sets the world for every other shot (mirrors studio.anchor_of)
-  return project.shots.find((s, i) => s.id === project.anchor && !(i > 0 && s.transition === "continue"))
-    || project.shots[0] || null;
-}
 const recipeOf = shot => (shot.takes?.keyframe || []).find(t => t.name === shot.keyframe)?.recipe || null;
 const leadIn = shot => shot.lead !== false && !!project.reference;
+const plateOf = () => project.world?.plate || null;
+const plateTake = () => (project.world?.takes || []).find(t => t.name === plateOf()) || null;
+const worldNow = () => ({ scene: project.scene || "", look: project.look || "", aspect: project.aspect || "" });
+const plateStale = () => !!plateTake() && JSON.stringify(plateTake().of) !== JSON.stringify(worldNow());
 
-function plannedRecipe(shot, i) {  // what the next New frame will be made from
-  const anchor = anchorShot();
+function plannedRecipe(shot, i) {  // what the next New frame will be made from (mirrors studio._run_keyframe)
   if (i > 0 && shot.transition === "continue") return { kind: "continue", from: project.shots[i - 1].id, steps: [`Last frame of shot ${i}`] };
-  const lead = leadIn(shot) ? project.reference : null;
-  if (anchor && anchor.id !== shot.id && anchor.keyframe)
-    return { kind: "coverage", lead, anchor: { shot: anchor.id, image: anchor.keyframe }, steps: ["Qwen-Image-Edit 2511 · new camera setup · 4 steps"] };
-  return { kind: "establishing", lead, steps: ["HiDream-O1 · world frame · 40 steps", ...(lead ? ["Qwen-Image-Edit 2511 · identity pass · 4 steps"] : [])] };
+  return { kind: "shot", world: plateOf(), lead: leadIn(shot) ? project.reference : null,
+    steps: [...(plateOf() ? [] : ["HiDream-O1 · paints the world plate first"]), "Qwen-Image-Edit 2511 · the world + the lead · 4 steps"] };
 }
 
 function staleness(shot) {  // why the current frame no longer matches the film ("" when it does)
   const r = recipeOf(shot);
-  if (!shot.keyframe || !r) return "";
-  if (leadIn(shot) && (r.kind === "establishing" || r.kind === "coverage") && r.lead !== project.reference)
-    return r.lead ? "Lead changed" : "Made before the lead";
-  if (r.kind === "coverage" && r.anchor && anchorShot()?.id !== shot.id) {  // the anchor isn't measured against itself
-    const a = anchorShot();
-    if (!a || a.id !== r.anchor.shot) return "Anchor changed";
-    if (a.keyframe !== r.anchor.image) return "Anchor re-framed";
-  }
+  if (!shot.keyframe || !r || r.kind !== "shot") return "";
+  if (leadIn(shot) && r.lead !== project.reference) return r.lead ? "Lead changed" : "Made before the lead";
+  if (r.world !== plateOf()) return "World changed";
   return "";
 }
 const active = j => j.state === "queued" || j.state === "running";
@@ -240,6 +232,7 @@ function paintPortrait() {
   $("#castBtn").textContent = project.reference ? "Re-cast from description" : "Cast from description";
   paintLeadAI();
   paintLeadUsage();
+  paintWorld();
   // Gemma's description of the portrait: the words every frame and shot prompt carries about this face
   const describing = busyFor(j => j.kind === "describe_lead" || (j.kind === "cast" && j.state === "running"));
   const note = project.lead_identity_of === project.reference ? project.lead_identity : "";
@@ -358,9 +351,7 @@ function paintCard(card, shot, i) {
   const badges = [];
   if (i > 0 && shot.transition !== "cut") badges.push(`<span class="badge">${JOINT_NAME[shot.transition].toUpperCase()}</span>`);
   if (shot.lead === false) badges.push(`<span class="badge">NO LEAD</span>`);
-  const r = recipeOf(shot), stale = staleness(shot);
-  if (anchorShot()?.id === shot.id) badges.push(`<span class="badge anchor" title="Sets the world and light for every other shot">⚓ ANCHOR</span>`);
-  else if (r?.anchor) badges.push(`<span class="badge" title="World and light from ${shotLabel(r.anchor.shot)}">⚓ ${shotLabel(r.anchor.shot).slice(5)}</span>`);
+  const stale = staleness(shot);
   if (stale) badges.push(`<span class="badge warn" title="Press New frame to rebuild it">${stale.toUpperCase()}</span>`);
   if (shot.video) badges.push(`<span class="badge accent">▶</span>`);
   const dot = $(".lead-dot", card);
@@ -425,7 +416,7 @@ function renderInspector() {
       <button class="primary" data-act="video">Render shot</button>
     </div>
     <section class="recipe">
-      <div class="recipe-head"><span class="strip-label">How it was made</span><span class="anchor-ctl"></span></div>
+      <div class="recipe-head"><span class="strip-label">How it was made</span></div>
       <div class="recipe-body"></div>
       <details class="prompts"><summary>Prompts the models receive</summary><div class="prompt-body"></div></details>
     </section>`;
@@ -511,27 +502,23 @@ function paintRecipe(shot, i) {
   const ins = $("#inspector"), body = $(".recipe-body", ins);
   if (!body) return;
   const made = recipeOf(shot), r = made || (shot.keyframe ? null : plannedRecipe(shot, i));
-  const anchor = anchorShot(), isAnchor = anchor?.id === shot.id, stale = staleness(shot);
-  const sig = JSON.stringify([made, r, stale, isAnchor, shot.keyframe, shot.video, shot.seconds, shot.camera_move,
-    shot.sound, project.reference, anchor?.keyframe]);
+  const stale = staleness(shot);
+  const sig = JSON.stringify([made, r, stale, shot.keyframe, shot.video, shot.seconds, shot.camera_move,
+    shot.sound, project.reference, plateOf()]);
   if (body.dataset.sig === sig) return;
   body.dataset.sig = sig;
-  $(".anchor-ctl", ins).innerHTML = isAnchor
-    ? `<span class="anchor-pill" title="Every other shot takes its world and light from this frame">⚓ Anchor</span>`
-    : i > 0 && shot.transition === "continue" ? "" : `<button type="button" class="link" data-pin>Set as anchor</button>`;
-  const pin = $("[data-pin]", ins);
-  if (pin) pin.onclick = () => { project.anchor = shot.id; save(true); toast(`${shotLabel(shot.id)} is now the anchor`); };
-  if (!r) {  // a frame from before lineage was recorded
-    body.innerHTML = `<p class="hint">This frame was made before lineage was recorded. Press New frame to rebuild it from the lead${isAnchor ? "" : " and the anchor"}.</p>`;
+  if (!r || !["shot", "continue", "upload"].includes(r.kind)) {  // made before the world plate
+    body.innerHTML = `<div class="recipe-stale"><span>Made before the world plate. Rebuild it so this shot uses the world and the lead.</span>
+      <button type="button" class="ghost small" data-refresh>New frame</button></div>`;
+    $("[data-refresh]", body).onclick = () => queueShot(shot, "keyframe");
     return;
   }
   const ing = (src, title, sub, go) => `<button type="button" class="ingredient" data-go="${go}">
-    ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "Story world" ? "¶" : "↺"}</span>`}
+    ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "The world" ? "¶" : "↺"}</span>`}
     <b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></button>`;
   const inputs = [];
+  if (r.kind === "shot") inputs.push(ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
   if (r.lead) inputs.push(ing(media(r.lead), "The lead", "Face and wardrobe", "story"));
-  if (r.anchor) inputs.push(ing(media(r.anchor.image), `⚓ ${shotLabel(r.anchor.shot)}`, "World and light", "shot:" + r.anchor.shot));
-  if (r.kind === "establishing" || r.kind === "photo") inputs.push(ing("", "Story world", "World, action and look", "story"));
   if (r.kind === "continue") inputs.push(ing(media(project.shots[shotIndex(r.from)]?.keyframe), shotLabel(r.from), "Its last frame", "shot:" + r.from));
   if (r.kind === "upload") inputs.push(ing(media(shot.keyframe), "Your frame", "Uploaded", ""));
   const steps = [...(r.steps || [])];
@@ -541,17 +528,42 @@ function paintRecipe(shot, i) {
     ${stale ? `<div class="recipe-stale"><span>${stale}: this frame no longer matches the film.</span><button type="button" class="ghost small" data-refresh>New frame</button></div>` : ""}
     <div class="ingredients">${inputs.join("")}</div>
     ${r.identity ? `<p class="recipe-told"><b>Told about the lead:</b> ${escapeHtml(r.identity)}</p>` : ""}
-    ${r.base ? `<div class="recipe-base"><img src="${media(r.base)}" alt=""><span>HiDream's frame, before the identity pass cast the lead</span></div>` : ""}
     <ol class="recipe-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}
       <li class="${shot.video ? "" : "next"}">${escapeHtml(video)}${shot.video ? "" : " · press Render shot"}</li></ol>
     ${!leadIn(shot) && shot.lead !== false ? `<p class="hint">No lead portrait yet: cast one on the Story page so every shot keeps the same face.</p>` : ""}`;
   $$("[data-go]", body).forEach(b => b.onclick = () => {
     const go = b.dataset.go;
     if (go === "story") { setStage("story"); $("#refDrop").scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else if (go === "world") { setStage("story"); $(".world-plate").scrollIntoView({ behavior: "smooth", block: "center" }); }
     else if (go.startsWith("shot:")) select(go.slice(5));
   });
   const refresh = $("[data-refresh]", body);
   if (refresh) refresh.onclick = () => queueShot(shot, "keyframe");
+}
+
+function paintWorld() {  // the Story page shows the world plate every shot is made in
+  const img = $("#worldImg"), plate = plateOf();
+  img.hidden = !plate;
+  if (plate && img.dataset.src !== plate) { img.src = media(plate); img.dataset.src = plate; }
+  $("#worldEmpty").hidden = !!plate;
+  const job = busyFor(j => j.kind === "world");
+  $("#worldBusy").hidden = !job;
+  if (job) $("#worldBusy").textContent = job.state === "running" ? `${job.label} · ${Math.round(job.elapsed)}s` : "Painting · queued";
+  $("#worldBtn").disabled = !!job;
+  $("#worldBtn").textContent = plate ? "New world plate" : "Paint the world";
+  $("#worldStale").hidden = !plateStale();
+  const box = $("#worldTakes"), takes = project.world?.takes || [];
+  const sig = JSON.stringify([takes.map(t => t.name), plate]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig; box.innerHTML = "";
+  if (takes.length < 2) return;
+  takes.forEach((t, n) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = `W${n + 1}`; b.classList.toggle("on", t.name === plate);
+    b.title = t.empty === false ? "Gemma saw someone in this plate" : "Empty";
+    b.onclick = async () => mergeServer(await post(`/api/projects/${project.id}/world/take`, { name: t.name }));
+    box.appendChild(b);
+  });
 }
 
 function paintLeadUsage() {  // the Story page shows where the lead appears and which frames are out of date
@@ -664,7 +676,7 @@ function paintTitleShot() {
     if (vids.length > 1) { const s = document.createElement("span"); s.className = "sep"; box.append(s, "Motion"); vids.forEach((t, n) => chip(`S${n + 1}`, "video", t, t.name === unit.video)); }
   }
   const made = (unit.takes?.keyframe || []).find(t => t.name === unit.keyframe)?.recipe;
-  $("#titleStale").hidden = !(unit.keyframe && (!made || made.anchor?.image !== anchorShot()?.keyframe));
+  $("#titleStale").hidden = !(unit.keyframe && (!made || made.world !== plateOf()));
   const busy = busyFor(j => j.kind.startsWith("title_"));
   $("#makeTitle").disabled = $("#rerollTitleMotion").disabled = !!busy;
   $("#makeTitle").textContent = busy ? (busy.state === "running" ? `${busy.label} · ${Math.round(busy.elapsed)}s` : "Queued…")
@@ -801,7 +813,7 @@ function mergeServer(fresh, rerender) {
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed }));
   for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
-    "lead_identity", "lead_identity_of"]) project[k] = fresh[k];
+    "lead_identity", "lead_identity_of", "world"]) project[k] = fresh[k];
   if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
   project.story_history = fresh.story_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
@@ -890,6 +902,7 @@ $("#aiContinuity").onclick = () => writeLead("continuity");
 $("#trailerUndo").onclick = () => $("#aiUndo").onclick();
 $("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-story`)); };
 $("#aiEverything").onclick = () => writeStory("everything");
+$("#worldBtn").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/world`); poll(); };
 $("#redescribe").onclick = async () => { await post(`/api/projects/${project.id}/describe-lead`); poll(); };
 $$("[data-ai]").forEach(b => b.onclick = () => writeStory(b.dataset.ai));
 $("#idea").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); writeStory("everything"); } };

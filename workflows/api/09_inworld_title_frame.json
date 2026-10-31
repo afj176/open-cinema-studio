@@ -54,7 +54,7 @@
   "6": {
     "class_type": "LoadImage",
     "inputs": {
-      "image": "oc_anchor_frame.jpg"
+      "image": "oc_world_plate.jpg"
     }
   },
   "7": {

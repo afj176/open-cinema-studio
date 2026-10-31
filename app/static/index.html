@@ -66,6 +66,17 @@
       <div class="ai-field" id="worldField">
         <div class="field-head"><span>World</span><button class="ai small" data-ai="world" type="button">✨ World</button></div>
         <textarea id="scene" class="world-input grow" rows="3" placeholder="Where and when are we? What does this world look, sound and feel like?" aria-label="World"></textarea>
+        <div class="world-plate">
+          <div class="wp-frame"><img id="worldImg" alt="The world plate" hidden><span class="wp-empty" id="worldEmpty">No world plate yet</span>
+            <span class="portrait-busy" id="worldBusy" hidden></span></div>
+          <div class="wp-side">
+            <b>The world plate</b>
+            <p class="hint">Every shot happens here. HiDream-O1 paints this place with nobody in it and Gemma checks it's empty, so the only face any shot ever sees is the lead's.</p>
+            <p class="wp-stale" id="worldStale" hidden>The world, look or aspect changed since this plate was painted.</p>
+            <div class="takes" id="worldTakes"></div>
+            <button id="worldBtn" class="ghost small" type="button">Paint the world</button>
+          </div>
+        </div>
       </div>
     </div>
 

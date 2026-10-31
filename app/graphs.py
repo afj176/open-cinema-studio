@@ -113,10 +113,14 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
     return graph
 
 
-def identity_graph(prompt: str, seed: int, frame: str, lead: str, prefix: str, aspect: str) -> dict[str, Any]:
-    """Identity pass: Qwen-Image-Edit-2511 recasts the person in a finished frame (Picture 1) as the
-    film's lead (Picture 2), keeping the frame's composition, light and world."""
-    return coverage_graph(prompt, seed, frame, prefix, aspect, second_reference=lead, keep_layout=True)
+def people_check_graph(image: str, question: str) -> dict[str, Any]:
+    """Gemma 4 E4B looks at an image and answers YES or NO (used to keep the world plate empty)."""
+    return {
+        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "2": node("LoadImage", image=image),
+        "3": node("TextGenerate", clip=["1", 0], prompt=question, image=["2", 0], max_length=8, sampling_mode="off"),
+        "answer": node("PreviewAny", source=["3", 0]),
+    }
 
 
 def frames_for(seconds: float, fps: int) -> int:
