@@ -305,6 +305,7 @@ details.prompts p { font: 12px/1.55 var(--mono); color: #bdb9b0; background: rgb
 
 /* screen */
 .screening { max-width: min(1280px, calc((100vh - 250px) * 16 / 9)); margin: 0 auto; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+.screen-logline { margin: 4px 0 8px; max-width: 62ch; font-size: 17px; font-style: italic; color: var(--muted); }
 .screen-frame { width: 100%; border-radius: var(--r); box-shadow: 0 40px 120px rgba(0,0,0,.7); }
 .screen-meta { width: 100%; display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
 .credits-line { color: var(--faint); font: 500 12px var(--mono); letter-spacing: .04em; text-align: center; }

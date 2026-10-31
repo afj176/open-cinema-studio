@@ -472,11 +472,18 @@ function renderEdit() {
   $("#finish").checked = !!project.finish;
 }
 
+function posterFrame() {  // the film's opening image, shown before play
+  const m = motionState(), title = project.title_shot?.keyframe;
+  const frame = m.title.on && m.title.style === "inworld" && title ? title : project.shots[0]?.keyframe;
+  return frame ? media(frame) : "";
+}
+
 function renderViewer() {
   $$("#viewerTabs button").forEach(b => { b.classList.toggle("on", b.dataset.view === view); b.disabled = b.dataset.view === "trailer" && !project.trailer; });
   const src = view === "trailer" ? project.trailer : project.film;
   const v = $("#viewer");
   if (src && v.dataset.src !== src) { v.src = media(src); v.dataset.src = src; }
+  if (v.getAttribute("poster") !== posterFrame()) v.poster = posterFrame();
   v.hidden = !src;
   $("#viewerEmpty").hidden = !!src;
   const total = project.shots.reduce((s, x) => s + Number(x.seconds || 0), 0);
@@ -629,15 +636,19 @@ function renderScreen() {
   $$("#screenTabs button").forEach(b => { b.classList.toggle("on", b.dataset.screen === screen); b.disabled = !sources[b.dataset.screen]; });
   const src = sources[screen], v = $("#screenVideo");
   if (src && v.dataset.src !== src) { v.src = media(src); v.dataset.src = src; }
+  if (v.getAttribute("poster") !== posterFrame()) v.poster = posterFrame();
   v.hidden = !src;
   $("#screenEmpty").hidden = !!src;
   $("#screenEmpty").textContent = project.film ? "" : "Nothing to screen yet — render the shots and cut the film.";
   $("#screenTitle").textContent = project.title;
-  const total = project.shots.reduce((s, x) => s + Number(x.seconds || 0), 0);
-  $("#screenInfo").textContent = { master: "1080p master · SeedVR2", film: `${project.shots.length} shots · about ${total}s · 1280×704`,
-    trailer: "Trailer · score composed by LTX" }[screen] + (project.finish ? " · film finish" : "");
-  const dl = $("#download");
-  dl.hidden = !src; dl.href = media(src); dl.download = `${project.title}${screen === "film" ? "" : " " + screen}.mp4`;
+  $("#screenLogline").textContent = project.logline || "";
+  // what is actually playing: its real length and frame size once the video has loaded
+  const facts = v.duration > 0 && src ? [`${Math.round(v.duration)}s`, `${v.videoWidth}×${v.videoHeight}`] : [];
+  const n = project.shots.length;
+  $("#screenInfo").textContent = [{ master: "1080p master · SeedVR2", film: `${n} shot${n === 1 ? "" : "s"}`,
+    trailer: "Trailer · score composed by LTX" }[screen], ...facts].join(" · ") + (project.finish && screen !== "trailer" ? " · film finish" : "");
+  const dl = $("#download"), safe = (project.title || "Untitled film").replace(/[\\/:*?"<>|]+/g, " ").trim();
+  dl.hidden = !src; dl.href = media(src); dl.download = `${safe}${screen === "film" ? "" : " " + screen}.mp4`;
   const masterJob = busyFor(j => j.kind === "master");
   $("#master").hidden = !project.film || !!mastered;
   $("#master").disabled = !!masterJob;
@@ -773,6 +784,7 @@ $("#paletteReset").onclick = () => { delete project.palette; project.palette = n
 $$("#viewerTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; renderViewer(); });
 $("#finish").onchange = e => { project.finish = e.target.checked; save(); };
 $("#viewer").onloadedmetadata = () => renderViewer();
+$("#screenVideo").onloadedmetadata = () => renderScreen();
 $("#stitch").onclick = async () => {
   await flush();
   const complete = project.shots.every(s => s.video);  // missing shots render first, then the cut
