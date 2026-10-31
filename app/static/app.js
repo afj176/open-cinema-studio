@@ -108,6 +108,8 @@ function effectivePalette() {
 function applyTheme() {
   const palette = effectivePalette();
   const root = document.documentElement.style;
+  const [aw, ah] = (project.aspect || "16:9").split(":").map(Number);
+  root.setProperty("--frame", `${aw} / ${ah || 1}`);  // storyboard frames take the film's aspect
   root.setProperty("--accent", palette[1]);
   root.setProperty("--accent-ink", luminance(palette[1]) > 0.45 ? "#120e0a" : "#fbfaf7");
   const key = project.title_shot?.keyframe || project.shots.find(s => s.keyframe)?.keyframe || project.reference;
@@ -193,7 +195,7 @@ function renderStory() {
   }
   const aspects = $("#aspects");
   aspects.innerHTML = presets.aspects.map(a => `<button type="button" class="${a === project.aspect ? "on" : ""}">${a}</button>`).join("");
-  $$("button", aspects).forEach(b => b.onclick = () => { project.aspect = b.textContent; $$("button", aspects).forEach(x => x.classList.toggle("on", x === b)); save(); });
+  $$("button", aspects).forEach(b => b.onclick = () => { project.aspect = b.textContent; $$("button", aspects).forEach(x => x.classList.toggle("on", x === b)); applyTheme(); save(); });
 }
 
 function paintPortrait() {
@@ -268,8 +270,7 @@ function adoptStory(fresh) {
 // ---------------------------------------------------------------- shots: storyboard
 function renderBoard() {
   const board = $("#board");
-  const rendered = project.shots.filter(s => s.video).length;
-  $("#shotsHeading").textContent = `${project.shots.length} shots · ${rendered} rendered`;
+  paintShotsHeading();
   board.innerHTML = "";
   project.shots.forEach((shot, i) => {
     const card = document.createElement("article");
@@ -322,7 +323,13 @@ function paintCard(card, shot, i) {
   if (job) busy.textContent = job.state === "running" ? `${job.label}\n${Math.round(job.elapsed)}s` : `${job.label} · queued`;
 }
 
+function paintShotsHeading() {
+  const n = project.shots.length, rendered = project.shots.filter(s => s.video).length;
+  $("#shotsHeading").textContent = `${n} shot${n === 1 ? "" : "s"} · ${rendered} rendered`;
+}
+
 function paintBoard() {
+  paintShotsHeading();
   $$(".card", $("#board")).forEach(card => {
     const i = shotIndex(card.dataset.id);
     if (i >= 0) paintCard(card, project.shots[i], i);
@@ -346,7 +353,7 @@ function renderInspector() {
   ins.innerHTML = `
     <div class="ins-head"><div><p class="eyebrow">Shot ${String(i + 1).padStart(2, "0")}</p><span class="serif">${escapeHtml(shot.camera_move)}</span></div>
       <div class="row-actions"><button class="ghost small" data-act="dup" title="Duplicate">Duplicate</button>
-      <button class="ghost small danger" data-act="del" title="Delete">Delete</button></div></div>
+      <button class="ghost small danger" data-act="del" ${project.shots.length < 2 ? 'disabled title="A film needs at least one shot"' : 'title="Delete"'}>Delete</button></div></div>
     <div class="ins-media"></div>
     <div class="strips"></div>
     <label>What happens<textarea class="grow" data-k="action" rows="3" placeholder="Describe the action, as you'd see it">${escapeHtml(shot.action)}</textarea></label>
@@ -361,7 +368,7 @@ function renderInspector() {
         `<button type="button" data-tr="${t}" class="${(shot.transition || "cut") === t ? "on" : ""}" ${i === 0 && t !== "cut" ? "disabled" : ""}>${JOINT_NAME[t]}</button>`).join("")}</div>
     </div>
     <div class="ins-actions">
-      <button class="ghost" data-act="keyframe" ${shot.transition === "continue" && i > 0 ? "disabled" : ""}>New frame</button>
+      <button class="ghost" data-act="keyframe" ${shot.transition === "continue" && i > 0 ? 'disabled title="One take: this shot starts from the last frame of the shot before"' : ""}>New frame</button>
       <label class="button ghost">Upload frame<input type="file" accept="image/*" hidden data-act="upload"></label>
       <button class="primary" data-act="video">Render shot</button>
     </div>
@@ -372,12 +379,18 @@ function renderInspector() {
     const key = field.dataset.k;
     field.addEventListener(field.tagName === "SELECT" || field.type === "checkbox" ? "change" : "input", () => {
       shot[key] = field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value;
+      if (key === "seconds" && !(shot.seconds >= 2 && shot.seconds <= 10)) return;  // wait for a valid length; blur clamps it
       if (key === "camera_move") { $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || ""; $(".ins-head .serif", ins).textContent = shot.camera_move; }
       const card = $(`.card[data-id="${shot.id}"]`);
       if (card) paintCard(card, shot, i);
       save();
     });
   }
+  const secs = $('[data-k="seconds"]', ins);
+  secs.onblur = () => {
+    const v = Math.min(10, Math.max(2, Math.round(Number(secs.value) || 4)));
+    if (secs.value !== String(v) || shot.seconds !== v) { secs.value = v; shot.seconds = v; paintCard($(`.card[data-id="${shot.id}"]`), shot, i); save(); }
+  };
   $$("[data-tr]", ins).forEach(b => b.onclick = () => { shot.transition = b.dataset.tr; save(true); });
   $('[data-act="keyframe"]', ins).onclick = () => queueShot(shot, "keyframe");
   $('[data-act="video"]', ins).onclick = () => queueShot(shot, "video");

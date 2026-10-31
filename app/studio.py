@@ -265,6 +265,10 @@ class Studio:
                                 "lead"):
                         if key in incoming:
                             shot[key] = incoming[key]
+                    try:  # LTX shots are 2-10 s; anything else would blow the VRAM or render nothing
+                        shot["seconds"] = min(10.0, max(2.0, float(shot["seconds"])))
+                    except (TypeError, ValueError):
+                        shot["seconds"] = 4.0
                     shots.append(shot)
                 project["shots"] = shots
             return self.save(project)
@@ -414,10 +418,12 @@ class Studio:
             graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], reference), prefix, aspect)
         else:
             # Text-to-image gives the best establishing frame; the cast portrait takes over from shot 2.
-            # Any description of the lead makes Qwen frame them large, so wide shots leave the lead
-            # to the shot's own action and keep the world as the subject.
-            cast = project.get("cast", "")
-            cast = "" if shot["shot_size"] in director.WIDE_SIZES or not lead else cast and "The lead: " + cast
+            # A full description of the lead makes the model frame them large, so wide shots carry only
+            # the continuity essentials (or the description's first sentence): enough to be the same person.
+            cast = project.get("cast", "").strip()
+            if shot["shot_size"] in director.WIDE_SIZES:
+                cast = continuity.strip() or cast.split(". ")[0]
+            cast = cast and lead and "The lead: " + cast
             prompt = director.keyframe_prompt(director._join(scene, cast), shot["action"], shot["shot_size"], look,
                                               shot["camera_move"], lead)
             graph = graphs.keyframe_graph(prompt, seed, project["aspect"], prefix)

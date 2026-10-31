@@ -375,7 +375,7 @@ def coverage_prompt(action: str, shot_size: str, look: str, continuity: str = ""
                     camera_move: str = "", lead: bool = True) -> str:
     """Instruction for Qwen-Image-Edit-2511 to shoot a new setup of the film shown in Picture 1 (cast in Picture 2)."""
     cast = ("The lead is the person from Picture 2 with exactly the same face, hair and wardrobe. Picture 2 is "
-            "only an identity reference: take her pose, expression and body language from this shot's action, "
+            "only an identity reference: take their pose, expression and body language from this shot's action, "
             "not from Picture 2, and play it with full energy and emotion"
             if has_cast else "The same characters with identical faces, hair and wardrobe")
     return _join(
