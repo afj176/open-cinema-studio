@@ -121,6 +121,13 @@ def world_plate(project: dict[str, Any]) -> str | None:
     return (project.get("world") or {}).get("plate")
 
 
+def current_plate(project: dict[str, Any]) -> str | None:
+    """The world plate, but only if it was painted from today's world, look and aspect."""
+    unit = project.get("world") or {}
+    take = next((t for t in unit.get("takes", []) if t["name"] == unit.get("plate")), None)
+    return unit.get("plate") if take and take.get("of") == world_of(project) else None
+
+
 def add_take(shot: dict[str, Any], kind: str, name: str, **info: Any) -> None:
     """Record a new keyframe or video take and make it current."""
     shot.setdefault("takes", {}).setdefault(kind, []).append({"name": name, **info})
@@ -341,7 +348,7 @@ class Studio:
             jobs.append(self.enqueue("cast", project_id, None, "Casting"))
         elif project.get("reference") and not lead_identity(project):
             jobs.append(self.enqueue("describe_lead", project_id, None, "Describing the lead's face"))
-        if not world_plate(project):  # every shot is made in the world plate, so it comes first
+        if not current_plate(project):  # every shot is made in the world plate, so it comes first
             jobs.append(self.enqueue("world", project_id, None, "Painting the world"))
         for index, shot in enumerate(project["shots"]):
             continues = shot["transition"] == "continue" and index > 0
@@ -489,7 +496,7 @@ class Studio:
         look, scene, aspect = project["look"], project["scene"], project["aspect"]
         continuity = project.get("continuity", "")
         prefix = f"open-cinema/{project['id']}/key_{shot['id']}"
-        plate = world_plate(project) or self._make_world(project["id"], tick)
+        plate = current_plate(project) or self._make_world(project["id"], tick)
         lead = shot.get("lead", True)
         reference = project.get("reference") if lead else None
         if reference and not lead_identity(project):  # a new portrait: describe its face before painting it
@@ -749,7 +756,7 @@ class Studio:
 
     def _run_title_frame(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
-        source = world_plate(project) or self._make_world(project["id"], tick, job)  # carved into the world itself
+        source = current_plate(project) or self._make_world(project["id"], tick, job)  # carved into the world itself
         unit = project.get("title_shot") or {"seed": random.randrange(1, 2**31)}
         unit.setdefault("seed", random.randrange(1, 2**31))
         seed, material = take_seed(unit, "keyframe"), self.title_material(project)
@@ -966,8 +973,13 @@ class Studio:
                 fresh.pop("palette", None)  # a new look without colours of its own uses the look's palette
             self.save(fresh)
             recast = target == "everything" and out["lead"] and (not fresh.get("reference") or fresh.get("reference_prompt"))
+            repaint = target in ("everything", "world", "look") and not current_plate(fresh) and not any(
+                j["project"] == fresh["id"] and j["kind"] == "world" and j["state"] in ("queued", "running")
+                for j in self.jobs)
         if recast:  # the page is complete only with the lead's face; never replaces an uploaded photo
             self.enqueue("cast", job["project"], None, "Casting the new lead")
+        if repaint:  # a new world needs its own plate before any shot is made in it
+            self.enqueue("world", job["project"], None, "Painting the world")
 
     # ---------- AI shot writer ----------
     def _run_write_shots(self, job: dict[str, Any], tick) -> None:

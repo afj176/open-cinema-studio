@@ -51,7 +51,8 @@ const plateStale = () => !!plateTake() && JSON.stringify(plateTake().of) !== JSO
 function plannedRecipe(shot, i) {  // what the next New frame will be made from (mirrors studio._run_keyframe)
   if (i > 0 && shot.transition === "continue") return { kind: "continue", from: project.shots[i - 1].id, steps: [`Last frame of shot ${i}`] };
   return { kind: "shot", world: plateOf(), lead: leadIn(shot) ? project.reference : null,
-    steps: [...(plateOf() ? [] : ["HiDream-O1 · paints the world plate first"]), "Qwen-Image-Edit 2511 · the world + the lead · 4 steps"] };
+    steps: [...(plateOf() && !plateStale() ? [] : [`HiDream-O1 · paints ${plateOf() ? "a new" : "the"} world plate first`]),
+      "Qwen-Image-Edit 2511 · the world + the lead · 4 steps"] };
 }
 
 function staleness(shot) {  // why the current frame no longer matches the film ("" when it does)
