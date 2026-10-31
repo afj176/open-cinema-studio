@@ -150,6 +150,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.choose_world(m.group(1), name))
             if m := re.fullmatch(r"/api/projects/(\w+)/describe-lead", route):
                 return self._json(studio.enqueue("describe_lead", m.group(1), None, "Describing the lead's face"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/delete", route):
+                try:
+                    return self._json(studio.delete(m.group(1)))
+                except RuntimeError as error:
+                    return self._json({"error": str(error)}, 409)
             if m := re.fullmatch(r"/api/projects/(\w+)/write-shots", route):
                 options = json.loads(self._body() or b"{}")
                 mode = options.get("mode", "board")

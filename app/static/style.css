@@ -480,3 +480,17 @@ div.add-card .add-plain:hover { color: var(--text); }
 button.danger.armed { background: rgba(220,70,70,.22); border-color: rgba(220,70,70,.7); color: #ffb3b3; }
 .toast { display: flex; gap: 14px; align-items: center; }
 .toast[hidden] { display: none; }
+.film-row { display: flex; align-items: center; gap: 2px; border-radius: var(--r-sm); }
+.film-row:hover { background: rgba(255,255,255,.05); }
+.menu li .film-open { flex: 1; min-width: 0; }
+.menu li .film-open:hover { background: transparent; }
+.film-open span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu li .film-del { width: auto; flex: none; padding: 8px; color: var(--muted); opacity: 0; }
+.film-row:hover .film-del, .film-del:focus-visible { opacity: 1; }
+.menu li .film-del:hover { color: #ff9b9b; background: rgba(220,70,70,.16); }
+@media (hover: none) { .menu li .film-del { opacity: .7; } }
+.film-row.confirming { background: rgba(220,70,70,.14); padding: 4px 4px 4px 12px; gap: 6px; }
+.film-ask { flex: 1; min-width: 0; font-size: 13px; color: #ffc9c9; }
+.menu li .film-yes, .menu li .film-no { width: auto; flex: none; padding: 6px 10px; font-size: 12px; }
+.menu li .film-yes { background: rgba(220,70,70,.85); color: #fff; }
+.menu li .film-yes:hover { background: rgb(220,70,70); }

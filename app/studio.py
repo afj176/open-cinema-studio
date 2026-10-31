@@ -260,6 +260,20 @@ class Studio:
                           "cover": cover, "film": project.get("film")})
         return items
 
+    def delete(self, project_id: str) -> list[dict[str, Any]]:
+        """Delete a film and everything made for it, and drop its queued jobs."""
+        with self.lock:
+            folder = self.path(project_id)
+            if not folder.exists():
+                raise KeyError(f"film {project_id} not found")
+            if any(j["project"] == project_id and j["state"] == "running" for j in self.jobs):
+                raise RuntimeError("This film is rendering; cancel the queue or wait for it to finish first")
+            for job in self.jobs:
+                if job["project"] == project_id and job["state"] == "queued":
+                    job["state"], job["error"] = "cancelled", "the film was deleted"
+            shutil.rmtree(folder)
+        return self.list_projects()
+
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
         project = {"id": uuid.uuid4().hex[:10], "title": data.get("title") or "Untitled film",
                    "scene": data.get("scene", ""), "look": data.get("look", "Anamorphic blockbuster"),

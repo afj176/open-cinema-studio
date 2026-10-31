@@ -171,9 +171,35 @@ function renderHeader() {
 }
 
 function renderProjectMenu() {
-  $("#projectList").innerHTML = projects.map(p => `<li><button data-id="${p.id}" class="${p.id === project.id ? "current" : ""}">
-    <span>${escapeHtml(p.title)}</span><small>${p.shots} shots</small></button></li>`).join("");
-  $$("#projectList button").forEach(b => b.onclick = async () => { $("#projectMenu").hidden = true; await flush(); openProject(b.dataset.id); });
+  $("#projectList").innerHTML = projects.map(p => `<li class="film-row" data-id="${p.id}">
+    <button type="button" class="film-open ${p.id === project.id ? "current" : ""}"><span>${escapeHtml(p.title)}</span><small>${p.shots} shot${p.shots === 1 ? "" : "s"}</small></button>
+    <button type="button" class="film-del" title="Delete this film" aria-label="Delete ${escapeHtml(p.title)}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button></li>`).join("");
+  $$("#projectList .film-row").forEach(row => {
+    const id = row.dataset.id, film = projects.find(p => p.id === id);
+    $(".film-open", row).onclick = async () => { $("#projectMenu").hidden = true; await flush(); openProject(id); };
+    $(".film-del", row).onclick = e => {  // confirm inline: embedded browsers silently answer confirm() with "no"
+      e.stopPropagation();
+      row.classList.add("confirming");
+      row.innerHTML = `<span class="film-ask">Delete “${escapeHtml(film.title)}” for good?</span>
+        <button type="button" class="film-yes">Delete</button><button type="button" class="film-no">Cancel</button>`;
+      $(".film-no", row).onclick = ev => { ev.stopPropagation(); renderProjectMenu(); };
+      $(".film-yes", row).onclick = ev => { ev.stopPropagation(); deleteFilm(film); };
+      $(".film-no", row).focus();
+    };
+  });
+}
+
+async function deleteFilm(film) {
+  if (film.id === project.id) clearTimeout(saveTimer);  // don't write the deleted film back
+  const res = await fetch(`/api/projects/${film.id}/delete`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) { toast(body.error || "Couldn't delete this film"); renderProjectMenu(); return; }
+  projects = body;
+  if (film.id === project.id) {
+    $("#projectMenu").hidden = true;
+    if (projects.length) await openProject(projects[0].id); else await createProject();
+  } else renderProjectMenu();
+  toast(`“${film.title}” deleted`);
 }
 
 function renderStatus() {
