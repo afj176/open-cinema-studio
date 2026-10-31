@@ -74,6 +74,12 @@ class Handler(BaseHTTPRequestHandler):
                 if STATIC.resolve() not in target.parents:
                     return self._json({"error": "forbidden"}, 403)
                 return self._file(target)
+            if route.startswith("/fonts/"):  # the node pack's open-licensed fonts, shared with the UI
+                fonts = Path(__file__).resolve().parents[1] / "custom_nodes" / "comfyui-open-cinema" / "fonts"
+                target = (fonts / unquote(route[len("/fonts/"):])).resolve()
+                if target.parent != fonts.resolve() or target.suffix != ".ttf":
+                    return self._json({"error": "forbidden"}, 403)
+                return self._file(target)
             if route.startswith("/media/"):
                 project_id, _, name = unquote(route[len("/media/"):]).partition("/")
                 target = (PROJECTS / project_id / name).resolve()
@@ -84,6 +90,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"camera_moves": list(director.CAMERA_MOVES), "shot_sizes": list(director.SHOT_SIZES),
                                    "looks": list(director.LOOKS), "aspects": list(graphs.ASPECTS),
                                    "palettes": director.LOOK_PALETTES,
+                                   "score_styles": director.SCORE_STYLES, "materials": director.TITLE_MATERIALS,
                                    "comfy": self.studio.comfy.alive()})
             if route == "/api/projects":
                 return self._json(self.studio.list_projects())
