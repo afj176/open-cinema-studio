@@ -98,8 +98,15 @@ function luminance(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+function effectivePalette() {
+  // [ink, accent, glow, bg, face] — the look's, with the film's custom colours on top
+  const base = presets.palettes?.[project.look] || ["#f4f4f2", "#e2a43a", "#ffd27a", "#0a0a0b", "fraunces"];
+  const c = project.palette;
+  return c && c.accent ? [c.ink, c.accent, c.glow, c.bg, base[4]] : base;
+}
+
 function applyTheme() {
-  const palette = presets.palettes?.[project.look] || ["#f4f4f2", "#e2a43a", "#ffd27a", "#0a0a0b", "fraunces"];
+  const palette = effectivePalette();
   const root = document.documentElement.style;
   root.setProperty("--accent", palette[1]);
   root.setProperty("--accent-ink", luminance(palette[1]) > 0.45 ? "#120e0a" : "#fbfaf7");
@@ -107,7 +114,22 @@ function applyTheme() {
   const amb = $("#ambient");
   if (key) { amb.style.backgroundImage = `url("${media(key)}")`; amb.classList.add("on"); }
   else amb.classList.remove("on");
-  $("#lookSwatches").innerHTML = palette.slice(0, 4).map(c => `<span style="background:${c}"></span>`).join("");
+  $("#lookSwatches").innerHTML = [palette[3], palette[0], palette[1], palette[2]].map(c => `<span style="background:${c}"></span>`).join("");
+  paintPalette();
+}
+
+function paintPalette() {
+  const [ink, accent, glow, bg, face] = effectivePalette();
+  const values = { bg, ink, accent, glow };
+  $$("[data-pal]").forEach(i => { if (document.activeElement !== i) i.value = values[i.dataset.pal]; });
+  const sample = $("#paletteSample").style;
+  sample.setProperty("--ps-bg", bg); sample.setProperty("--ps-ink", ink);
+  sample.setProperty("--ps-accent", accent); sample.setProperty("--ps-glow", glow);
+  sample.setProperty("--ps-face", FACE[face] || "Manrope");
+  $("#psTitle").textContent = project.title || "Untitled film";
+  const custom = !!(project.palette && project.palette.accent);
+  $("#paletteSource").textContent = custom ? "Custom colours for this film" : `From the ${project.look} look`;
+  $("#paletteReset").hidden = !custom;
 }
 
 function renderHeader() {
@@ -144,6 +166,8 @@ function renderStatus() {
 // ---------------------------------------------------------------- story
 function renderStory() {
   $("#title").value = project.title;
+  $("#idea").value = project.idea || "";
+  $("#logline").value = project.logline || "";
   $("#scene").value = project.scene;
   $("#cast").value = project.cast || "";
   $("#continuity").value = project.continuity || "";
@@ -160,7 +184,11 @@ function renderStory() {
     b.innerHTML = `<div class="look-top"><span class="look-sample" style="font-family:${FACE[face] || "Manrope"};font-weight:${face === "manrope" ? 800 : 900}">Aa</span>
       <span class="look-swatches">${[bg, ink, accent, glow].map(c => `<i style="background:${c}"></i>`).join("")}</span></div>
       <span class="look-name">${escapeHtml(look)}</span><span class="look-score">${escapeHtml(score)}</span>`;
-    b.onclick = () => { project.look = look; $$(".look", grid).forEach(x => x.classList.toggle("on", x === b)); applyTheme(); renderEditPanel(); save(); };
+    b.onclick = () => {  // picking a look brings its colours; tune them afterwards in Colours
+      project.look = look; project.palette = null;
+      $$(".look", grid).forEach(x => x.classList.toggle("on", x === b)); applyTheme(); renderEditPanel(); save();
+    };
+    b.title = presets.score_styles?.[look] || look;
     grid.appendChild(b);
   }
   const aspects = $("#aspects");
@@ -180,19 +208,35 @@ function paintPortrait() {
   paintLeadAI();
 }
 
+const STORY_TARGET_FIELDS = {
+  everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField"],
+  title: ["titleField"], logline: ["loglineField"], world: ["worldField"], look: ["lookField"],
+};
+const AI_FIELDS = ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField"];
+
 function paintLeadAI() {
-  const job = busyFor(j => j.kind === "write_lead");
+  const job = busyFor(j => j.kind === "write_lead" || j.kind === "write_story");
   const status = job ? (job.state === "running" ? `${job.label}… ${Math.round(job.elapsed)}s` : `${job.label} · queued`) : "";
-  const castWriting = !!job && job.mode !== "continuity";
-  $("#castField").classList.toggle("writing", castWriting);
-  $("#castField").dataset.status = status;
-  $("#continuityField").classList.toggle("writing", !!job);
-  $("#continuityField").dataset.status = castWriting ? "" : status;
-  for (const id of ["aiLead", "aiPhoto", "aiContinuity"]) $("#" + id).disabled = !!job;
+  let writing = [];
+  if (job?.kind === "write_story") writing = STORY_TARGET_FIELDS[job.target] || [];
+  if (job?.kind === "write_lead") writing = job.mode === "continuity" ? ["continuityField"] : ["castField", "continuityField"];
+  for (const id of AI_FIELDS) {
+    const el = $("#" + id), on = writing.includes(id);
+    el.classList.toggle("writing", on);
+    el.dataset.status = on && (id === writing[0] || id === "lookField") && id !== "sparkField" ? status : "";
+  }
+  $$("[data-ai], #aiLead, #aiPhoto, #aiContinuity, #aiEverything").forEach(b => { b.disabled = !!job; });
+  $("#aiEverything").textContent = job?.target === "everything" ? `Writing… ${Math.round(job.elapsed || 0)}s` : "✨ Generate the whole story";
   $("#aiLead").textContent = (project.cast || "").trim() ? "✨ Refine" : "✨ Write with AI";
   $("#aiLead").title = (project.cast || "").trim() ? "Keep your details and make them camera-ready" : "Cast a lead who belongs in this world";
   $("#aiPhoto").hidden = !project.reference;
-  $("#aiUndo").hidden = !(project.lead_history || []).length;
+  $("#aiUndo").hidden = !(project.story_history || []).length;
+}
+
+async function writeStory(target) {
+  await flush();
+  await post(`/api/projects/${project.id}/write-story`, { target });
+  poll();
 }
 
 async function writeLead(mode) {
@@ -201,13 +245,24 @@ async function writeLead(mode) {
   poll();
 }
 
-function adoptLead(fresh) {
-  for (const [key, field] of [["cast", "#castField"], ["continuity", "#continuityField"]]) {
-    if (project[key] === fresh[key]) continue;
-    project[key] = fresh[key];
-    const ta = $("#" + key); ta.value = fresh[key] || ""; grow(ta);
-    $(field).classList.remove("fresh"); void $(field).offsetWidth; $(field).classList.add("fresh");
+function flash(id) { const el = $("#" + id); el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh"); }
+
+function adoptStory(fresh) {
+  const text = [["title", "titleField"], ["logline", "loglineField"], ["scene", "worldField"], ["cast", "castField"],
+    ["continuity", "continuityField"]];
+  for (const [key, field] of text) {
+    if ((project[key] || "") === (fresh[key] || "")) continue;
+    project[key] = fresh[key] || "";
+    const el = $("#" + key); el.value = project[key]; if (el.tagName === "TEXTAREA") grow(el);
+    flash(field);
   }
+  const lookChanged = project.look !== fresh.look || JSON.stringify(project.palette || null) !== JSON.stringify(fresh.palette || null);
+  project.look = fresh.look; project.palette = fresh.palette;
+  if (lookChanged) {
+    $$(".look").forEach(b => b.classList.toggle("on", $(".look-name", b).textContent === project.look));
+    flash("lookField"); renderEditPanel();
+  }
+  renderHeader(); applyTheme();
 }
 
 // ---------------------------------------------------------------- shots: storyboard
@@ -595,8 +650,8 @@ function mergeServer(fresh, rerender) {
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed }));
   for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference"]) project[k] = fresh[k];
-  if ((fresh.lead_history || []).length !== (project.lead_history || []).length) adoptLead(fresh);  // the AI (or undo) changed the lead
-  project.lead_history = fresh.lead_history;
+  if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
+  project.story_history = fresh.story_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
 }
 
@@ -661,8 +716,11 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#projec
 $("#cancelAll").onclick = () => post("/api/cancel").then(poll);
 $("#renderFilm").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/render`); toast("Rendering everything that's missing"); poll(); };
 
-for (const id of ["title", "scene", "continuity", "cast"]) $("#" + id).oninput = e => {
-  project[id] = e.target.value; if (id === "title") renderHeader(); if (id === "cast") paintLeadAI(); save();
+for (const id of ["title", "idea", "logline", "scene", "continuity", "cast"]) $("#" + id).oninput = e => {
+  project[id] = e.target.value;
+  if (id === "title") { renderHeader(); paintPalette(); }
+  if (id === "cast") paintLeadAI();
+  save();
 };
 $("#castBtn").onclick = async () => {
   if (!project.cast?.trim()) { $("#cast").focus(); toast("Describe the lead first"); return; }
@@ -677,7 +735,16 @@ $("#addShot").onclick = addShot;
 $("#aiLead").onclick = () => writeLead((project.cast || "").trim() ? "refine" : "write");
 $("#aiPhoto").onclick = () => writeLead("from photo");
 $("#aiContinuity").onclick = () => writeLead("continuity");
-$("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-lead`)); };
+$("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}/undo-story`)); };
+$("#aiEverything").onclick = () => writeStory("everything");
+$$("[data-ai]").forEach(b => b.onclick = () => writeStory(b.dataset.ai));
+$("#idea").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); writeStory("everything"); } };
+$$("[data-pal]").forEach(input => input.oninput = () => {
+  const [ink, accent, glow, bg] = effectivePalette();
+  project.palette = { bg, ink, accent, glow, ...(project.palette || {}), [input.dataset.pal]: input.value.toUpperCase() };
+  applyTheme(); save();
+});
+$("#paletteReset").onclick = () => { delete project.palette; project.palette = null; applyTheme(); save(); };
 
 $$("#viewerTabs button").forEach(b => b.onclick = () => { view = b.dataset.view; renderViewer(); });
 $("#finish").onchange = e => { project.finish = e.target.checked; save(); };

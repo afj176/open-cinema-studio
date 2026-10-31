@@ -78,6 +78,8 @@ def _split_lines(text):
 
 
 LOOK_INPUT = (list(LOOKS), {"default": "70mm epic", "tooltip": "Motion graphics take on this film look's palette"})
+PALETTE_INPUT = ("STRING", {"default": "",
+                            "tooltip": "Optional custom colours 'bg,ink,accent,glow' (hex); empty uses the look's palette"})
 
 
 class OpenCinemaTitleOverlay:
@@ -92,15 +94,16 @@ class OpenCinemaTitleOverlay:
             "look": LOOK_INPUT,
             "start": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 10.0, "step": 0.05}),
             "hold": ("FLOAT", {"default": 3.2, "min": 0.5, "max": 20.0, "step": 0.1}),
-        }}
+        }, "optional": {"palette": PALETTE_INPUT}}
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "render"
     CATEGORY = "Open Cinema/Motion"
 
-    def render(self, images, fps, title, subtitle, look, start, hold):
+    def render(self, images, fps, title, subtitle, look, start, hold, palette=""):
         from . import motion
-        return (_to_tensor(motion.title_overlay(_to_numpy(images), fps, title, subtitle, look, start, hold)),)
+        return (_to_tensor(motion.title_overlay(_to_numpy(images), fps, title, subtitle, look, start, hold,
+                                                palette=palette)),)
 
 
 class OpenCinemaShotStamp:
@@ -113,15 +116,15 @@ class OpenCinemaShotStamp:
             "text": ("STRING", {"default": "SHOT 03 · LOW ANGLE · TILT UP"}),
             "highlight": ("STRING", {"default": "TILT UP"}),
             "look": LOOK_INPUT,
-        }}
+        }, "optional": {"palette": PALETTE_INPUT}}
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "render"
     CATEGORY = "Open Cinema/Motion"
 
-    def render(self, images, fps, text, highlight, look):
+    def render(self, images, fps, text, highlight, look, palette=""):
         from . import motion
-        return (_to_tensor(motion.stamp_overlay(_to_numpy(images), fps, text, highlight, look)),)
+        return (_to_tensor(motion.stamp_overlay(_to_numpy(images), fps, text, highlight, look, palette=palette)),)
 
 
 class OpenCinemaCards:
@@ -137,19 +140,19 @@ class OpenCinemaCards:
             "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 120.0}),
             "seconds_per_card": ("FLOAT", {"default": 1.1, "min": 0.3, "max": 10.0, "step": 0.05}),
             "seed": ("INT", {"default": 5, "min": 0, "max": 2**31 - 1}),
-        }}
+        }, "optional": {"palette": PALETTE_INPUT}}
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "render"
     CATEGORY = "Open Cinema/Motion"
 
-    def render(self, lines, look, width, height, fps, seconds_per_card, seed):
+    def render(self, lines, look, width, height, fps, seconds_per_card, seed, palette=""):
         from . import motion
         texts, labels = _split_lines(lines)
         if not texts:
             raise ValueError("Open Cinema Cards needs at least one line of text")
         frames = motion.cards(texts, fps, width, height, look, seconds_per_card,
-                              labels if any(labels) else None, seed)
+                              labels if any(labels) else None, seed, palette=palette)
         return (_to_tensor(frames),)
 
 
@@ -160,16 +163,17 @@ class OpenCinemaTitlePreview:
     def INPUT_TYPES(cls):
         return {"required": {"title": ("STRING", {"default": "The Colossus Pass"}), "look": LOOK_INPUT,
                              "width": ("INT", {"default": 1280, "min": 256, "max": 4096, "step": 16}),
-                             "height": ("INT", {"default": 704, "min": 256, "max": 4096, "step": 16})}}
+                             "height": ("INT", {"default": 704, "min": 256, "max": 4096, "step": 16})},
+                "optional": {"palette": PALETTE_INPUT}}
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "render"
     CATEGORY = "Open Cinema/Motion"
 
-    def render(self, title, look, width, height):
+    def render(self, title, look, width, height, palette=""):
         import numpy as np
         from . import motion
-        frame = np.asarray(motion.preview(look, title, width, height), dtype="float32")[None] / 255.0
+        frame = np.asarray(motion.preview(look, title, width, height, palette=palette), dtype="float32")[None] / 255.0
         return (_to_tensor(frame),)
 
 
@@ -221,6 +225,50 @@ class OpenCinemaLeadBrief:
         return (lead_brief(mode, title, world, look, draft),)
 
 
+class OpenCinemaStoryBrief:
+    """Writes the instruction for an LLM to develop the whole story page (title, logline, world, look,
+    palette, lead, continuity) or one field of it, consistent with what is already established."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from .director import STORY_TARGETS
+        return {"required": {"target": (list(STORY_TARGETS), {"default": "everything"}),
+                             "idea": ("STRING", {"multiline": True, "default": ""})},
+                "optional": {"title": ("STRING", {"default": ""}), "logline": ("STRING", {"default": ""}),
+                             "world": ("STRING", {"multiline": True, "default": ""}),
+                             "look": ("STRING", {"default": ""}),
+                             "lead": ("STRING", {"multiline": True, "default": ""})}}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "build"
+    CATEGORY = "Open Cinema"
+
+    def build(self, target, idea, title="", logline="", world="", look="", lead=""):
+        from .director import story_brief
+        return (story_brief(target, idea, title, logline, world, look, lead),)
+
+
+class OpenCinemaParseStory:
+    """Splits the LLM's reply into the story fields. Palette is 'bg,ink,accent,glow' hex."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        from .director import STORY_TARGETS
+        return {"required": {"text": ("STRING", {"forceInput": True})},
+                "optional": {"target": (list(STORY_TARGETS), {"default": "everything"})}}
+
+    RETURN_TYPES = ("STRING",) * 7
+    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity")
+    FUNCTION = "parse"
+    CATEGORY = "Open Cinema"
+
+    def parse(self, text, target="everything"):
+        from .director import parse_story
+        fields = parse_story(text, target)
+        return tuple(fields.get(k, "") for k in self.RETURN_NAMES)
+
+
 class OpenCinemaParseLead:
     """Splits the LLM's reply into the lead description and the continuity notes."""
 
@@ -240,6 +288,7 @@ class OpenCinemaParseLead:
 
 NODE_CLASS_MAPPINGS = {"OpenCinemaShot": OpenCinemaShot, "OpenCinemaShotLength": OpenCinemaShotLength,
                        "OpenCinemaLeadBrief": OpenCinemaLeadBrief, "OpenCinemaParseLead": OpenCinemaParseLead,
+                       "OpenCinemaStoryBrief": OpenCinemaStoryBrief, "OpenCinemaParseStory": OpenCinemaParseStory,
                        "OpenCinemaTitleOverlay": OpenCinemaTitleOverlay, "OpenCinemaShotStamp": OpenCinemaShotStamp,
                        "OpenCinemaCards": OpenCinemaCards, "OpenCinemaTitlePreview": OpenCinemaTitlePreview,
                        "OpenCinemaTypeSheet": OpenCinemaTypeSheet}
@@ -247,6 +296,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {"OpenCinemaShot": "Open Cinema Shot (camera direct
                               "OpenCinemaShotLength": "Open Cinema Shot Length",
                               "OpenCinemaLeadBrief": "Open Cinema Lead Brief (for an LLM)",
                               "OpenCinemaParseLead": "Open Cinema Parse Lead",
+                              "OpenCinemaStoryBrief": "Open Cinema Story Brief (for an LLM)",
+                              "OpenCinemaParseStory": "Open Cinema Parse Story",
                               "OpenCinemaTitleOverlay": "Open Cinema Title Overlay",
                               "OpenCinemaShotStamp": "Open Cinema Shot Stamp",
                               "OpenCinemaCards": "Open Cinema Cards (kinetic type)",

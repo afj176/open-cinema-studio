@@ -141,8 +141,16 @@ class Handler(BaseHTTPRequestHandler):
                 label = {"write": "Writing the lead", "refine": "Refining the lead", "from photo": "Describing the cast photo",
                          "continuity": "Writing continuity notes"}[mode]
                 return self._json(studio.enqueue("write_lead", m.group(1), None, label, mode=mode))
-            if m := re.fullmatch(r"/api/projects/(\w+)/undo-lead", route):
-                return self._json(studio.undo_lead(m.group(1)))
+            if m := re.fullmatch(r"/api/projects/(\w+)/undo-(?:lead|story)", route):
+                return self._json(studio.undo_story(m.group(1)))
+            if m := re.fullmatch(r"/api/projects/(\w+)/write-story", route):
+                target = json.loads(self._body() or b"{}").get("target", "everything")
+                if target not in director.STORY_TARGETS:
+                    return self._json({"error": f"unknown target {target}"}, 400)
+                label = {"everything": "Writing the whole story", "title": "Writing a title",
+                         "logline": "Writing a logline", "world": "Writing the world",
+                         "look": "Choosing look & colours"}[target]
+                return self._json(studio.enqueue("write_story", m.group(1), None, label, target=target))
             if m := re.fullmatch(r"/api/projects/(\w+)/title-shot", route):
                 options = json.loads(self._body() or b"{}")
                 return self._json(studio.queue_title_shot(m.group(1), frame=options.get("frame", True)))

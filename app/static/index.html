@@ -44,22 +44,47 @@
 <main>
   <!-- STORY -->
   <section class="stage" id="story">
+    <div class="spark glass" id="sparkField">
+      <span class="spark-icon" aria-hidden="true">✦</span>
+      <input id="idea" class="spark-input" placeholder="What's your film about? A spark, a feeling, a single image… (or leave it empty and be surprised)" aria-label="Your idea">
+      <button id="aiEverything" class="primary" type="button">✨ Generate the whole story</button>
+    </div>
+    <div class="spark-foot">
+      <span class="hint" id="aiStoryStatus">Title, logline, world, look &amp; colours, and the lead, written locally by Gemma 4 E4B (open, Apache-2.0). Every field also has its own ✨.</span>
+      <button id="aiUndo" class="link" type="button" hidden>Undo AI change</button>
+    </div>
+
     <div class="story-hero">
-      <p class="eyebrow">The film</p>
-      <input id="title" class="title-input serif" placeholder="Untitled film" aria-label="Title">
-      <textarea id="scene" class="world-input grow" rows="3" placeholder="Where and when are we? What does this world look, sound and feel like?" aria-label="World"></textarea>
+      <div class="ai-field" id="titleField">
+        <div class="field-head"><span class="eyebrow">The film</span><button class="ai small" data-ai="title" type="button">✨ Title</button></div>
+        <input id="title" class="title-input serif" placeholder="Untitled film" aria-label="Title">
+      </div>
+      <div class="ai-field" id="loglineField">
+        <div class="field-head"><span>Logline</span><button class="ai small" data-ai="logline" type="button">✨ Logline</button></div>
+        <textarea id="logline" class="logline-input serif grow" rows="1" placeholder="One sentence: who wants what, and what stands in the way." aria-label="Logline"></textarea>
+      </div>
+      <div class="ai-field" id="worldField">
+        <div class="field-head"><span>World</span><button class="ai small" data-ai="world" type="button">✨ World</button></div>
+        <textarea id="scene" class="world-input grow" rows="3" placeholder="Where and when are we? What does this world look, sound and feel like?" aria-label="World"></textarea>
+      </div>
     </div>
 
     <div class="story-grid">
       <article class="glass lead-card">
         <div class="card-head"><h2 class="serif">The lead</h2><span class="hint">Every shot keeps this face</span></div>
         <div class="lead-body">
-          <label class="portrait" id="refDrop">
-            <input type="file" id="refInput" accept="image/*" hidden>
-            <img id="refImg" alt="" hidden>
-            <span class="portrait-empty" id="refEmpty">Drop a photo<br>or cast from the description</span>
-            <span class="portrait-busy" id="castBusy" hidden></span>
-          </label>
+          <div class="portrait-col">
+            <label class="portrait" id="refDrop">
+              <input type="file" id="refInput" accept="image/*" hidden>
+              <img id="refImg" alt="The lead" hidden>
+              <span class="portrait-empty" id="refEmpty">Drop a photo here<br>or cast from the description</span>
+              <span class="portrait-busy" id="castBusy" hidden></span>
+            </label>
+            <div class="portrait-actions">
+              <button id="castBtn" class="ghost small" type="button">Cast from description</button>
+              <label class="ghost small button">Upload photo<input type="file" id="refInput2" accept="image/*" hidden></label>
+            </div>
+          </div>
           <div class="lead-fields">
             <div class="ai-field" id="castField">
               <div class="field-head"><span>Who carries the film?</span>
@@ -71,19 +96,30 @@
                 <span class="ai-actions"><button id="aiContinuity" class="ai small" type="button">✨ From the lead</button></span></div>
               <textarea id="continuity" class="grow" rows="2" placeholder="Details that must never change: crimson cloak, silver circlet…"></textarea>
             </div>
-            <div class="ai-status" id="aiStatus"><button id="aiUndo" class="link" type="button" hidden>Undo AI change</button><span class="hint">Written locally by Gemma 4 E4B (open, Apache-2.0)</span></div>
-            <div class="row-actions"><button id="castBtn" class="ghost">Cast from description</button><label class="ghost button">Upload photo<input type="file" id="refInput2" accept="image/*" hidden></label></div>
           </div>
         </div>
       </article>
 
-      <article class="glass look-card">
-        <div class="card-head"><h2 class="serif">The look</h2><span class="hint">Sets colour, lens, typography and score</span></div>
+      <article class="glass look-card ai-field" id="lookField">
+        <div class="card-head"><h2 class="serif">The look</h2><button class="ai small" data-ai="look" type="button">✨ Look &amp; colours</button></div>
         <div id="looks" class="look-grid"></div>
+        <div class="palette">
+          <div class="palette-head"><span>Colours</span><span class="hint" id="paletteSource">From the look</span>
+            <button id="paletteReset" class="link" type="button" hidden>Use the look's colours</button></div>
+          <div class="palette-body">
+            <div class="swatch-row" id="paletteInputs">
+              <label class="swatch"><input type="color" data-pal="bg"><span>Background</span></label>
+              <label class="swatch"><input type="color" data-pal="ink"><span>Ink</span></label>
+              <label class="swatch"><input type="color" data-pal="accent"><span>Accent</span></label>
+              <label class="swatch"><input type="color" data-pal="glow"><span>Glow</span></label>
+            </div>
+            <div class="palette-sample" id="paletteSample"><span class="ps-title" id="psTitle">The film</span><span class="ps-line"></span><span class="ps-sub">A FILM MADE WITH OPEN MODELS</span></div>
+          </div>
+        </div>
         <div class="aspect-row"><span class="hint">Aspect</span><div id="aspects" class="seg"></div></div>
       </article>
     </div>
-    <div class="stage-next"><button class="ghost" data-goto="shots">Next: plan the shots →</button></div>
+    <div class="stage-next"><button class="ghost" data-goto="shots" type="button">Next: plan the shots →</button></div>
   </section>
 
   <!-- SHOTS -->

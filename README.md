@@ -105,7 +105,8 @@ Why these models: on the Artificial Analysis leaderboards, HiDream-O1-Image is t
 
 ## Using it
 
-- **Look** sets the film's color and lens language. It goes into every keyframe and motion prompt.
+- **✨ Generate the whole story:** type a spark (or nothing) and Gemma 4 E4B writes the whole Story page: title, logline, world, a look with its own colour palette, the lead and continuity notes. Then it casts the lead's portrait. Each field also has its own ✨ (Title, Logline, World, Look & colours) that rewrites just that field so it stays consistent with the rest. **Undo AI change** reverts only what the AI touched. In ComfyUI, the *Open Cinema Story Brief* and *Open Cinema Parse Story* nodes wrap `TextGenerate` (workflow `11_ai_story_writer_gemma4.json`).
+- **Look** sets the film's color and lens language. It goes into every keyframe and motion prompt. **Colours** let you tune the film's background, ink, accent and glow. They tint the studio and every title, card and HUD overlay. Picking a look brings back that look's colours.
 - **Lead character**: describe your lead, then press **Cast from description**, or let **Render film** cast them automatically. You can drop a photo instead, and every shot keeps that face.
 - **Continuity notes** are the few details that must never change, such as a prop or a scar.
 - **✨ AI lead writer:** a local open LLM, **Gemma 4 E4B-it** (Apache-2.0) running through ComfyUI's native `TextGenerate` node, writes the lead and the continuity notes. It has three modes:
@@ -149,6 +150,7 @@ A 6-shot, 25-second film renders in about 11 minutes. Mastering it in 1080p adds
 - `08_motion_kinetic_cards.json`: kinetic type cards (`LABEL | TEXT` per line)
 - `09_inworld_title_frame.json`: an in-world title built into a frame (input `establishing_keyframe.png`), with the type sheet as Picture 2
 - `10_ai_lead_writer_gemma4.json`: Gemma 4 E4B writes a lead and continuity notes from a world (Lead Brief → TextGenerate → Parse Lead)
+- `11_ai_story_writer_gemma4.json`: Gemma 4 E4B writes a whole story page (title, logline, world, look, palette, lead, continuity) from a spark (Story Brief → TextGenerate → Parse Story)
 
 ## License
 

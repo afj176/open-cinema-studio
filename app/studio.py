@@ -45,6 +45,16 @@ def motion_settings(project: dict[str, Any]) -> dict[str, Any]:
     return settings
 
 
+def palette_string(project: dict[str, Any]) -> str:
+    """The film's custom colours as 'bg,ink,accent,glow' for the motion nodes; '' means the look's palette."""
+    p = project.get("palette") or {}
+    colours = [p.get(k, "") for k in ("bg", "ink", "accent", "glow")]
+    return ",".join(colours) if all(c.startswith("#") and len(c) == 7 for c in colours) else ""
+
+
+STORY_FIELDS = ("title", "logline", "scene", "look", "palette", "cast", "continuity")
+
+
 def default_credits(project: dict[str, Any]) -> str:
     return "\n".join([project["title"],
                       "Made with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5 · SeedVR2",
@@ -242,7 +252,8 @@ class Studio:
         """Apply edits from the UI; generated media stays owned by the server."""
         with self.lock:
             project = self.load(project_id)
-            for key in ("title", "scene", "look", "aspect", "continuity", "cast", "finish", "motion"):
+            for key in ("title", "scene", "look", "aspect", "continuity", "cast", "finish", "motion", "idea",
+                        "logline", "palette"):
                 if key in data:
                     project[key] = data[key]
             if "shots" in data:
@@ -265,6 +276,7 @@ class Studio:
             target = self.path(project_id) / f"reference{suffix}"
             target.write_bytes(data)
             project["reference"] = target.name
+            project.pop("reference_prompt", None)
             return self.save(project)
 
     def set_keyframe(self, project_id: str, shot_id: str, filename: str, data: bytes) -> dict[str, Any]:
@@ -548,12 +560,13 @@ class Studio:
             if index == 0 and settings["title"]["on"] and settings["title"]["style"] != "inworld":
                 node_class = "OpenCinemaTitleOverlay"
                 params = {"title": project["title"], "subtitle": settings["title"]["subtitle"], "look": look,
-                          "start": 0.5, "hold": max(1.0, min(3.2, duration(clip) - 0.9))}
+                          "start": 0.5, "hold": max(1.0, min(3.2, duration(clip) - 0.9)),
+                          "palette": palette_string(project)}
             elif index > 0 and settings["stamps"]["on"]:
                 move = shot["camera_move"].upper()
                 node_class = "OpenCinemaShotStamp"
                 params = {"text": f"SHOT {index + 1:02d} · {shot['shot_size'].upper()} · {move}",
-                          "highlight": move, "look": look}
+                          "highlight": move, "look": look, "palette": palette_string(project)}
             else:
                 dressed.append(clip)
                 continue
@@ -566,9 +579,11 @@ class Studio:
 
     def _cards(self, project: dict[str, Any], lines: str, width: int, height: int, per_card: float, tick,
                seed: int = 5) -> Path:
-        key = ["cards", lines, project["look"], width, height, per_card, seed]
+        palette = palette_string(project)
+        key = ["cards", lines, project["look"], width, height, per_card, seed, palette]
         return self._motion_clip(project, key, lambda _: graphs.cards_graph(
-            lines, project["look"], width, height, f"open-cinema/{project['id']}/cards", per_card, 24.0, seed), tick)
+            lines, project["look"], width, height, f"open-cinema/{project['id']}/cards", per_card, 24.0, seed,
+            palette), tick)
 
     def _credits(self, project: dict[str, Any], last_clip: Path, width: int, height: int, tick) -> Path | None:
         """End credits, scored with the film's own sound: the last shot's audio echoing out."""
@@ -695,7 +710,8 @@ class Studio:
         # Start from the film's dark title card, not a scene: with no weather or crowd in frame, LTX scores music
         # instead of ambience.
         card = self.comfy.run(graphs.title_preview_graph(project["title"], project["look"],
-                                                         f"open-cinema/{project['id']}/score_card"), on_tick=tick)
+                                                         f"open-cinema/{project['id']}/score_card",
+                                                         palette=palette_string(project)), on_tick=tick)
         start = f"score_card_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(card[0], folder / start)
         seed = (project["shots"][0]["seed"] + 7919 * (unit.get("takes", 0) + (1 if reroll else 0))) % 2**31
@@ -799,27 +815,70 @@ class Studio:
             raise RuntimeError("The writer returned nothing; try again")
         with self.lock:
             fresh = self.load(job["project"])
-            fresh.setdefault("lead_history", []).append({"cast": fresh.get("cast", ""),
-                                                         "continuity": fresh.get("continuity", "")})
-            fresh["lead_history"] = fresh["lead_history"][-10:]
+            self._remember_story(fresh, ("continuity",) if mode == "continuity" else ("cast", "continuity"))
             if mode != "continuity" and lead:
                 fresh["cast"] = lead
             if continuity:
                 fresh["continuity"] = continuity
             self.save(fresh)
 
-    def undo_lead(self, project_id: str) -> dict[str, Any]:
+    def _remember_story(self, project: dict[str, Any], keys: tuple[str, ...] = STORY_FIELDS) -> None:
+        """Snapshot the fields an AI change is about to touch, so undo never reverts the user's own later edits."""
+        snapshot = {k: copy.deepcopy(project.get(k)) for k in keys}
+        project["story_history"] = (project.get("story_history") or [])[-14:] + [snapshot]
+
+    def undo_story(self, project_id: str) -> dict[str, Any]:
         with self.lock:
             project = self.load(project_id)
-            if project.get("lead_history"):
-                previous = project["lead_history"].pop()
-                project["cast"], project["continuity"] = previous["cast"], previous["continuity"]
+            if project.get("story_history"):
+                previous = project["story_history"].pop()
+                for key, value in previous.items():
+                    project[key] = value
             return self.save(project)
+
+    def _run_write_story(self, job: dict[str, Any], tick) -> None:
+        """Gemma 4 E4B writes the whole story page, or one field of it, consistent with the rest."""
+        project = self.load(job["project"])
+        target = job.get("target", "everything")
+        graph = graphs.story_writer_graph(target, project.get("idea", ""), project["title"], project.get("logline", ""),
+                                          project["scene"], project["look"] if target != "everything" else "",
+                                          project.get("cast", "") if target != "everything" else "",
+                                          seed=random.randrange(1, 2**31))
+        record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
+        out = {k: "".join(record["outputs"].get(k, {}).get("text", [""])).strip()
+               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity")}
+        wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity"),
+                  "title": ("title",), "logline": ("logline",), "world": ("world",),
+                  "look": ("look", "palette")}[target]
+        if not any(out[k] for k in wanted):
+            raise RuntimeError("The writer returned nothing usable; try again")
+        with self.lock:
+            fresh = self.load(job["project"])
+            field = {"world": "scene", "lead": "cast"}
+            self._remember_story(fresh, tuple(field.get(k, k) for k in wanted) + (("palette",) if target == "look" else ()))
+            for key in wanted:
+                value = out[key]
+                if not value:
+                    continue
+                if key == "palette":
+                    bg, ink, accent, glow = value.split(",")
+                    fresh["palette"] = {"bg": bg, "ink": ink, "accent": accent, "glow": glow}
+                elif key == "look":
+                    fresh["look"] = value
+                else:
+                    fresh[field.get(key, key)] = value
+            if target == "look" and not out["palette"]:
+                fresh.pop("palette", None)  # a new look without colours of its own uses the look's palette
+            self.save(fresh)
+            recast = target == "everything" and out["lead"] and (not fresh.get("reference") or fresh.get("reference_prompt"))
+        if recast:  # the page is complete only with the lead's face; never replaces an uploaded photo
+            self.enqueue("cast", job["project"], None, "Casting the new lead")
 
     def _run_motion_preview(self, job: dict[str, Any], tick) -> None:
         project = self.load(job["project"])
         files = self.comfy.run(graphs.title_preview_graph(project["title"], project["look"],
-                                                          f"open-cinema/{project['id']}/preview"), on_tick=tick)
+                                                          f"open-cinema/{project['id']}/preview",
+                                                          palette=palette_string(project)), on_tick=tick)
         name = f"motion_preview_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project["id"]) / name)
         with self.lock:

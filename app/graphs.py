@@ -240,19 +240,20 @@ def motion_overlay_graph(video: str, prefix: str, node_class: str, **params: Any
 
 
 def cards_graph(lines: str, look: str, width: int, height: int, prefix: str, seconds_per_card: float = 1.1,
-                fps: float = 24.0, seed: int = 5) -> dict[str, Any]:
+                fps: float = 24.0, seed: int = 5, palette: str = "") -> dict[str, Any]:
     """Full-frame kinetic type cards (trailer lines, title card, credits) as a silent clip."""
     return {
         "1": node("OpenCinemaCards", lines=lines, look=look, width=width, height=height, fps=fps,
-                  seconds_per_card=seconds_per_card, seed=seed),
+                  seconds_per_card=seconds_per_card, seed=seed, palette=palette),
         "2": node("CreateVideo", images=["1", 0], fps=fps),
         "3": node("SaveVideo", video=["2", 0], filename_prefix=prefix, format="mp4", codec="h264"),
     }
 
 
-def title_preview_graph(title: str, look: str, prefix: str, width: int = 1280, height: int = 704) -> dict[str, Any]:
+def title_preview_graph(title: str, look: str, prefix: str, width: int = 1280, height: int = 704,
+                        palette: str = "") -> dict[str, Any]:
     return {
-        "1": node("OpenCinemaTitlePreview", title=title, look=look, width=width, height=height),
+        "1": node("OpenCinemaTitlePreview", title=title, look=look, width=width, height=height, palette=palette),
         "2": node("SaveImage", images=["1", 0], filename_prefix=prefix),
     }
 
@@ -295,4 +296,23 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
     if photo:
         graph["5"] = node("LoadImage", image=photo)
         graph["3"]["inputs"]["image"] = ["5", 0]
+    return graph
+
+
+def story_writer_graph(target: str, idea: str, title: str, logline: str, world: str, look: str, lead: str,
+                       seed: int = 1) -> dict[str, Any]:
+    """Gemma 4 E4B develops the story page (or one field of it) through ComfyUI's native TextGenerate."""
+    graph = {
+        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "2": node("OpenCinemaStoryBrief", target=target, idea=idea, title=title, logline=logline, world=world,
+                  look=look, lead=lead),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=900 if target == "everything" else 320,
+                  sampling_mode="on",
+                  **{"sampling_mode.temperature": 0.8 if target == "everything" else 0.75, "sampling_mode.top_k": 64,
+                     "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.05,
+                     "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": seed}),
+        "4": node("OpenCinemaParseStory", text=["3", 0], target=target),
+    }
+    for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity")):
+        graph[field] = node("PreviewAny", source=["4", index])
     return graph

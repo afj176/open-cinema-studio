@@ -42,8 +42,14 @@ STYLES: dict[str, Style] = {look: Style(*palette, upper=look not in LOWERCASE_LO
                             for look, palette in LOOK_PALETTES.items()}
 
 
-def style_for(look: str) -> Style:
-    return STYLES.get(look, STYLES["None"])
+def style_for(look: str, palette: str = "") -> Style:
+    """The look's style; a custom 'bg,ink,accent,glow' palette overrides its colours but keeps its typeface."""
+    style = STYLES.get(look, STYLES["None"])
+    colours = [c.strip() for c in (palette or "").split(",") if c.strip().startswith("#") and len(c.strip()) == 7]
+    if len(colours) == 4:
+        bg, ink, accent, glow = colours
+        return Style(ink, accent, glow, bg, style.face, style.upper)
+    return style
 
 
 def rgb(hex_color: str, alpha: int = 255) -> tuple[int, int, int, int]:
@@ -337,9 +343,9 @@ def _over(frame: np.ndarray, layer: Image.Image) -> np.ndarray:
 
 
 def title_overlay(frames: np.ndarray, fps: float, title: str, subtitle: str, look: str,
-                  start: float = 0.5, hold: float = 3.2, seed: int = 11) -> np.ndarray:
+                  start: float = 0.5, hold: float = 3.2, seed: int = 11, palette: str = "") -> np.ndarray:
     """Main title over the opening shot: line streak, slam on impact, typed subtitle, HUD."""
-    style = style_for(look)
+    style = style_for(look, palette)
     n, H, W = frames.shape[:3]
     out = frames.astype(np.float32).copy()
     end = min(start + hold, n / fps - 0.2)
@@ -365,9 +371,9 @@ def title_overlay(frames: np.ndarray, fps: float, title: str, subtitle: str, loo
 
 
 def stamp_overlay(frames: np.ndarray, fps: float, text: str, highlight: str, look: str,
-                  start: float = 0.35, hold: float = 2.6) -> np.ndarray:
+                  start: float = 0.35, hold: float = 2.6, palette: str = "") -> np.ndarray:
     """A HUD slate on a shot: corner brackets and a typed label, then it gets out of the way."""
-    style = style_for(look)
+    style = style_for(look, palette)
     n, H, W = frames.shape[:3]
     out = frames.astype(np.float32).copy()
     end = start + hold
@@ -392,12 +398,12 @@ def _card_background(W: int, H: int, style: Style, rng: np.random.Generator) -> 
 
 
 def cards(texts: list[str], fps: float, width: int, height: int, look: str, per_card: float = 1.1,
-          labels: list[str] | None = None, seed: int = 5, line_every: int = 2) -> np.ndarray:
+          labels: list[str] | None = None, seed: int = 5, line_every: int = 2, palette: str = "") -> np.ndarray:
     """Full-frame type cards, hard cut from one to the next (trailer lines, title card, credits).
 
     `labels` puts a small mono role line above each card's main text (e.g. DIRECTED BY).
     """
-    style = style_for(look)
+    style = style_for(look, palette)
     rng = np.random.default_rng(seed)
     total = int(round(per_card * len(texts) * fps))
     out = np.zeros((total, height, width, 3), dtype=np.float32)
@@ -432,9 +438,9 @@ def type_sheet(title: str, look: str, width: int = 1344, height: int = 768) -> I
     return sheet.convert("RGB")
 
 
-def preview(look: str, title: str, width: int = 1280, height: int = 704) -> Image.Image:
+def preview(look: str, title: str, width: int = 1280, height: int = 704, palette: str = "") -> Image.Image:
     """One representative title frame on a card background, for UI previews."""
-    style = style_for(look)
+    style = style_for(look, palette)
     frame = _card_background(width, height, style, np.random.default_rng(1))
     layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     hud(layer, style, 1.0, 0, 3, {"tl": "OPEN CINEMA", "tr": title.upper()[:40]}, 24)

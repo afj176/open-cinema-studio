@@ -243,6 +243,97 @@ def parse_lead(text: str) -> tuple[str, str]:
     return lead.strip().strip('"'), continuity.strip().strip('"').rstrip(".")
 
 
+# ---------------------------------------------------------------- AI story writer
+STORY_TARGETS = ("everything", "title", "logline", "world", "look")
+STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY")
+
+_STORY_LINES = {
+    "TITLE": "TITLE: an evocative film title of 1 to 5 words, no quotes",
+    "LOGLINE": "LOGLINE: one sentence of at most 28 words: who wants what, and what stands in the way",
+    "WORLD": "WORLD: one paragraph of 70 to 110 words describing the setting as a camera sees it: the place and "
+             "era, landscape or architecture, weather, time of day, light, and two or three unforgettable "
+             "landmarks or objects. No dialogue and no plot summary",
+    "LOOK": "LOOK: exactly one of these film looks: {looks}",
+    "PALETTE": "PALETTE: four hex colours for the film's titles and graphics, in this order: background (very dark), "
+               "ink (light, for text), accent (the film's signature colour), glow (a lighter tint of the accent)",
+    "LEAD": "LEAD: one paragraph of 40 to 70 words describing only what a camera sees of the lead character: age, "
+            "build, face, hair, the exact wardrobe with colours and materials, and one signature prop. No name, "
+            "no backstory",
+    "CONTINUITY": "CONTINUITY: 4 to 6 short comma-separated details of the lead that must never change between shots",
+}
+_STORY_WANTS = {"everything": STORY_LABELS, "title": ("TITLE",), "logline": ("LOGLINE",), "world": ("WORLD",),
+                "look": ("LOOK", "PALETTE")}
+
+
+def story_brief(target: str, idea: str = "", title: str = "", logline: str = "", world: str = "", look: str = "",
+                lead: str = "") -> str:
+    """Instruction for an open LLM (Gemma 4 E4B) to write the whole story page or one field of it,
+    consistent with whatever the director has already written."""
+    wants = _STORY_WANTS.get(target, STORY_LABELS)
+    known = [("The director's idea", idea), ("Title", title), ("Logline", logline), ("World", world),
+             ("Look", look), ("Lead character", lead)]
+    if target != "everything":  # keep the field being rewritten out of the context so it is truly new
+        skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look"}[target]
+        known = [(k, v) for k, v in known if k != skip]
+    context = "\n".join(f"{k}: {v}" for k, v in known if v and v.strip())
+    lines = "\n".join(_STORY_LINES[label].format(looks=", ".join(LOOKS)) for label in wants)
+    if target == "everything":
+        task = ("Develop a short film from the director's idea (or invent a striking original one if there is no "
+                "idea): a title, a logline, a vivid visual world, the film look and colour palette that suit it, "
+                "and a memorable lead character who belongs to that world and era. Everything must fit together.")
+    else:
+        task = (f"Write a fresh {' and '.join(w.lower() for w in wants)} for this film. It must fit everything "
+                "else already established about the film.")
+    return ("You are the writer and production designer of a short cinematic film made with AI.\n" + task +
+            ("\n\nWhat is established so far:\n" + context if context else "") +
+            f"\n\nReply with exactly these {len(wants)} labelled lines and nothing else:\n" + lines)
+
+
+def _clean_line(line: str) -> str:
+    """Strip list bullets and markdown headings, but not the '#' of a hex colour."""
+    import re
+    return re.sub(r"^(?:[-*>]+\s*|#+\s+)+", "", line.strip()).strip()
+
+
+def parse_story(text: str, target: str = "everything") -> dict[str, str]:
+    """Labelled lines → fields. Small models often drop the labels but keep the order, so unlabelled
+    replies are read positionally (everything) or as the single field that was asked for."""
+    fields: dict[str, str] = {}
+    current = None
+    for raw in text.replace("**", "").replace("__", "").splitlines():
+        line = _clean_line(raw)
+        if not line:
+            continue
+        label, _, rest = line.partition(":")
+        key = label.strip().upper()
+        if key in STORY_LABELS and _:
+            current = key
+            fields[key] = rest.strip()
+        elif current in ("WORLD", "LEAD", "LOGLINE"):
+            fields[current] += " " + line  # paragraph wrapped onto more lines
+    if not fields:
+        lines = [_clean_line(l).strip('"') for l in text.replace("**", "").splitlines() if l.strip()]
+        wants = _STORY_WANTS.get(target, STORY_LABELS)
+        if target == "everything" and len(lines) >= len(STORY_LABELS):
+            fields = dict(zip(STORY_LABELS, lines[:len(STORY_LABELS)]))
+        elif target == "look" and lines:
+            fields = {"LOOK": lines[0], "PALETTE": " ".join(lines[1:])}
+        elif len(wants) == 1 and lines:
+            fields = {wants[0]: lines[0] if wants[0] == "TITLE" else " ".join(lines)}
+    out = {k.lower(): v.strip().strip('"').strip() for k, v in fields.items()}
+    if "look" in out:  # snap to a known look
+        match = next((l for l in LOOKS if l.lower() == out["look"].lower()), None) or \
+            next((l for l in LOOKS if l.lower() in out["look"].lower() or out["look"].lower() in l.lower()), "")
+        out["look"] = match
+    if "palette" in out or "look" in out:
+        import re
+        hexes = re.findall(r"#[0-9a-fA-F]{6}", out.get("palette", "") or text)
+        out["palette"] = ",".join(h.upper() for h in hexes[:4]) if len(hexes) >= 4 else ""
+    if "continuity" in out:
+        out["continuity"] = out["continuity"].rstrip(".")
+    return out
+
+
 def _join(*parts: str) -> str:
     return " ".join(part.strip().rstrip(".") + "." for part in parts if part and part.strip())
 
