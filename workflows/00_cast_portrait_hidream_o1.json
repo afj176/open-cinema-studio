@@ -196,7 +196,7 @@
     "Node name for S&R": "CLIPTextEncode"
    },
    "widgets_values": [
-    "Three-quarter body shot, eye-level, front view. A casting reference photograph of a single person standing alone and facing the camera with a neutral expression. Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible. The background is one seamless, plain, light grey colour that fills the whole frame, with no equipment, props or edges visible. Even, soft, frontal lighting. Natural photograph with sharp, detailed skin and hair, true-to-life colours, no text."
+    "Three-quarter body shot, eye-level, front view. A casting reference image of a single person standing alone and facing the camera with a neutral expression. Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible. The background is one seamless, plain, light grey colour that fills the whole frame, with no equipment, props or edges visible. Even, soft, frontal lighting. Natural photograph with sharp, detailed skin and hair, true-to-life colours. No text."
    ]
   },
   {
@@ -235,7 +235,7 @@
     "Node name for S&R": "CLIPTextEncode"
    },
    "widgets_values": [
-    "illustration, painting, cartoon, anime, 3d render, CGI, video game, oversaturated, HDR, low quality, blurry, deformed, extra limbs, extra fingers, plastic skin, readable text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, film crew, lighting equipment"
+    "illustration, painting, cartoon, anime, 3d render, CGI, video game, plastic skin, low quality, blurry, deformed, extra limbs, extra fingers, readable text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, film crew, lighting equipment"
    ]
   },
   {

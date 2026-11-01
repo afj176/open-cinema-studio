@@ -227,6 +227,7 @@ function renderStory() {
   $("#scene").value = project.scene;
   $("#cast").value = project.cast || "";
   $("#continuity").value = project.continuity || "";
+  $("#characters").value = project.characters || "";
   renderBeats();
   paintPortrait();
   requestAnimationFrame(() => growAll($("#story")));
@@ -275,12 +276,14 @@ function paintPortrait() {
 }
 
 const STORY_TARGET_FIELDS = {
-  everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField", "beatsField"],
+  everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField", "beatsField",
+    "charactersField"],
+  characters: ["charactersField"],
   title: ["titleField"], logline: ["loglineField"], world: ["worldField"], look: ["lookField"], trailer: ["trailerField"],
   beats: ["beatsField"],
 };
 const AI_FIELDS = ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField",
-  "trailerField", "beatsField"];
+  "trailerField", "beatsField", "charactersField"];
 
 function paintLeadAI() {
   const job = busyFor(j => j.kind === "write_lead" || j.kind === "write_story");
@@ -346,15 +349,42 @@ function paintBeatGhosts(job) {  // placeholder rows while Gemma continues the s
 }
 
 // ---------------------------------------------------------------- the storyboard as a comic strip
-let beatView = store.get("beatView") === "strip" ? "strip" : "beats";
+let beatView = ["strip", "script"].includes(store.get("beatView")) ? store.get("beatView") : "beats";
 
 function setBeatView(view) {
   beatView = view; store.set("beatView", view);
   $$("#beatView button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
-  $("#beats").hidden = view === "strip";
-  $("#addBeat").hidden = view === "strip";
+  $("#beats").hidden = view !== "beats";
+  $("#addBeat").hidden = view !== "beats";
   $("#strip").hidden = view !== "strip";
-  paintStrip();
+  $("#script").hidden = view !== "script";
+  paintStrip(); paintScript();
+}
+
+function paintScript() {  // the film as a screenplay: each beat a scene, each shot its action, then what is said
+  const box = $("#script");
+  if (box.hidden) return;
+  const sig = JSON.stringify([beatsOf(), project.shots.map(s => [s.id, s.beat, s.action, s.line, s.others, s.lead])]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const shots = project.shots.filter(s => s.action?.trim());
+  if (!shots.length) { box.innerHTML = `<p class="hint">No shots yet. Write shots and the script appears here.</p>`; return; }
+  let html = "", lastBeat = -1;
+  for (const s of shots) {
+    const beat = s.beat && s.beat <= beatsOf().length ? s.beat : 0;
+    if (beat !== lastBeat) {
+      html += `<h4 class="sc-head">${beat ? `${beat}. ${escapeHtml(beatsOf()[beat - 1])}` : "Not in the story yet"}</h4>`;
+      lastBeat = beat;
+    }
+    const [who, ...words] = (s.line || "").split(":");
+    const speaker = who.trim().toLowerCase() === "lead" ? "THE LEAD" : who.trim().toUpperCase();
+    html += `<button type="button" class="sc-shot" data-id="${s.id}" title="Open shot ${shotIndex(s.id) + 1}">
+      <span class="sc-num">${String(shotIndex(s.id) + 1).padStart(2, "0")}</span>
+      <p class="sc-action">${escapeHtml(s.action)}</p>
+      ${s.line?.trim() && words.length ? `<p class="sc-speaker">${escapeHtml(speaker)}</p><p class="sc-line">${escapeHtml(words.join(":").trim())}</p>` : ""}</button>`;
+  }
+  box.innerHTML = html;
+  $$(".sc-shot", box).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
 }
 
 function paintStrip() {
@@ -383,7 +413,7 @@ function flash(id) { const el = $("#" + id); el.classList.remove("fresh"); void 
 
 function adoptStory(fresh) {
   const text = [["title", "titleField"], ["logline", "loglineField"], ["scene", "worldField"], ["cast", "castField"],
-    ["continuity", "continuityField"]];
+    ["continuity", "continuityField"], ["characters", "charactersField"]];
   for (const [key, field] of text) {
     if ((project[key] || "") === (fresh[key] || "")) continue;
     project[key] = fresh[key] || "";
@@ -420,7 +450,7 @@ function renderBoard() {
       <span class="num">${String(i + 1).padStart(2, "0")}</span><span class="badges"></span>
       <img class="lead-dot" alt="" title="The lead is in this shot" hidden>
       <button type="button" class="card-pause" hidden></button></div>
-      <div class="meta"><span class="beat-chip" hidden></span><p class="action"></p><div class="facts"><span class="mini-cam"><span class="cam-scene"><span></span></span></span>
+      <div class="meta"><span class="beat-chip" hidden></span><p class="action"></p><p class="said" hidden></p><div class="facts"><span class="mini-cam"><span class="cam-scene"><span></span></span></span>
       <span class="move"></span><span>·</span><span class="size"></span><span>·</span><span class="secs"></span></div></div>`;
     card.onclick = () => select(shot.id);
     $(".card-pause", card).onclick = e => { e.stopPropagation(); pauseShot(project.shots[shotIndex(shot.id)], !project.shots[shotIndex(shot.id)].paused); };
@@ -541,6 +571,9 @@ function paintCard(card, shot, i) {
   const action = $(".action", card);
   action.textContent = shot.action || "Describe what happens…";
   action.classList.toggle("empty", !shot.action);
+  const said = $(".said", card), [who, ...words] = (shot.line || "").split(":");
+  said.hidden = !shot.line?.trim();
+  said.innerHTML = shot.line?.trim() ? (words.length ? `<b>${escapeHtml(who.trim())}</b> ${escapeHtml(words.join(":").trim())}` : escapeHtml(shot.line)) : "";
   $(".move", card).textContent = shot.camera_move;
   $(".size", card).textContent = shot.shot_size;
   $(".secs", card).textContent = `${shot.seconds}s`;
@@ -618,7 +651,9 @@ function renderInspector() {
       <div class="cam-preview" title="Camera move preview"><div class="cam-scene"><span></span></div></div></div>
     <div class="field-row"><label>Shot size<select data-k="shot_size">${opts(presets.shot_sizes, shot.shot_size)}</select></label>
       <label>Seconds<input data-k="seconds" type="number" min="2" max="10" step="1" value="${shot.seconds}"></label></div>
-    <label>Sound<input data-k="sound" value="${escapeHtml(shot.sound)}" placeholder="What we hear: wind, waves, footsteps…"></label>
+    <label>Also in the shot<input data-k="others" value="${escapeHtml(shot.others || "")}" placeholder="Other characters by name, or a group: Mara, a crowd of dockworkers…"></label>
+    <label>Dialogue<input data-k="line" value="${escapeHtml(shot.line || "")}" placeholder='What is said aloud: Mara: "We should go." (or Lead: …)'></label>
+    <label>Sound<input data-k="sound" value="${escapeHtml(shot.sound)}" placeholder="What we hear besides speech: wind, waves, footsteps…"></label>
     <div class="field-row" style="align-items:center">
       <label class="switch"><input type="checkbox" data-k="lead" ${shot.lead !== false ? "checked" : ""}><span></span>Lead in shot</label>
       <div class="seg" role="group" aria-label="Transition in">${TRANSITIONS.map(t =>
@@ -642,6 +677,7 @@ function renderInspector() {
     field.addEventListener(field.tagName === "SELECT" || field.type === "checkbox" ? "change" : "input", () => {
       shot[key] = field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value;
       if (key === "action") shot.ai = false;  // edited by you: a new Write shots keeps it
+      paintScript();
       if (key === "seconds" && !(shot.seconds >= 2 && shot.seconds <= 10)) return;  // wait for a valid length; blur clamps it
       if (key === "camera_move") { $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || ""; $(".ins-head .serif", ins).textContent = shot.camera_move; }
       const card = $(`.card[data-id="${shot.id}"]`);
@@ -878,7 +914,7 @@ function paintBeatShots() {  // under each beat, the shots that tell it: frame i
   }
   $$(".beat-shot", list).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
   $("#drawBoard").hidden = !project.shots.some(s => s.action?.trim() && !s.sketch) || !!busyFor(j => j.kind === "sketch");
-  paintStrip();
+  paintStrip(); paintScript();
 }
 
 function sketchStale(shot) {  // mirrors studio._current_sketch: is the drawing from today's shot, world and lead?
@@ -1330,7 +1366,7 @@ $("#renderFilm").onclick = async () => {
   poll();
 };
 
-for (const id of ["title", "idea", "logline", "scene", "continuity", "cast"]) $("#" + id).oninput = e => {
+for (const id of ["title", "idea", "logline", "scene", "continuity", "cast", "characters"]) $("#" + id).oninput = e => {
   project[id] = e.target.value;
   if (id === "title") { renderHeader(); paintPalette(); }
   if (id === "cast") paintLeadAI();

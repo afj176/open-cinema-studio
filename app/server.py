@@ -187,7 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                          "logline": "Writing a logline", "world": "Writing the world",
                          "look": "Choosing look & colours", "trailer": "Writing trailer cards",
                          "beats": "Writing the story beats",
-                         "more beats": f"Adding {count} beat{'s' if count > 1 else ''} to the story"}[target]
+                         "more beats": f"Adding {count} beat{'s' if count > 1 else ''} to the story",
+                         "characters": "Writing the other characters"}[target]
                 return self._json(studio.enqueue("write_story", m.group(1), None, label, target=target, count=count))
             if m := re.fullmatch(r"/api/projects/(\w+)/title-shot", route):
                 options = json.loads(self._body() or b"{}")

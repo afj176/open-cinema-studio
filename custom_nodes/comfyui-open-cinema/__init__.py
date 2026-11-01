@@ -23,6 +23,10 @@ class OpenCinemaShot:
             "cast": ("STRING", {"multiline": True, "default": "",
                                 "tooltip": "Describe the lead. When set, the shot prompt expects the lead's "
                                            "portrait as Picture 2."}),
+            "others": ("STRING", {"multiline": True, "default": "",
+                                  "tooltip": "Everyone else in the shot, with what they look like, e.g. "
+                                             "'Mara (an old woman in a grey shawl)'."}),
+            "line": ("STRING", {"default": "", "tooltip": 'What is said aloud: Speaker: "words" (Lead or a name).'}),
         }}
 
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
@@ -30,11 +34,13 @@ class OpenCinemaShot:
     FUNCTION = "build"
     CATEGORY = "Open Cinema"
 
-    def build(self, scene, action, shot_size, camera_move, look, sound, continuity="", lead_in_shot=True, cast=""):
+    def build(self, scene, action, shot_size, camera_move, look, sound, continuity="", lead_in_shot=True, cast="",
+              others="", line=""):
         return (world_plate_prompt(scene, look),
                 shot_prompt(action, shot_size, look, continuity, has_cast=bool(cast.strip()) and lead_in_shot,
-                            camera_move=camera_move, lead=lead_in_shot, world=scene.split(". ")[0]),
-                motion_prompt(action, camera_move, sound, look, cast, shot_size, continuity, lead_in_shot),
+                            camera_move=camera_move, lead=lead_in_shot, world=scene.split(". ")[0], others=others,
+                            line=line),
+                motion_prompt(action, camera_move, sound, look, cast, shot_size, continuity, lead_in_shot, others, line),
                 cast_prompt(cast, scene, look))
 
 
@@ -240,16 +246,17 @@ class OpenCinemaStoryBrief:
                              "look": ("STRING", {"default": ""}),
                              "lead": ("STRING", {"multiline": True, "default": ""}),
                              "beats": ("STRING", {"multiline": True, "default": ""}),
-                             "count": ("INT", {"default": 3, "min": 1, "max": 8})}}
+                             "count": ("INT", {"default": 3, "min": 1, "max": 8}),
+                             "characters": ("STRING", {"multiline": True, "default": ""})}}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
     FUNCTION = "build"
     CATEGORY = "Open Cinema"
 
-    def build(self, target, idea, title="", logline="", world="", look="", lead="", beats="", count=3):
+    def build(self, target, idea, title="", logline="", world="", look="", lead="", beats="", count=3, characters=""):
         from .director import story_brief
-        return (story_brief(target, idea, title, logline, world, look, lead, beats, count),)
+        return (story_brief(target, idea, title, logline, world, look, lead, beats, count, characters),)
 
 
 class OpenCinemaParseStory:
@@ -261,8 +268,9 @@ class OpenCinemaParseStory:
         return {"required": {"text": ("STRING", {"forceInput": True})},
                 "optional": {"target": (list(STORY_TARGETS), {"default": "everything"})}}
 
-    RETURN_TYPES = ("STRING",) * 9
-    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats")
+    RETURN_TYPES = ("STRING",) * 10
+    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats",
+                    "characters")
     FUNCTION = "parse"
     CATEGORY = "Open Cinema"
 
@@ -281,7 +289,7 @@ class OpenCinemaShotsBrief:
     def INPUT_TYPES(cls):
         from .director import SHOT_MODES
         return {"required": {"mode": (list(SHOT_MODES), {"default": "board"}),
-                             "count": ("INT", {"default": 5, "min": 2, "max": 8}),
+                             "count": ("INT", {"default": 5, "min": 1, "max": 8}),
                              "index": ("INT", {"default": 1, "min": 1, "max": 99})},
                 "optional": {"title": ("STRING", {"default": ""}), "logline": ("STRING", {"default": ""}),
                              "world": ("STRING", {"multiline": True, "default": ""}),
@@ -290,7 +298,8 @@ class OpenCinemaShotsBrief:
                              "continuity": ("STRING", {"default": ""}),
                              "beats": ("STRING", {"multiline": True, "default": ""}),
                              "shots": ("STRING", {"multiline": True, "default": ""}),
-                             "write_beats": ("STRING", {"default": ""})}}
+                             "write_beats": ("STRING", {"default": ""}),
+                             "characters": ("STRING", {"multiline": True, "default": ""})}}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
@@ -298,10 +307,10 @@ class OpenCinemaShotsBrief:
     CATEGORY = "Open Cinema"
 
     def build(self, mode, count, index, title="", logline="", world="", look="", lead="", continuity="", beats="",
-              shots="", write_beats=""):
+              shots="", write_beats="", characters=""):
         from .director import shot_brief
         return (shot_brief(mode, title, logline, world, look, lead, continuity, shots, index, count, beats,
-                           write_beats),)
+                           write_beats, characters),)
 
 
 class OpenCinemaParseShots:

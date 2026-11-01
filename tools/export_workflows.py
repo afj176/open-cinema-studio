@@ -36,9 +36,11 @@ CLOSE = "Close on his hands turning the glowing lens; light fractures into rainb
 
 examples = {
     "00_cast_portrait_hidream_o1.json": graphs.keyframe_graph(
-        director.cast_prompt(CAST, SCENE, LOOK), 7, "16:9", "open-cinema/cast", size=graphs.CAST_SIZE),
+        director.cast_prompt(CAST, SCENE, LOOK), 7, "16:9", "open-cinema/cast", size=graphs.CAST_SIZE,
+        negative=director.image_negative(LOOK)),
     "01_world_plate_hidream_o1.json": graphs.keyframe_graph(
-        director.world_plate_prompt(SCENE, LOOK), 101, "16:9", "open-cinema/world"),
+        director.world_plate_prompt(SCENE, LOOK), 101, "16:9", "open-cinema/world",
+        negative=director.image_negative(LOOK)),
     "02_shot_frame_qwen_image_edit_2511.json": graphs.coverage_graph(
         director.shot_prompt(CLOSE, "Medium close-up", LOOK, CONTINUITY, has_cast=True, camera_move="Orbit left",
                              world=SCENE.split(". ")[0], identity=IDENTITY, storyboard=True),

@@ -89,7 +89,7 @@
    ],
    "size": [
     300,
-    358
+    406
    ],
    "flags": {},
    "order": 2,
@@ -136,7 +136,9 @@
     "wind, the roar of the furnace",
     "Thin build, indigo linen, dark braids, glowing crucible",
     true,
-    "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible."
+    "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.",
+    "",
+    ""
    ]
   },
   {
@@ -398,7 +400,7 @@
     "Node name for S&R": "CLIPTextEncode"
    },
    "widgets_values": [
-    "warped anatomy, duplicate limbs, melted face, identity drift, morphing, flicker, jump cut, scene change, text, caption, subtitle, watermark, logo"
+    ""
    ]
   },
   {
@@ -2450,7 +2452,7 @@
     450,
     100,
     340,
-    438
+    486
    ],
    "color": "#b06634",
    "font_size": 22,

@@ -35,7 +35,7 @@
    ],
    "size": [
     300,
-    358
+    382
    ],
    "flags": {},
    "order": 1,
@@ -67,7 +67,8 @@
     "Thin build, indigo linen, dark braids, glowing crucible",
     "1. The glass city drifts above the dunes at dawn, steam vents sighing\n2. The artisan's lens cracks in the furnace heat\n3. He finds a shard that bends the sunlight into rainbows\n4. On the terrace he raises the new lens to the sun\n5. Through it, the invisible desert wind becomes ribbons of light",
     "",
-    "1, 2, 3, 4, 5"
+    "1, 2, 3, 4, 5",
+    ""
    ]
   },
   {
@@ -75,7 +76,7 @@
    "type": "OpenCinemaParseShots",
    "pos": [
     490,
-    558
+    582
    ],
    "size": [
     300,
@@ -407,7 +408,7 @@
     470,
     100,
     340,
-    644
+    668
    ],
    "color": "#b06634",
    "font_size": 22,

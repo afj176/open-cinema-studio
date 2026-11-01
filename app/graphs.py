@@ -29,13 +29,6 @@ MODELS = {
 BASE_SIGMAS = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
 REFINE_SIGMAS = "0.85, 0.725, 0.4219, 0.0"
 
-KEYFRAME_NEGATIVE = ("illustration, painting, cartoon, anime, 3d render, CGI, video game, oversaturated, HDR, "
-                     "low quality, blurry, deformed, extra limbs, extra fingers, plastic skin, readable text, "
-                     "caption, subtitles, watermark, logo, frame border, split screen, collage, "
-                     "film camera, camera rig, film crew, lighting equipment")
-SHOT_NEGATIVE = ("warped anatomy, duplicate limbs, melted face, identity drift, morphing, "
-                 "flicker, jump cut, scene change, text, caption, subtitle, watermark, logo")
-
 ASPECTS = {
     # name: (keyframe w, h, video w, h). Keyframes use HiDream-O1's trained sizes; video dims are multiples of 64.
     "16:9": (2560, 1440, 1280, 704),
@@ -53,7 +46,7 @@ def node(class_type: str, **inputs: Any) -> dict[str, Any]:
 
 
 def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
-                   size: tuple[int, int] | None = None) -> dict[str, Any]:
+                   size: tuple[int, int] | None = None, negative: str = "") -> dict[str, Any]:
     """HiDream-O1-Image text-to-image, official Full recipe: 40 steps, cfg 5, seam smoothing."""
     width, height = size or ASPECTS[aspect][:2]
     return {
@@ -62,7 +55,7 @@ def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
         "3": node("HiDreamO1PatchSeamSmoothing", model=["2", 0], start_percent=0.8, end_percent=1.0,
                   pattern="single_shift", passes="ramp_2_4", blend="median", strength=1.0),
         "4": node("CLIPTextEncode", clip=["1", 1], text=prompt),
-        "5": node("CLIPTextEncode", clip=["1", 1], text=KEYFRAME_NEGATIVE),
+        "5": node("CLIPTextEncode", clip=["1", 1], text=negative),  # director.image_negative(look)
         "6": node("EmptyHiDreamO1LatentImage", width=width, height=height, batch_size=1),
         "7": node("BasicScheduler", model=["2", 0], scheduler="normal", steps=40, denoise=1.0),
         "8": node("KSamplerSelect", sampler_name="dpmpp_2m_sde_gpu"),
@@ -150,7 +143,7 @@ def shot_graph(start_image: str, prompt: str, seed: int, aspect: str, seconds: f
         "7": node("VAELoader", vae_name=MODELS["ltx_vae"]),
         "8": node("VAELoader", vae_name=MODELS["ltx_audio_vae"]),
         "9": node("CLIPTextEncode", text=prompt, clip=["6", 0]),
-        "10": node("CLIPTextEncode", text=SHOT_NEGATIVE, clip=["6", 0]),
+        "10": node("CLIPTextEncode", text="", clip=["6", 0]),  # unused: LTX samples at cfg 1
         "11": node("LTXVConditioning", positive=["9", 0], negative=["10", 0], frame_rate=float(fps)),
         "12": node("EmptyLTXVLatentVideo", width=width // 2, height=height // 2, length=frames, batch_size=1),
         "13": node("LTXVImgToVideoInplace", vae=["7", 0], image=["4", 0], latent=["12", 0],
@@ -324,13 +317,13 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
 
 def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str, lead: str, continuity: str,
                       shots: str, index: int = 1, count: int = 5, seed: int = 1, beats: str = "",
-                      write_beats: str = "") -> dict[str, Any]:
+                      write_beats: str = "", characters: str = "") -> dict[str, Any]:
     """Gemma 4 E4B writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
     return {
         "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
         "2": node("OpenCinemaShotsBrief", mode=mode, count=count, index=index, title=title, logline=logline,
                   world=world, look=look, lead=lead, continuity=continuity, beats=beats, shots=shots,
-                  write_beats=write_beats),
+                  write_beats=write_beats, characters=characters),
         "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=120 * count if mode == "board" else 170,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.75, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
@@ -344,13 +337,13 @@ def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str
 
 
 def story_writer_graph(target: str, idea: str, title: str, logline: str, world: str, look: str, lead: str,
-                       seed: int = 1, beats: str = "", count: int = 3) -> dict[str, Any]:
+                       seed: int = 1, beats: str = "", count: int = 3, characters: str = "") -> dict[str, Any]:
     """Gemma 4 E4B develops the story page (or one field of it) through ComfyUI's native TextGenerate."""
     graph = {
         "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
         "2": node("OpenCinemaStoryBrief", target=target, idea=idea, title=title, logline=logline, world=world,
-                  look=look, lead=lead, beats=beats, count=count),
-        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=1100 if target == "everything" else 320,
+                  look=look, lead=lead, beats=beats, count=count, characters=characters),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=1500 if target == "everything" else 360,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.8 if target == "everything" else 0.75, "sampling_mode.top_k": 64,
                      "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.05,
@@ -358,6 +351,6 @@ def story_writer_graph(target: str, idea: str, title: str, logline: str, world: 
         "4": node("OpenCinemaParseStory", text=["3", 0], target=target),
     }
     for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer",
-                                   "beats")):
+                                   "beats", "characters")):
         graph[field] = node("PreviewAny", source=["4", index])
     return graph

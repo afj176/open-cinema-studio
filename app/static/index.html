@@ -107,6 +107,12 @@
                 <span class="ai-actions"><button id="aiContinuity" class="ai small" type="button">✨ From the lead</button></span></div>
               <textarea id="continuity" class="grow" rows="2" placeholder="Details that must never change: crimson cloak, silver circlet…"></textarea>
             </div>
+            <div class="ai-field" id="charactersField">
+              <div class="field-head"><span>Other characters</span>
+                <span class="ai-actions"><button class="ai small" data-ai="characters" type="button">✨ Characters</button></span></div>
+              <textarea id="characters" class="grow" rows="2" placeholder="One per line, as Name: what they look like. Mara: a wiry old woman in a grey shawl…"></textarea>
+              <p class="hint">Shots name them, and every frame they're in is told what they look like and that they look nothing like the lead.</p>
+            </div>
           </div>
         </div>
         <div class="identity-note" id="identityNote" hidden>
@@ -140,12 +146,13 @@
       <div class="card-head"><div><h2 class="serif">The story</h2>
         <p class="hint">The film beat by beat. Shots are written from these and drawn as a storyboard; a shot can tell any beat, or none.</p></div>
         <span class="ai-actions"><div class="seg beat-view" id="beatView" role="group" aria-label="View">
-            <button type="button" data-view="beats" class="on">Beats</button><button type="button" data-view="strip">Strip</button></div>
+            <button type="button" data-view="beats" class="on">Beats</button><button type="button" data-view="strip">Strip</button><button type="button" data-view="script">Script</button></div>
           <button id="drawBoard" class="ghost small" type="button" hidden>Draw storyboard</button>
           <button class="ai small" data-ai="beats" type="button">✨ Beats</button></span></div>
       <div class="beat-menu glass" id="beatMenu" hidden role="dialog" aria-label="Continue the story"></div>
       <ol class="beats" id="beats"></ol>
       <div class="strip" id="strip" hidden></div>
+      <div class="script" id="script" hidden></div>
       <button id="addBeat" class="link" type="button">+ Add beat</button>
     </article>
     <div class="stage-next"><button class="ghost" data-goto="shots" type="button">Next: plan the shots →</button></div>

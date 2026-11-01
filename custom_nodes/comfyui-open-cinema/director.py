@@ -92,6 +92,48 @@ LOOKS: dict[str, str] = {
     "None": "",
 }
 
+# What each look is made of. The realism words, the negative prompt and how a storyboard drawing becomes a frame
+# all follow it, so a look is never fought by the prompts around it (everything not listed is live action).
+LOOK_MEDIUM = {"Noir": "bw", "Anime": "anime", "Claymation": "clay"}
+MEDIUM_FRAME = {
+    "photo": "Cinematic still frame from a live-action feature film: realistic light, natural colour and texture",
+    "bw": "Cinematic still frame from a black-and-white live-action feature film: realistic light and texture, "
+          "no colour anywhere, every colour named here (clothing included) seen only as a shade of grey",
+    "anime": "Still frame from a high-quality 2D animated feature film: clean line art, cel shading, painted "
+             "backgrounds",
+    "clay": "Still frame from a stop-motion claymation feature film: handmade plasticine characters and a miniature "
+            "set, real studio light",
+}
+MEDIUM_PORTRAIT = {
+    "photo": "Natural photograph with sharp, detailed skin and hair, true-to-life colours",
+    "bw": "Black-and-white photograph with sharp, detailed skin and hair",
+    "anime": "Clean 2D anime character design drawing, line art and flat cel shading",
+    "clay": "A handmade plasticine stop-motion puppet, photographed on set",
+}
+MEDIUM_FINISHED = {  # what a storyboard drawing turns into
+    "photo": "a real photographic film frame in full colour",
+    "bw": "a real black-and-white photographic film frame",
+    "anime": "a finished 2D anime frame in full colour",
+    "clay": "a finished stop-motion claymation frame",
+}
+_MEDIUM_NEGATIVE = {
+    "photo": "illustration, painting, cartoon, anime, 3d render, CGI, video game, plastic skin",
+    "bw": "colour, illustration, painting, cartoon, anime, 3d render, CGI, plastic skin",
+    "anime": "photograph, photorealistic, live action, 3d render, CGI",
+    "clay": "live action, real people, illustration, anime, CGI",
+}
+
+
+def medium(look: str) -> str:
+    return LOOK_MEDIUM.get(look, "photo")
+
+
+def image_negative(look: str) -> str:
+    """HiDream-O1's negative prompt (it samples with real guidance, so this one matters), for the look's medium."""
+    return (_MEDIUM_NEGATIVE[medium(look)] + ", low quality, blurry, deformed, extra limbs, extra fingers, readable "
+            "text, caption, subtitles, watermark, logo, frame border, split screen, collage, film camera, camera rig, "
+            "film crew, lighting equipment")
+
 
 # Motion-graphics palette per look: ink, accent, glow, background, title face (barlow | fraunces | manrope).
 LOOK_PALETTES: dict[str, tuple[str, str, str, str, str]] = {
@@ -189,7 +231,7 @@ LEAD_MODES = ("write", "refine", "from photo", "continuity", "identity")
 _LEAD_FORMAT = (
     "Reply with exactly two lines and nothing else:\n"
     "LEAD: one paragraph of 40 to 70 words describing only what a camera sees: approximate age, build, face and "
-    "skin, distinctive features, hair, the exact wardrobe with colours and materials, and one signature prop. "
+    "skin, distinctive features, hair, the exact wardrobe with colours and materials, and a signature prop if they would carry one. "
     "Present tense, concrete visual details only. No name, no backstory, no personality or emotion words.\n"
     "CONTINUITY: 4 to 6 short comma-separated details that must never change from shot to shot, such as key "
     "wardrobe colours, the hairstyle and the signature prop."
@@ -222,12 +264,11 @@ def lead_brief(mode: str, title: str, world: str, look: str, draft: str = "") ->
                 "draft description of the lead for an image model: keep every detail the director wrote exactly "
                 "(the same garments, colours and objects; a torch stays a torch), make vague details specific, and "
                 "add what is missing (age, build, face, hair, exact wardrobe colours "
-                "and materials, a signature prop) so it fits the world and look.\n\n" + film +
+                "and materials, a signature prop if it suits them) so it fits the world and look.\n\n" + film +
                 f"\nDirector's draft: {draft}\n\n" + _LEAD_FORMAT)
     return ("You are the casting director and costume designer on a feature film. Read the world below "
             "carefully, then invent a striking, memorable lead character who could only exist in it: their "
-            "clothing, materials, props and technology must match its era and setting exactly. Give them one "
-            "bold wardrobe colour that will stand out in wide shots.\n\n" + film + "\n\n" + _LEAD_FORMAT)
+            "clothing, materials, props and technology must match its era and setting exactly.\n\n" + film + "\n\n" + _LEAD_FORMAT)
 
 
 def parse_lead(text: str) -> tuple[str, str]:
@@ -252,8 +293,9 @@ def parse_lead(text: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------- AI story writer
-STORY_TARGETS = ("everything", "title", "logline", "world", "look", "trailer", "beats", "more beats")
-STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY", "BEATS")  # "everything", in order
+STORY_TARGETS = ("everything", "title", "logline", "world", "look", "trailer", "beats", "more beats", "characters")
+STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY", "CHARACTERS",
+                "BEATS")  # "everything", in order
 _ALL_LABELS = STORY_LABELS + ("TRAILER",)
 
 _STORY_LINES = {
@@ -266,31 +308,36 @@ _STORY_LINES = {
     "PALETTE": "PALETTE: four hex colours for the film's titles and graphics, in this order: background (very dark), "
                "ink (light, for text), accent (the film's signature colour), glow (a lighter tint of the accent)",
     "LEAD": "LEAD: one paragraph of 40 to 70 words describing only what a camera sees of the lead character: age, "
-            "build, face, hair, the exact wardrobe with colours and materials, and one signature prop. No name, "
+            "build, face, hair, the exact wardrobe with colours and materials, and a signature prop if they would carry one. No name, "
             "no backstory",
     "CONTINUITY": "CONTINUITY: 4 to 6 short comma-separated details of the lead that must never change between shots",
+    "CHARACTERS": "CHARACTERS: the other characters the story needs, separated by ' / ', each as 'Name: 15 to 30 "
+                  "words of what a camera sees (age, build, face, hair, clothing)', each clearly different from the "
+                  "lead; a crowd or group can be one entry; write none if the story needs only the lead",
     "BEATS": "BEATS: 5 to 7 story beats separated by ' / ', in order, each one sentence of at most 18 words saying "
-             "what the lead does and where, something a camera can see: the lead in their world, the problem, the "
-             "turn, the climax with the lead's signature prop, the final image. It is the lead's story (a beat may "
-             "show only the world when the story needs it), each beat causes the next, and every detail fits the world exactly "
-             "(a frozen sea has no waves). No dialogue",
+             "what happens and where, something a camera can see. Shape the story the way this idea wants to be "
+             "told (a quest, a chase, a quiet portrait, a reveal, a loop, a confrontation) rather than a formula. "
+             "It is the lead's story; other characters appear by name when the story needs them. Each beat leads "
+             "to the next, and every detail fits the world",
     "TRAILER": "TRAILER: 4 to 6 trailer title cards separated by ' / ', each at most 6 words, building tension from "
                "the world to the stakes, in the voice of a great movie trailer; the last card is the film's title",
 }
 _STORY_WANTS = {"everything": STORY_LABELS, "title": ("TITLE",), "logline": ("LOGLINE",), "world": ("WORLD",),
-                "look": ("LOOK", "PALETTE"), "trailer": ("TRAILER",), "beats": ("BEATS",), "more beats": ("BEATS",)}
+                "look": ("LOOK", "PALETTE"), "trailer": ("TRAILER",), "beats": ("BEATS",), "more beats": ("BEATS",),
+                "characters": ("CHARACTERS",)}
 
 
 def story_brief(target: str, idea: str = "", title: str = "", logline: str = "", world: str = "", look: str = "",
-                lead: str = "", beats: str = "", count: int = 3) -> str:
+                lead: str = "", beats: str = "", count: int = 3, characters: str = "") -> str:
     """Instruction for an open LLM (Gemma 4 E4B) to write the whole story page or one field of it,
     consistent with whatever the director has already written. "more beats" continues the story in `beats`
     (one numbered beat per line) with `count` new beats."""
     wants = _STORY_WANTS.get(target, STORY_LABELS)
     known = [("The director's idea", idea), ("Title", title), ("Logline", logline), ("World", world),
-             ("Look", look), ("Lead character", lead)]
+             ("Look", look), ("Lead character", lead), ("Other characters", characters and "\n" + characters)]
     if target != "everything":  # keep the field being rewritten out of the context so it is truly new
-        skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look"}.get(target)
+        skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look",
+                "characters": "Other characters"}.get(target)
         known = [(k, v) for k, v in known if k != skip]
     if target == "trailer" and beats.strip():  # trailer cards tease the actual story
         known.append(("The story, beat by beat", "\n" + beats))
@@ -306,7 +353,8 @@ def story_brief(target: str, idea: str = "", title: str = "", logline: str = "",
     elif target == "everything":
         task = ("Develop a short film from the director's idea (or invent a striking original one if there is no "
                 "idea): a title, a logline, a vivid visual world, the film look and colour palette that suit it, "
-                "a memorable lead character who belongs to that world and era, and the story told as visual beats. "
+                "a memorable lead character who belongs to that world and era, any other characters the story "
+                "needs, and the story told as visual beats. "
                 "Everything must fit together.")
     else:
         task = (f"Write a fresh {' and '.join(w.lower() for w in wants)} for this film. It must fit everything "
@@ -327,7 +375,7 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
     """Labelled lines → fields. Small models often drop the labels but keep the order, so unlabelled
     replies are read positionally (everything) or as the single field that was asked for."""
     fields: dict[str, str] = {}
-    current = None
+    current, labelled = None, False
     for raw in text.replace("**", "").replace("__", "").splitlines():
         line = _clean_line(raw)
         if not line:
@@ -335,12 +383,19 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
         label, _, rest = line.partition(":")
         key = label.strip().upper()
         if key in _ALL_LABELS and _:
-            current = key
+            current, labelled = key, True
             fields[key] = rest.strip()
-        elif current in ("WORLD", "LEAD", "LOGLINE"):
+        elif labelled and current in ("WORLD", "LEAD", "LOGLINE"):
             fields[current] += " " + line  # paragraph wrapped onto more lines
-        elif current in ("TRAILER", "BEATS"):
+        elif labelled and current in ("TRAILER", "BEATS", "CHARACTERS"):
             fields[current] += " / " + line  # one card or beat per line instead of ' / '
+        elif target == "everything":  # a line whose label was dropped: the next field still missing, in order
+            after = STORY_LABELS.index(current) + 1 if current in STORY_LABELS else 0
+            nxt = next((k for k in STORY_LABELS[after:] if k not in fields), None)
+            if nxt:
+                current, labelled, fields[nxt] = nxt, False, line
+    if fields.get("BEATS", "").strip().strip(".").lower() in ("none", "n/a", "-"):
+        fields.pop("BEATS")  # "BEATS: None" is no beats
     if not fields:
         lines = [_clean_line(l).strip('"') for l in text.replace("**", "").splitlines() if l.strip()]
         wants = _STORY_WANTS.get(target, STORY_LABELS)
@@ -350,7 +405,7 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
             fields = {"LOOK": lines[0], "PALETTE": " ".join(lines[1:])}
         elif len(wants) == 1 and lines:
             fields = {wants[0]: lines[0] if wants[0] == "TITLE" else
-                      (" / " if wants[0] in ("TRAILER", "BEATS") else " ").join(lines)}
+                      (" / " if wants[0] in ("TRAILER", "BEATS", "CHARACTERS") else " ").join(lines)}
     out = {k.lower(): v.strip().strip('"').strip() for k, v in fields.items()}
     if "look" in out:  # snap to a known look
         match = next((l for l in LOOKS if l.lower() == out["look"].lower()), None) or \
@@ -364,6 +419,9 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
     if "trailer" in out:  # one card per line, as the trailer cards expect
         cards = [c.strip().strip('"').strip() for c in out["trailer"].split("/")]
         out["trailer"] = "\n".join(c for c in cards if c)
+    if "characters" in out:  # one 'Name: description' per line; "none" means the lead is alone
+        people = [c.strip().strip('"').strip() for c in out["characters"].split("/")]
+        out["characters"] = "\n".join(c for c in people if c and c.lower().rstrip(".") not in ("none", "n/a", "-"))
     if "beats" in out:  # one beat per line, without the model's own numbering
         beats = [re.sub(r"^\s*(?:beat\s*)?\d+\s*[.):-]\s*", "", b, flags=re.I).strip().strip('"').strip()
                  for b in out["beats"].split("/")]
@@ -375,17 +433,24 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
 SHOT_MODES = ("board", "next", "rewrite", "beat")
 _NEW_BEAT = ("BEAT: one sentence of at most 18 words saying what the lead does and where, something a camera can "
              "see, that continues the story")
-SHOT_FIELDS = ("beat", "action", "shot_size", "camera_move", "seconds", "sound", "lead", "transition")
+SHOT_FIELDS = ("beat", "action", "shot_size", "camera_move", "seconds", "sound", "lead", "others", "line",
+               "transition")
 _LEAD_WORDS = r"\b(he|she|his|her|hers|him|himself|herself|the lead|the figure|the artisan|the hero|the heroine)\b"
 
 
+def shot_who(shot: dict) -> str:
+    who = (["lead"] if shot.get("lead", True) is not False else []) + ([shot["others"]] if shot.get("others") else [])
+    return ", ".join(who) or "none"
+
+
 def shot_line(shot: dict) -> str:
-    """One shot as the writer reads and writes it: beat | action | size | move | seconds | sound | lead | transition."""
+    """One shot as the writer reads and writes it:
+    beat | action | size | move | seconds | sound | who | line | transition."""
     return " | ".join([str(shot.get("beat") or "-"),
                        str(shot.get("action", "")).replace("|", "/").strip() or "(empty)",
                        shot.get("shot_size", "Wide"), shot.get("camera_move", "Static"),
                        str(int(round(float(shot.get("seconds", 4) or 4)))), str(shot.get("sound", "")).replace("|", "/"),
-                       "yes" if shot.get("lead", True) is not False else "no",
+                       shot_who(shot), str(shot.get("line") or "-").replace("|", "/"),
                        "continue" if shot.get("transition") == "continue" else "cut"])
 
 
@@ -399,7 +464,7 @@ def beat_list_text(beats: list) -> str:
 
 def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", look: str = "", lead: str = "",
                continuity: str = "", shots: str = "", index: int = 1, count: int = 5, beats: str = "",
-               write_beats: str = "") -> str:
+               write_beats: str = "", characters: str = "") -> str:
     """Instruction for an open LLM (Gemma 4 E4B) to write the storyboard. `beats` is the story as numbered beats
     (optional); `shots` the board so far as numbered shot lines, which stay as they are; `index` is 1-based.
     board: the shots for the beats in `write_beats` (or `count` shots that start, or continue and end, the film);
@@ -407,26 +472,32 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
     beat shot `index` tells. `write_beats` "new" means the story has run out: every shot also writes a new beat
     (a BEAT line before it), so the story grows with the film."""
     film = "\n".join(f"{k}: {v}" for k, v in (("Title", title), ("Logline", logline), ("World", world),
-                                                 ("Look", look), ("The lead", lead), ("Never changes", continuity))
+                                                 ("Look", look), ("The lead", lead), ("Never changes", continuity),
+                                                 ("Other characters", characters and "\n" + characters))
                      if v and v.strip())
-    fmt = ("SHOT: beat | action | size | camera move | seconds | sound | lead | transition\n\n"
+    fmt = ("SHOT: beat | action | size | camera move | seconds | sound | who | line | transition\n\n"
            "beat: the number of the story beat this shot tells" + ("" if beats.strip() else " (write -)") + "\n"
-           "action: one or two sentences, present tense, concrete and physical. Start with where in the world the "
-           "camera is (for example: inside the lantern room, on the iron catwalk, on the ice below the tower), then "
-           "what the lead does, what moves, what the light does. No dialogue, no thoughts, no names, no cameras or "
-           "camera words. If the lead is not in the shot, do not mention them at all (no he, she, his or her)\n"
+           "action: one or two sentences, present tense, concrete and physical. Start with the exact place in this "
+           "film's world where the camera is, then what the people do, what moves, what the light does. Call the lead "
+           "the lead and other characters by their names. No thoughts, no cameras or camera words. If the lead is "
+           "not in the shot, do not mention them at all\n"
            f"size: exactly one of: {', '.join(SHOT_SIZES)}\n"
            f"camera move: exactly one of: {', '.join(CAMERA_MOVES)}\n"
            "seconds: a whole number from 3 to 8\n"
-           "sound: what we hear, 4 to 12 words (ambience, effects, music); no dialogue\n"
-           "lead: yes if the lead is in the shot, no for a shot of only the place or an object\n"
+           "sound: what we hear besides speech, 4 to 12 words (ambience, effects, music)\n"
+           "who: everyone in the shot, comma-separated: lead, the names from Other characters, or a group "
+           "described in a few words; none for a shot of only the place or an object\n"
+           "line: what is said aloud in this shot, as Speaker: \"words\" (Lead or a character's name, at most 14 "
+           "words), or - for no speech. Most shots have none; speak only when it matters\n"
            "transition: cut, or continue only when the camera keeps rolling in one unbroken take from the shot before")
     head = ("You are the director and storyboard artist of a short cinematic film made with AI. Every shot is one "
             "moving image of a few seconds, generated from a still of the film's world and a photo of the lead, so "
-            "every shot happens in that world, with at most one person: the lead.\n\nHOW THE SHOTS GO TOGETHER\n"
-            "- The story is the lead's: most shots show what they do. A shot without the lead is either the one "
-            "opening view of the world or a close detail (an object, the light, the weather on a surface), never a "
-            "second wide view of the world.\n"
+            "every shot happens in that world. The lead's face comes from their photo; other characters are drawn "
+            "from their descriptions, so name them exactly as written, and keep a shot to the people it needs.\n\n"
+            "HOW THE SHOTS GO TOGETHER\n"
+            "- The story is the lead's: most shots show what they do. A shot without the lead is usually another "
+            "character, a close detail (an object, the light, the weather on a surface) or the opening view of the "
+            "world; avoid repeating a wide view of the world.\n"
             "- The camera moves through different places in the world, so the film never repeats a view.\n"
             "- Each shot continues from the one before: same time of day and weather, the action picking up where the "
             "last shot left off, building as the story builds.\n"
@@ -471,9 +542,8 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
             task = (f"Continue the film so far with the next {count} shots and bring it to a memorable ending. Do "
                     "not restart the story or introduce the world again. " + vary)
         else:
-            task = (f"Plan the film as a sequence of exactly {count} shots that tells the logline visually: open on the "
-                    "world (a wide or aerial shot), introduce the lead, build to a striking moment with the lead's "
-                    "signature prop, and end on a memorable final image. " + vary)
+            task = (f"Plan the film as a sequence of exactly {count} shots that tells the logline visually, shaped the "
+                    "way this story wants to be told, building to a memorable final image. " + vary)
         reply = (f"Reply with exactly {count} pairs of lines (a BEAT line, then its SHOT line), in order, and "
                  "nothing else:\n" if extend else
                  f"Reply with exactly {count} lines, one per shot in order, and nothing else:\n")
@@ -512,18 +582,32 @@ def parse_shots(text: str) -> list[dict]:
             beat, parts = (int(found[0]) if found else None), parts[1:]
         if len(parts) < 3 or len(parts[0]) < 8 or parts[0].lower().startswith("action"):
             continue  # prose, headings or the format line echoed back
-        parts += [""] * (7 - len(parts))
+        old = len(parts) == 7 and parts[6].lower().startswith(("cut", "cont"))  # who | transition, no line
+        parts += [""] * (8 - len(parts))
+        transition = parts[6] if old else parts[7]
+        line = "" if old else parts[6].strip()
+        line = "" if line.strip("-—. ").lower() in ("", "none", "n/a", "no") else line
+        if ":" in line:  # Speaker: "words", however the quotes came back
+            who_says, _, words = line.partition(":")
+            line = f'{who_says.strip()}: "{words.strip().strip(chr(34) + chr(8220) + chr(8221)).strip()}"'
         try:
             seconds = float(re.findall(r"\d+(?:\.\d+)?", parts[3])[0])
         except IndexError:
             seconds = 4.0
         action = parts[0].rstrip()
-        # small models often say "no lead" for a shot whose action is all about the lead
-        lead = not parts[5].lower().startswith("n") or bool(re.search(_LEAD_WORDS, action, flags=re.I))
+        tokens = [t.strip() for t in re.split(r",|;|\band\b", parts[5]) if t.strip()]
+        lead_tokens = {"lead", "the lead", "yes"}
+        others = ", ".join(t for t in tokens if t.lower() not in lead_tokens | {"no", "none", "-"})
+        lead = any(t.lower() in lead_tokens for t in tokens) or (
+            not tokens and bool(re.search(_LEAD_WORDS, action, flags=re.I)))  # no answer: read the action
+        if line and ":" not in line:  # no speaker given: whoever is in the shot, the lead first
+            first = "Lead" if lead else (others.split(",")[0].strip() if others else "")
+            line = f'{first}: "{line.strip(chr(34) + chr(8220) + chr(8221))}"' if first else ""
         shots.append({"beat": beat, "action": action, "shot_size": _snap(parts[1], SHOT_SIZES, "Medium"),
                       "camera_move": _snap(parts[2], CAMERA_MOVES, "Static"),
                       "seconds": float(min(10, max(2, round(seconds)))), "sound": parts[4], "lead": lead,
-                      "transition": "continue" if parts[6].lower().startswith("cont") else "cut"})
+                      "others": others, "line": line,
+                      "transition": "continue" if transition.lower().startswith("cont") else "cut"})
         if pending:
             shots[-1]["new_beat"], pending = pending, None
     return shots
@@ -539,46 +623,44 @@ def parse_new_beats(text: str) -> list[str]:
 
 # ---------------------------------------------------------------- storyboard sketches
 def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: bool = False, lead: bool = True,
-                  world: str = "", previous: bool = False, scene: str = "") -> str:
+                  world: str = "", previous: bool = False, scene: str = "", others: str = "") -> str:
     """A storyboard panel for Qwen-Image-Edit-2511 from the world plate (Picture 1), the lead (Picture 2) and,
     when there is one, the panel of the shot before (Picture 3), so the storyboard reads as one sequence.
     With `scene` (a panel without the lead), the world comes from that text and Picture 1 is the panel before,
-    as a style reference only: with nobody in it, a panel drawn from the world plate redraws the plate's view."""
+    as a style reference only: with nobody in it, a panel drawn from the world plate redraws the plate's view.
+    `others` describes everyone else in the frame."""
     framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
     close = shot_size in ("Medium close-up", "Close-up", "Extreme close-up", "Insert")
+    style = ("Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple shading, "
+             "black and white only")
+    page = "Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or borders"
     if scene:
         return _join("One single storyboard frame that fills the entire image edge to edge: " + framing,
-                     "In this frame: " + action if action else "", "The world of the film: " + scene,
-                     "Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple "
-                     "shading, black and white only",
+                     "In this frame: " + action if action else "", "The world of the film: " + scene, style,
                      "Picture 1 is only a style reference: the storyboard frame of the shot just before this one. Draw "
                      "in exactly the same style, as the next moment of the same scene, from a new camera position; do "
-                     "not repeat its composition and leave out anyone in it", people_note(False),
-                     "Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or "
-                     "borders")
+                     "not repeat its composition" + ("" if others else " and leave out anyone in it"),
+                     people_note(False, others), page)
     return _join("One single storyboard frame that fills the entire image edge to edge: " + framing,
-                 "In this frame: " + action if action else "",
-                 "Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple "
-                 "shading, black and white only",
+                 "In this frame: " + action if action else "", style,
                  ("The location of Picture 1 is only glimpsed behind" if close else
                   "The place is the location of Picture 1" + (" (" + world + ")" if world else "")) +
                  "; choose the camera position this framing needs, do not copy the layout of Picture 1",
                  (lead and has_cast and "The lead is the person from Picture 2 (same hair, build and clothing), posed "
-                  "by this frame's action; do not copy the layout of Picture 2"), people_note(lead),
+                  "by this frame's action; do not copy the layout of Picture 2"), people_note(lead, others),
                  previous and ("Picture " + ("3" if has_cast and lead else "2") + " is the storyboard frame of the "
                                "shot just before this one: draw in exactly the same style, with the same time of day "
                                "and weather, as the next moment of the same scene. This frame cuts to a new camera "
-                               "angle, so do not repeat its composition"),
-                 "Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or borders")
+                               "angle, so do not repeat its composition"), page)
 
 
-def storyboard_guide(picture: int, lead: bool) -> str:
+def storyboard_guide(picture: int, lead: bool, look: str = "", others: str = "") -> str:
     """How a frame follows its storyboard drawing (Picture 3, or Picture 2 in a shot without the lead's portrait)."""
-    follow = (", where the lead is placed and how they pose" if lead else
+    follow = (", where the people are placed and how they pose" if lead or others else
               " (leave out any person drawn in it)")
     return (f"Picture {picture} is the storyboard drawing of this shot: use its composition, camera angle, framing"
-            f"{follow}, but paint a real photographic film frame in full colour with the place and light of "
-            "Picture 1; nothing drawn or sketched")
+            f"{follow}, but render {MEDIUM_FINISHED[medium(look)]} with the place and light of Picture 1; nothing "
+            "pencil-drawn or sketched")
 
 
 def _join(*parts: str) -> str:
@@ -586,37 +668,33 @@ def _join(*parts: str) -> str:
 
 
 def cast_prompt(cast: str, scene: str, look: str) -> str:
-    """Character reference portrait for HiDream-O1, reused by every later keyframe."""
-    return _join("Three-quarter body shot, eye-level, front view. A casting reference photograph of a single person "
+    """Character reference portrait for HiDream-O1, reused by every later frame. Drawn in the look's medium, so
+    an anime film's lead is an anime character from the start."""
+    return _join("Three-quarter body shot, eye-level, front view. A casting reference image of a single person "
                  "standing alone and facing the camera with a neutral expression", cast,
                  "The background is one seamless, plain, light grey colour that fills the whole frame, with no "
                  "equipment, props or edges visible. Even, soft, frontal lighting",
-                 "Natural photograph with sharp, detailed skin and hair, true-to-life colours, no text")
+                 MEDIUM_PORTRAIT[medium(look)], "No text")
 
 
-def people_note(lead: bool) -> str:
-    """Busy backgrounds full of extra people are the biggest artifact source, so say who is in frame."""
-    return ("The lead is the only person anywhere in the frame; the rest of the landscape is empty of people"
-            if lead else "There are no people anywhere in this shot")
+def people_note(lead: bool, others: str = "") -> str:
+    """Say who is in frame: unasked-for extra people are the biggest artifact source, and anyone besides the lead
+    must not borrow the lead's face."""
+    if others:
+        return ((f"Also in the frame: {others}. " if lead else f"In the frame: {others}; the lead is not in this shot. ")
+                + "Everyone besides the lead looks clearly different from the lead: a different face, age, hair and "
+                "clothing. No one else is in the frame")
+    return ("The lead is the only person in the frame" if lead else "There are no people anywhere in this shot")
 
 
-def keyframe_prompt(scene: str, action: str, shot_size: str, look: str, camera_move: str = "",
-                    lead: bool = True) -> str:
-    """Establishing frame for HiDream-O1: framing first, then a long descriptive paragraph (per its model card)."""
-    framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
-    return _join(framing, action, people_note(lead), scene, LOOKS.get(look, look),
-                 "Cinematic still frame from a live-action feature film: realistic light, natural colour and "
-                 "texture, real locations and people, no text or lettering in focus")
 
 
 def world_plate_prompt(scene: str, look: str) -> str:
-    """The film's world for HiDream-O1: an empty location plate. Nobody is in it, so the only face any shot
-    ever sees is the lead's portrait."""
-    return _join("Wide establishing shot at eye level", scene,
+    """The film's world for HiDream-O1: an empty location plate. Nobody is in it, so no shot inherits a stray face
+    from it; the lead and the other characters are added shot by shot."""
+    return _join("Wide establishing view of this world, from wherever it looks most striking", scene,
                  "The place is completely deserted and uninhabited: nobody is there, no people, no figures, "
-                 "no silhouettes", LOOKS.get(look, look),
-                 "Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, "
-                 "no text or lettering")
+                 "no silhouettes", LOOKS.get(look, look), MEDIUM_FRAME[medium(look)] + ", no text or lettering")
 
 
 PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure, silhouette, face or body part "
@@ -625,35 +703,48 @@ PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure
 
 def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
                 camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "",
-                storyboard: bool = False) -> str:
+                storyboard: bool = False, others: str = "", line: str = "") -> str:
     """A shot for Qwen-Image-Edit-2511: Picture 1 is the film's empty world plate (place, light, grade),
     Picture 2, when there is one, the lead's portrait (face, hair, wardrobe), and Picture 3, when there is one,
-    the shot's storyboard drawing (composition)."""
+    the shot's storyboard drawing (composition). `others` describes everyone else in the frame and `line` is what
+    is said in the shot."""
     framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
     who = ("The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. "
            "Picture 2 is only an identity reference: take their pose, expression and body language from this shot's "
-           "action, not from Picture 2, and play it with full energy and emotion. Ignore the studio backdrop of "
-           "Picture 2" if has_cast else lead and cast and "The lead: " + cast)
+           "action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio "
+           "backdrop of Picture 2" if has_cast else lead and cast and "The lead: " + cast)
+    speaker = line.split(":", 1)[0].strip() if ":" in line else ""
     return _join(
         "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: " + framing,
         "In this shot: " + action if action else "",
         world and "The setting is the world of Picture 1: " + world,
-        storyboard_guide(3 if has_cast else 2, lead) if storyboard else
+        storyboard_guide(3 if has_cast else 2, lead, look, others) if storyboard else
         "Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its place, era, "
         "weather, light and colour",
-        lead and who, people_note(lead), lead and identity and "The lead: " + identity, lead and continuity,
+        lead and who, people_note(lead, others), lead and identity and "The lead: " + identity, lead and continuity,
+        speaker and f"{'The lead' if speaker.lower() == 'lead' else speaker} is caught mid-sentence, speaking",
         LOOKS.get(look, look) and "Same color grade: " + LOOKS.get(look, look),
-        "Cinematic film still, no text, no borders")
+        MEDIUM_FRAME[medium(look)] + ", no text, no borders")
 
 
 def motion_prompt(action: str, camera_move: str, sound: str = "", look: str = "", cast: str = "",
-                  shot_size: str = "", continuity: str = "", lead: bool = True) -> str:
-    """LTX 2.5 prompt: action, then the camera move (LTX follows early camera language best), then who, look, sound."""
+                  shot_size: str = "", continuity: str = "", lead: bool = True, others: str = "",
+                  line: str = "") -> str:
+    """LTX 2.5 prompt: action, then the camera move (LTX follows early camera language best), then who, any spoken
+    line, look and sound. LTX samples without guidance, so everything it must avoid is said here, not in a
+    negative prompt."""
     move = CAMERA_MOVES.get(camera_move, camera_move)
     style = LOOKS.get(look, look)
+    speaker, _, words = line.partition(":")
+    spoken = words.strip().strip('"').strip() if words else ""
+    speaker = "The lead" if speaker.strip().lower() == "lead" else speaker.strip()
     return _join(action, move, shot_size and "Framing: " + SHOT_SIZES.get(shot_size, shot_size),
                  lead and cast and "The character: " + cast,
                  lead and continuity and "These details stay exactly the same throughout: " + continuity,
-                 people_note(lead), style and "Cinematic style: " + style,
-                 "Natural, physically plausible motion, consistent identity, no cuts",
-                 sound and "Audio: " + sound)
+                 people_note(lead, others),
+                 spoken and f'{speaker} says "{spoken}" clearly, lips moving in sync',
+                 style and "Cinematic style: " + style,
+                 "Natural, physically plausible motion, consistent faces, no cuts, no captions or on-screen text",
+                 sound and "Audio: " + sound + ("" if not spoken else ", under the spoken line"))
+
+

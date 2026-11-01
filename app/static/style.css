@@ -588,3 +588,19 @@ button.danger.armed { background: rgba(220,70,70,.22); border-color: rgba(220,70
 @container (max-width: 96px) { .clip small { display: none; } }
 .clip.paused { filter: grayscale(.7) brightness(.6); border-color: rgba(240,180,76,.6); }
 .clip.paused::after { content: "❚❚"; position: absolute; right: 6px; top: 5px; font-size: 10px; color: #f0b44c; }
+/* who speaks: on the card, and the script view */
+.card .said { margin: -2px 0 8px; font-size: 12px; font-style: italic; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.card .said b { font-style: normal; font-weight: 700; color: var(--text); margin-right: 4px; font-size: 11px; letter-spacing: .03em; }
+.script { margin-top: 16px; padding: 28px clamp(16px, 6vw, 72px); border-radius: var(--r-sm); background: #f6f3ea; color: #1d1b17;
+  font-family: "Courier Prime", "Courier New", ui-monospace, monospace; font-size: 14px; line-height: 1.55; max-width: 760px;
+  margin-inline: auto; }
+.script .sc-head { margin: 22px 0 8px; font: 700 13px/1.4 inherit; font-family: inherit; text-transform: uppercase; letter-spacing: .02em; }
+.script .sc-head:first-child { margin-top: 0; }
+.script .sc-shot { position: relative; display: block; width: 100%; text-align: left; padding: 4px 0 4px 34px; border: 0; background: none;
+  color: inherit; font: inherit; cursor: pointer; border-radius: 4px; white-space: normal; }
+.script .sc-shot:hover { background: rgba(0,0,0,.05); }
+.script .sc-num { position: absolute; left: 0; top: 6px; font-size: 11px; color: #8a857a; }
+.script .sc-action { margin: 0 0 6px; }
+.script .sc-speaker { margin: 8px 0 0; text-align: center; font-weight: 700; text-transform: uppercase; }
+.script .sc-line { margin: 0 auto 8px; max-width: 60%; text-align: center; }

@@ -53,7 +53,7 @@ def palette_string(project: dict[str, Any]) -> str:
     return ",".join(colours) if all(c.startswith("#") and len(c) == 7 for c in colours) else ""
 
 
-STORY_FIELDS = ("title", "logline", "scene", "look", "palette", "cast", "continuity", "beats")
+STORY_FIELDS = ("title", "logline", "scene", "look", "palette", "cast", "continuity", "characters", "beats")
 # Text jobs jump ahead of queued renders, then the lead, world and storyboard; renders keep their order.
 PRIORITY = {"write_shots": 0, "write_story": 0, "write_lead": 0, "cast": 1, "describe_lead": 1, "world": 1,
             "sketch": 1}
@@ -135,6 +135,31 @@ def world_plate(project: dict[str, Any]) -> str | None:
     return (project.get("world") or {}).get("plate")
 
 
+def cast_list(project: dict[str, Any]) -> dict[str, str]:
+    """The other characters, from the Story page's 'Name: what they look like' lines."""
+    people = {}
+    for raw in (project.get("characters") or "").splitlines():
+        name, _, look = raw.partition(":")
+        if name.strip() and look.strip():
+            people[name.strip()] = look.strip()
+    return people
+
+
+def others_in(project: dict[str, Any], shot: dict[str, Any]) -> str:
+    """Everyone in the shot besides the lead, with each named character's description, so a character looks the
+    same in every shot they're in (a speaker is in the shot even if the writer forgot to list them)."""
+    people = cast_list(project)
+    names = [t.strip() for t in (shot.get("others") or "").replace(";", ",").split(",") if t.strip()]
+    speaker = (shot.get("line") or "").partition(":")[0].strip() if ":" in (shot.get("line") or "") else ""
+    if speaker and speaker.lower() != "lead" and not any(speaker.lower() == n.lower() for n in names):
+        names.append(speaker)
+    described = []
+    for name in names:
+        match = next((k for k in people if k.lower() == name.lower() or name.lower().startswith(k.lower() + " ")), None)
+        described.append(f"{match} ({people[match]})" if match else name)
+    return "; ".join(described)
+
+
 def is_blank(shot: dict[str, Any]) -> bool:
     return not shot.get("action", "").strip() and not is_made(shot)
 
@@ -146,7 +171,8 @@ def is_made(shot: dict[str, Any]) -> bool:
 def sketch_of(shot: dict[str, Any], plate: str | None, reference: str | None) -> dict[str, Any]:
     """What a storyboard drawing depends on: if any of it changes, the drawing is redrawn before the next frame."""
     return {"action": shot.get("action", ""), "shot_size": shot.get("shot_size"), "camera_move": shot.get("camera_move"),
-            "lead": shot.get("lead", True) is not False, "world": plate, "reference": reference}
+            "lead": shot.get("lead", True) is not False, "world": plate, "reference": reference,
+            "others": shot.get("others", "")}
 
 
 def frame_stale(project: dict[str, Any], shot: dict[str, Any]) -> bool:
@@ -333,7 +359,7 @@ class Studio:
             if isinstance(data.get("beats"), list):
                 project["beats"] = [str(b).strip() for b in data["beats"] if str(b).strip()]
             for key in ("title", "scene", "look", "aspect", "continuity", "cast", "finish", "motion", "idea",
-                        "logline", "palette", "auto_render"):
+                        "logline", "palette", "auto_render", "characters"):
                 if key in data:
                     project[key] = data[key]
             if "shots" in data:
@@ -342,7 +368,7 @@ class Studio:
                 for incoming in data["shots"]:
                     shot = existing.get(incoming.get("id")) or new_shot(takes={"keyframe": [], "video": []})
                     for key in ("action", "shot_size", "camera_move", "seconds", "sound", "transition", "seed",
-                                "lead", "beat", "ai"):
+                                "lead", "beat", "ai", "others", "line"):
                         if key in incoming:
                             shot[key] = incoming[key]
                     try:  # LTX shots are 2-10 s; anything else would blow the VRAM or render nothing
@@ -520,7 +546,8 @@ class Studio:
         project = self.load(job["project"])
         prompt = director.cast_prompt(project["cast"], project["scene"], project["look"])
         graph = graphs.keyframe_graph(prompt, random.randrange(1, 2**31), project["aspect"],
-                                      f"open-cinema/{project['id']}/cast", size=graphs.CAST_SIZE)
+                                      f"open-cinema/{project['id']}/cast", size=graphs.CAST_SIZE,
+                                      negative=director.image_negative(project["look"]))
         files = self.comfy.run(graph, on_tick=tick)
         name = f"cast_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project["id"]) / name)
@@ -562,7 +589,8 @@ class Studio:
             if job:
                 job["label"] = "Painting the world" + (f" · try {attempt + 1}" if attempt else "")
             files = self.comfy.run(graphs.keyframe_graph(prompt, seed + attempt, project["aspect"],
-                                                         f"open-cinema/{project_id}/world"), on_tick=tick)
+                                                         f"open-cinema/{project_id}/world",
+                                                         negative=director.image_negative(project["look"])), on_tick=tick)
             name = f"world_{uuid.uuid4().hex[:6]}.png"
             self.comfy.download(files[0], folder / name)
             if job:
@@ -625,12 +653,14 @@ class Studio:
         prompt = director.shot_prompt(shot["action"], shot["shot_size"], look, continuity, has_cast=bool(reference),
                                       camera_move=shot["camera_move"], lead=lead,
                                       world=scene.split(". ")[0].strip().rstrip("."), identity=identity,
-                                      cast=project.get("cast", ""), storyboard=bool(sketch))
+                                      cast=project.get("cast", ""), storyboard=bool(sketch),
+                                      others=others_in(project, shot), line=shot.get("line", ""))
         refs = [self._upload(project["id"], name) for name in (reference, sketch) if name]  # Picture 2, 3 in order
         graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], plate), prefix, aspect,
                                       second_reference=refs[0] if refs else None,
                                       third_reference=refs[1] if len(refs) > 1 else None)
         recipe = {"kind": "shot", "world": plate, "lead": reference, "identity": identity, "sketch": sketch,
+                  "others": shot.get("others", ""),
                   "action": shot["action"], "shot_size": shot["shot_size"], "camera_move": shot["camera_move"],
                   "steps": ["Qwen-Image-Edit 2511 · the world + the lead" + (" + the storyboard" if sketch else "") +
                             " · 4 steps"]}
@@ -670,7 +700,8 @@ class Studio:
         plain = not reference and bool(before)
         prompt = director.sketch_prompt(shot["action"], shot["shot_size"], shot["camera_move"], has_cast=bool(reference),
                                         lead=lead, world=project["scene"].split(". ")[0].strip().rstrip("."),
-                                        previous=bool(before), scene=project["scene"] if plain else "")
+                                        previous=bool(before), scene=project["scene"] if plain else "",
+                                        others=others_in(project, shot))
         refs = [self._upload(project_id, name) for name in (reference, before) if name]
         seed = (shot["seed"] + 7_777 * len(shot.get("sketches", []))) % 2**31
         files = self.comfy.run(graphs.coverage_graph(
@@ -756,7 +787,7 @@ class Studio:
         prompt = director.motion_prompt(shot["action"], shot["camera_move"], shot.get("sound", ""), project["look"],
                                         director._join(project.get("cast", ""), lead_identity(project)).rstrip("."),
                                         shot["shot_size"], project.get("continuity", ""),
-                                        shot.get("lead", True))
+                                        shot.get("lead", True), others_in(project, shot), shot.get("line", ""))
         seed = take_seed(shot, "video")
         # the zoomed end frame also pins the subject to its first pose, so a shot with someone acting in it
         # comes out as a zooming still: only empty wide views get the guide
@@ -1162,11 +1193,14 @@ class Studio:
                                           project.get("cast", "") if target != "everything" else "",
                                           seed=random.randrange(1, 2**31),
                                           beats=director.beat_list_text(project.get("beats") or []),
-                                          count=int(job.get("count", 3)))
+                                          count=int(job.get("count", 3)),
+                                          characters=project.get("characters", "") if target != "everything" else "")
         record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
         out = {k: "".join(record["outputs"].get(k, {}).get("text", [""])).strip()
-               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats")}
-        wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity", "beats"),
+               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats",
+                         "characters")}
+        wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity", "characters",
+                                 "beats"), "characters": ("characters",),
                   "title": ("title",), "logline": ("logline",), "world": ("world",),
                   "look": ("look", "palette"), "trailer": ("trailer",), "beats": ("beats",),
                   "more beats": ("beats",)}[target]
@@ -1203,7 +1237,7 @@ class Studio:
             repaint = target in ("everything", "world", "look") and not current_plate(fresh) and not any(
                 j["project"] == fresh["id"] and j["kind"] == "world" and j["state"] in ("queued", "running")
                 for j in self.jobs)
-            storyboard = target == "everything" and fresh.get("beats") and all(is_blank(x) for x in fresh["shots"])
+            storyboard = target == "everything" and all(is_blank(x) for x in fresh["shots"])
             # new beats get their shots (and, with auto-render, their videos) like everything Gemma writes
             fill = target == "more beats" and fresh.get("auto_render", True)
         if recast:  # the page is complete only with the lead's face; never replaces an uploaded photo
@@ -1215,7 +1249,7 @@ class Studio:
                          count=int(job.get("count", 3)))
         if storyboard:  # a new story on an empty board: write its shots, which then get drawn
             self.enqueue("write_shots", job["project"], None, "Writing the shots", mode="board",
-                         count=len(fresh["beats"]))
+                         count=len(fresh.get("beats") or []) or 5)
 
     # ---------- AI shot writer ----------
     def _run_write_shots(self, job: dict[str, Any], tick) -> None:
@@ -1241,7 +1275,7 @@ class Studio:
             mode, project["title"], project.get("logline", ""), project["scene"], project["look"],
             project.get("cast", ""), project.get("continuity", ""), director.shot_list_text(context), index + 1,
             len(missing) if missing else count, seed=random.randrange(1, 2**31), beats=director.beat_list_text(beats),
-            write_beats=write)
+            write_beats=write, characters=project.get("characters", ""))
         record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
         if mode == "beat":
             return self._place_in_story(job, record)
