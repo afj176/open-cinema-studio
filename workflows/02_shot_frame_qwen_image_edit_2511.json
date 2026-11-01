@@ -1,9 +1,9 @@
 {
- "last_node_id": 19,
- "last_link_id": 22,
+ "last_node_id": 21,
+ "last_link_id": 25,
  "nodes": [
   {
-   "id": 19,
+   "id": 21,
    "type": "MarkdownNote",
    "pos": [
     60,
@@ -21,7 +21,7 @@
    "title": "How this works",
    "properties": {},
    "widgets_values": [
-    "## 3 \u00b7 A shot\nEvery shot is made from the same two pictures: **Picture 1** is the empty world plate (place, light, grade) and **Picture 2** is the lead (face, hair, wardrobe), plus the shot's action and camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."
+    "## 3 \u00b7 A shot\nEvery shot is made from the same pictures: **Picture 1** is the empty world plate (place, light, grade), **Picture 2** is the lead (face, hair, wardrobe) and **Picture 3** is the shot's storyboard drawing (composition and pose), plus the shot's action and camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -93,7 +93,7 @@
      "type": "IMAGE",
      "links": [
       7,
-      12
+      13
      ],
      "slot_index": 0
     }
@@ -125,7 +125,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      22
+      24
      ],
      "slot_index": 0
     },
@@ -163,7 +163,7 @@
     {
      "name": "image",
      "type": "IMAGE",
-     "link": 22
+     "link": 24
     }
    ],
    "outputs": [
@@ -172,7 +172,7 @@
      "type": "IMAGE",
      "links": [
       8,
-      13
+      14
      ],
      "slot_index": 0
     }
@@ -185,10 +185,89 @@
    "color": "#a1309b"
   },
   {
+   "id": 19,
+   "type": "LoadImage",
+   "pos": [
+    1310,
+    160
+   ],
+   "size": [
+    300,
+    378
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      25
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Storyboard drawing",
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "oc_storyboard_sketch.jpg"
+   ],
+   "color": "#7a7a72"
+  },
+  {
+   "id": 20,
+   "type": "FluxKontextImageScale",
+   "pos": [
+    1310,
+    578
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 25
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      9,
+      15
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Scale storyboard",
+   "properties": {
+    "Node name for S&R": "FluxKontextImageScale"
+   },
+   "widgets_values": [],
+   "color": "#7a7a72"
+  },
+  {
    "id": 1,
    "type": "UNETLoader",
    "pos": [
-    1310,
+    1720,
     160
    ],
    "size": [
@@ -196,7 +275,7 @@
     118
    ],
    "flags": {},
-   "order": 5,
+   "order": 7,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -222,7 +301,7 @@
    "id": 2,
    "type": "LoraLoaderModelOnly",
    "pos": [
-    1310,
+    1720,
     318
    ],
    "size": [
@@ -230,7 +309,7 @@
     142
    ],
    "flags": {},
-   "order": 6,
+   "order": 8,
    "mode": 0,
    "inputs": [
     {
@@ -262,7 +341,7 @@
    "id": 3,
    "type": "ModelSamplingAuraFlow",
    "pos": [
-    1310,
+    1720,
     500
    ],
    "size": [
@@ -270,7 +349,7 @@
     142
    ],
    "flags": {},
-   "order": 7,
+   "order": 9,
    "mode": 0,
    "inputs": [
     {
@@ -302,7 +381,7 @@
    "id": 4,
    "type": "CFGNorm",
    "pos": [
-    1310,
+    1720,
     682
    ],
    "size": [
@@ -310,7 +389,7 @@
     142
    ],
    "flags": {},
-   "order": 8,
+   "order": 10,
    "mode": 0,
    "inputs": [
     {
@@ -324,7 +403,7 @@
      "name": "patched_model",
      "type": "MODEL",
      "links": [
-      15
+      17
      ],
      "slot_index": 0
     }
@@ -342,7 +421,7 @@
    "id": 5,
    "type": "CLIPLoader",
    "pos": [
-    1310,
+    1720,
     864
    ],
    "size": [
@@ -350,7 +429,7 @@
     142
    ],
    "flags": {},
-   "order": 9,
+   "order": 11,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -359,7 +438,7 @@
      "type": "CLIP",
      "links": [
       5,
-      10
+      11
      ],
      "slot_index": 0
     }
@@ -378,7 +457,7 @@
    "id": 6,
    "type": "VAELoader",
    "pos": [
-    1310,
+    1720,
     1046
    ],
    "size": [
@@ -386,7 +465,7 @@
     94
    ],
    "flags": {},
-   "order": 10,
+   "order": 12,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -395,8 +474,8 @@
      "type": "VAE",
      "links": [
       6,
-      11,
-      20
+      12,
+      22
      ],
      "slot_index": 0
     }
@@ -413,7 +492,7 @@
    "id": 9,
    "type": "TextEncodeQwenImageEditPlus",
    "pos": [
-    1720,
+    2130,
     160
    ],
    "size": [
@@ -421,7 +500,7 @@
     214
    ],
    "flags": {},
-   "order": 11,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
@@ -447,45 +526,6 @@
     {
      "name": "image3",
      "type": "IMAGE",
-     "link": null
-    }
-   ],
-   "outputs": [
-    {
-     "name": "CONDITIONING",
-     "type": "CONDITIONING",
-     "links": [
-      9
-     ],
-     "slot_index": 0
-    }
-   ],
-   "title": "Instruction (sees Picture 1 + 2)",
-   "properties": {
-    "Node name for S&R": "TextEncodeQwenImageEditPlus"
-   },
-   "widgets_values": [
-    "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its place, era, weather, light and colour. The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with full energy and emotion. Ignore the studio backdrop of Picture 2. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic film still, no text, no borders."
-   ]
-  },
-  {
-   "id": 10,
-   "type": "FluxKontextMultiReferenceLatentMethod",
-   "pos": [
-    1720,
-    414
-   ],
-   "size": [
-    300,
-    118
-   ],
-   "flags": {},
-   "order": 12,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "conditioning",
-     "type": "CONDITIONING",
      "link": 9
     }
    ],
@@ -494,7 +534,46 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      16
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "Instruction (sees Picture 1 + 2 + 3)",
+   "properties": {
+    "Node name for S&R": "TextEncodeQwenImageEditPlus"
+   },
+   "widgets_values": [
+    "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Picture 3 is the storyboard drawing of this shot: use its composition, camera angle, framing, where the lead is placed and how they pose, but paint a real photographic film frame in full colour with the place and light of Picture 1; nothing drawn or sketched. The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with full energy and emotion. Ignore the studio backdrop of Picture 2. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic film still, no text, no borders."
+   ]
+  },
+  {
+   "id": 10,
+   "type": "FluxKontextMultiReferenceLatentMethod",
+   "pos": [
+    2130,
+    414
+   ],
+   "size": [
+    300,
+    118
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 10
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      18
      ],
      "slot_index": 0
     }
@@ -511,7 +590,7 @@
    "id": 11,
    "type": "TextEncodeQwenImageEditPlus",
    "pos": [
-    1720,
+    2130,
     572
    ],
    "size": [
@@ -519,33 +598,33 @@
     214
    ],
    "flags": {},
-   "order": 13,
+   "order": 15,
    "mode": 0,
    "inputs": [
     {
      "name": "clip",
      "type": "CLIP",
-     "link": 10
+     "link": 11
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 11
+     "link": 12
     },
     {
      "name": "image1",
      "type": "IMAGE",
-     "link": 12
+     "link": 13
     },
     {
      "name": "image2",
      "type": "IMAGE",
-     "link": 13
+     "link": 14
     },
     {
      "name": "image3",
      "type": "IMAGE",
-     "link": null
+     "link": 15
     }
    ],
    "outputs": [
@@ -553,7 +632,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      14
+      16
      ],
      "slot_index": 0
     }
@@ -570,7 +649,7 @@
    "id": 12,
    "type": "FluxKontextMultiReferenceLatentMethod",
    "pos": [
-    1720,
+    2130,
     826
    ],
    "size": [
@@ -578,13 +657,13 @@
     118
    ],
    "flags": {},
-   "order": 14,
+   "order": 16,
    "mode": 0,
    "inputs": [
     {
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 14
+     "link": 16
     }
    ],
    "outputs": [
@@ -592,7 +671,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      17
+      19
      ],
      "slot_index": 0
     }
@@ -609,7 +688,7 @@
    "id": 13,
    "type": "EmptySD3LatentImage",
    "pos": [
-    2130,
+    2540,
     160
    ],
    "size": [
@@ -617,7 +696,7 @@
     142
    ],
    "flags": {},
-   "order": 15,
+   "order": 17,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -625,12 +704,12 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      18
+      20
      ],
      "slot_index": 0
     }
    ],
-   "title": "Empty canvas (the shot's own composition)",
+   "title": "Empty canvas",
    "properties": {
     "Node name for S&R": "EmptySD3LatentImage"
    },
@@ -644,7 +723,7 @@
    "id": 14,
    "type": "KSampler",
    "pos": [
-    2130,
+    2540,
     342
    ],
    "size": [
@@ -652,28 +731,28 @@
     334
    ],
    "flags": {},
-   "order": 16,
+   "order": 18,
    "mode": 0,
    "inputs": [
     {
      "name": "model",
      "type": "MODEL",
-     "link": 15
+     "link": 17
     },
     {
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 16
+     "link": 18
     },
     {
      "name": "negative",
      "type": "CONDITIONING",
-     "link": 17
+     "link": 19
     },
     {
      "name": "latent_image",
      "type": "LATENT",
-     "link": 18
+     "link": 20
     }
    ],
    "outputs": [
@@ -681,7 +760,7 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      19
+      21
      ],
      "slot_index": 0
     }
@@ -704,7 +783,7 @@
    "id": 15,
    "type": "VAEDecode",
    "pos": [
-    2540,
+    2950,
     160
    ],
    "size": [
@@ -712,18 +791,18 @@
     118
    ],
    "flags": {},
-   "order": 17,
+   "order": 19,
    "mode": 0,
    "inputs": [
     {
      "name": "samples",
      "type": "LATENT",
-     "link": 19
+     "link": 21
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 20
+     "link": 22
     }
    ],
    "outputs": [
@@ -731,7 +810,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      21
+      23
      ],
      "slot_index": 0
     }
@@ -746,7 +825,7 @@
    "id": 16,
    "type": "SaveImage",
    "pos": [
-    2540,
+    2950,
     318
    ],
    "size": [
@@ -754,13 +833,13 @@
     118
    ],
    "flags": {},
-   "order": 18,
+   "order": 20,
    "mode": 0,
    "inputs": [
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 21
+     "link": 23
     }
    ],
    "outputs": [
@@ -847,6 +926,14 @@
   ],
   [
    9,
+   20,
+   0,
+   9,
+   4,
+   "IMAGE"
+  ],
+  [
+   10,
    9,
    0,
    10,
@@ -854,7 +941,7 @@
    "CONDITIONING"
   ],
   [
-   10,
+   11,
    5,
    0,
    11,
@@ -862,7 +949,7 @@
    "CLIP"
   ],
   [
-   11,
+   12,
    6,
    0,
    11,
@@ -870,7 +957,7 @@
    "VAE"
   ],
   [
-   12,
+   13,
    8,
    0,
    11,
@@ -878,7 +965,7 @@
    "IMAGE"
   ],
   [
-   13,
+   14,
    18,
    0,
    11,
@@ -886,7 +973,15 @@
    "IMAGE"
   ],
   [
-   14,
+   15,
+   20,
+   0,
+   11,
+   4,
+   "IMAGE"
+  ],
+  [
+   16,
    11,
    0,
    12,
@@ -894,7 +989,7 @@
    "CONDITIONING"
   ],
   [
-   15,
+   17,
    4,
    0,
    14,
@@ -902,7 +997,7 @@
    "MODEL"
   ],
   [
-   16,
+   18,
    10,
    0,
    14,
@@ -910,7 +1005,7 @@
    "CONDITIONING"
   ],
   [
-   17,
+   19,
    12,
    0,
    14,
@@ -918,7 +1013,7 @@
    "CONDITIONING"
   ],
   [
-   18,
+   20,
    13,
    0,
    14,
@@ -926,7 +1021,7 @@
    "LATENT"
   ],
   [
-   19,
+   21,
    14,
    0,
    15,
@@ -934,7 +1029,7 @@
    "LATENT"
   ],
   [
-   20,
+   22,
    6,
    0,
    15,
@@ -942,7 +1037,7 @@
    "VAE"
   ],
   [
-   21,
+   23,
    15,
    0,
    16,
@@ -950,10 +1045,18 @@
    "IMAGE"
   ],
   [
-   22,
+   24,
    17,
    0,
    18,
+   0,
+   "IMAGE"
+  ],
+  [
+   25,
+   19,
+   0,
+   20,
    0,
    "IMAGE"
   ]
@@ -984,9 +1087,21 @@
    "flags": {}
   },
   {
-   "title": "Models",
+   "title": "The storyboard \u2192 Picture 3",
    "bounding": [
     1290,
+    100,
+    340,
+    592
+   ],
+   "color": "#7a7a72",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Models",
+   "bounding": [
+    1700,
     100,
     340,
     1060
@@ -998,7 +1113,7 @@
   {
    "title": "Prompt",
    "bounding": [
-    1700,
+    2110,
     100,
     340,
     864
@@ -1010,7 +1125,7 @@
   {
    "title": "Sample",
    "bounding": [
-    2110,
+    2520,
     100,
     340,
     596
@@ -1022,7 +1137,7 @@
   {
    "title": "Output",
    "bounding": [
-    2520,
+    2930,
     100,
     340,
     356

@@ -39,6 +39,7 @@ CAMERA_MOVES: dict[str, str] = {
 
 # Camera-path guides for forward moves: LTX is shy about inventing big camera travel from a busy
 # wide frame, so the shot is pulled toward a zoomed end frame. (zoom, centre x, centre y, strength)
+# Only for wide shots with nobody in them: the end frame pins a subject to its first pose.
 CAMERA_PATHS: dict[str, tuple[float, float, float, float]] = {
     "Drone flyover": (1.5, 0.5, 0.5, 0.6),
     "Dolly in": (1.3, 0.5, 0.45, 0.6),
@@ -251,8 +252,8 @@ def parse_lead(text: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------- AI story writer
-STORY_TARGETS = ("everything", "title", "logline", "world", "look", "trailer")
-STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY")  # "everything", in order
+STORY_TARGETS = ("everything", "title", "logline", "world", "look", "trailer", "beats", "more beats")
+STORY_LABELS = ("TITLE", "LOGLINE", "WORLD", "LOOK", "PALETTE", "LEAD", "CONTINUITY", "BEATS")  # "everything", in order
 _ALL_LABELS = STORY_LABELS + ("TRAILER",)
 
 _STORY_LINES = {
@@ -268,17 +269,23 @@ _STORY_LINES = {
             "build, face, hair, the exact wardrobe with colours and materials, and one signature prop. No name, "
             "no backstory",
     "CONTINUITY": "CONTINUITY: 4 to 6 short comma-separated details of the lead that must never change between shots",
+    "BEATS": "BEATS: 5 to 7 story beats separated by ' / ', in order, each one sentence of at most 18 words saying "
+             "what the lead does and where, something a camera can see: the lead in their world, the problem, the "
+             "turn, the climax with the lead's signature prop, the final image. It is the lead's story (a beat may "
+             "show only the world when the story needs it), each beat causes the next, and every detail fits the world exactly "
+             "(a frozen sea has no waves). No dialogue",
     "TRAILER": "TRAILER: 4 to 6 trailer title cards separated by ' / ', each at most 6 words, building tension from "
                "the world to the stakes, in the voice of a great movie trailer; the last card is the film's title",
 }
 _STORY_WANTS = {"everything": STORY_LABELS, "title": ("TITLE",), "logline": ("LOGLINE",), "world": ("WORLD",),
-                "look": ("LOOK", "PALETTE"), "trailer": ("TRAILER",)}
+                "look": ("LOOK", "PALETTE"), "trailer": ("TRAILER",), "beats": ("BEATS",), "more beats": ("BEATS",)}
 
 
 def story_brief(target: str, idea: str = "", title: str = "", logline: str = "", world: str = "", look: str = "",
-                lead: str = "") -> str:
+                lead: str = "", beats: str = "", count: int = 3) -> str:
     """Instruction for an open LLM (Gemma 4 E4B) to write the whole story page or one field of it,
-    consistent with whatever the director has already written."""
+    consistent with whatever the director has already written. "more beats" continues the story in `beats`
+    (one numbered beat per line) with `count` new beats."""
     wants = _STORY_WANTS.get(target, STORY_LABELS)
     known = [("The director's idea", idea), ("Title", title), ("Logline", logline), ("World", world),
              ("Look", look), ("Lead character", lead)]
@@ -287,10 +294,18 @@ def story_brief(target: str, idea: str = "", title: str = "", logline: str = "",
         known = [(k, v) for k, v in known if k != skip]
     context = "\n".join(f"{k}: {v}" for k, v in known if v and v.strip())
     lines = "\n".join(_STORY_LINES[label].format(looks=", ".join(LOOKS)) for label in wants)
-    if target == "everything":
+    if target == "more beats":
+        told = len([b for b in beats.splitlines() if b.strip()])
+        lines = (f"BEATS: exactly {count} new beats separated by ' / ', numbered on from beat {told + 1}, each one "
+                 "sentence of at most 18 words saying what the lead does and where, something a camera can see")
+        task = (f"Continue this story with the next {count} beat{'s' if count > 1 else ''}. Pick up exactly where the "
+                "last beat leaves off, in the same voice; each new beat causes the next, nothing repeats, and every "
+                "detail fits the world. Build toward a memorable ending.\n\nThe story so far, beat by beat:\n" + beats)
+    elif target == "everything":
         task = ("Develop a short film from the director's idea (or invent a striking original one if there is no "
                 "idea): a title, a logline, a vivid visual world, the film look and colour palette that suit it, "
-                "and a memorable lead character who belongs to that world and era. Everything must fit together.")
+                "a memorable lead character who belongs to that world and era, and the story told as visual beats. "
+                "Everything must fit together.")
     else:
         task = (f"Write a fresh {' and '.join(w.lower() for w in wants)} for this film. It must fit everything "
                 "else already established about the film.")
@@ -306,6 +321,7 @@ def _clean_line(line: str) -> str:
 
 
 def parse_story(text: str, target: str = "everything") -> dict[str, str]:
+    import re
     """Labelled lines → fields. Small models often drop the labels but keep the order, so unlabelled
     replies are read positionally (everything) or as the single field that was asked for."""
     fields: dict[str, str] = {}
@@ -321,8 +337,8 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
             fields[key] = rest.strip()
         elif current in ("WORLD", "LEAD", "LOGLINE"):
             fields[current] += " " + line  # paragraph wrapped onto more lines
-        elif current == "TRAILER":
-            fields[current] += " / " + line  # one card per line instead of ' / '
+        elif current in ("TRAILER", "BEATS"):
+            fields[current] += " / " + line  # one card or beat per line instead of ' / '
     if not fields:
         lines = [_clean_line(l).strip('"') for l in text.replace("**", "").splitlines() if l.strip()]
         wants = _STORY_WANTS.get(target, STORY_LABELS)
@@ -331,14 +347,14 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
         elif target == "look" and lines:
             fields = {"LOOK": lines[0], "PALETTE": " ".join(lines[1:])}
         elif len(wants) == 1 and lines:
-            fields = {wants[0]: lines[0] if wants[0] == "TITLE" else (" / " if wants[0] == "TRAILER" else " ").join(lines)}
+            fields = {wants[0]: lines[0] if wants[0] == "TITLE" else
+                      (" / " if wants[0] in ("TRAILER", "BEATS") else " ").join(lines)}
     out = {k.lower(): v.strip().strip('"').strip() for k, v in fields.items()}
     if "look" in out:  # snap to a known look
         match = next((l for l in LOOKS if l.lower() == out["look"].lower()), None) or \
             next((l for l in LOOKS if l.lower() in out["look"].lower() or out["look"].lower() in l.lower()), "")
         out["look"] = match
     if "palette" in out or "look" in out:
-        import re
         hexes = re.findall(r"#[0-9a-fA-F]{6}", out.get("palette", "") or text)
         out["palette"] = ",".join(h.upper() for h in hexes[:4]) if len(hexes) >= 4 else ""
     if "continuity" in out:
@@ -346,17 +362,25 @@ def parse_story(text: str, target: str = "everything") -> dict[str, str]:
     if "trailer" in out:  # one card per line, as the trailer cards expect
         cards = [c.strip().strip('"').strip() for c in out["trailer"].split("/")]
         out["trailer"] = "\n".join(c for c in cards if c)
+    if "beats" in out:  # one beat per line, without the model's own numbering
+        beats = [re.sub(r"^\s*(?:beat\s*)?\d+\s*[.):-]\s*", "", b, flags=re.I).strip().strip('"').strip()
+                 for b in out["beats"].split("/")]
+        out["beats"] = "\n".join(b for b in beats if b)
     return out
 
 
 # ---------------------------------------------------------------- AI shot writer
-SHOT_MODES = ("board", "next", "rewrite")
-SHOT_FIELDS = ("action", "shot_size", "camera_move", "seconds", "sound", "lead", "transition")
+SHOT_MODES = ("board", "next", "rewrite", "beat")
+_NEW_BEAT = ("BEAT: one sentence of at most 18 words saying what the lead does and where, something a camera can "
+             "see, that continues the story")
+SHOT_FIELDS = ("beat", "action", "shot_size", "camera_move", "seconds", "sound", "lead", "transition")
+_LEAD_WORDS = r"\b(he|she|his|her|hers|him|himself|herself|the lead|the figure|the artisan|the hero|the heroine)\b"
 
 
 def shot_line(shot: dict) -> str:
-    """One shot as the writer reads and writes it: action | size | move | seconds | sound | lead | transition."""
-    return " | ".join([str(shot.get("action", "")).replace("|", "/").strip() or "(empty)",
+    """One shot as the writer reads and writes it: beat | action | size | move | seconds | sound | lead | transition."""
+    return " | ".join([str(shot.get("beat") or "-"),
+                       str(shot.get("action", "")).replace("|", "/").strip() or "(empty)",
                        shot.get("shot_size", "Wide"), shot.get("camera_move", "Static"),
                        str(int(round(float(shot.get("seconds", 4) or 4)))), str(shot.get("sound", "")).replace("|", "/"),
                        "yes" if shot.get("lead", True) is not False else "no",
@@ -367,16 +391,28 @@ def shot_list_text(shots: list) -> str:
     return "\n".join(f"{n + 1}. {shot_line(s)}" for n, s in enumerate(shots))
 
 
+def beat_list_text(beats: list) -> str:
+    return "\n".join(f"{n + 1}. {b}" for n, b in enumerate(beats))
+
+
 def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", look: str = "", lead: str = "",
-               continuity: str = "", shots: str = "", index: int = 1, count: int = 5) -> str:
-    """Instruction for an open LLM (Gemma 4 E4B) to write the storyboard: the whole sequence, the next shot,
-    or one shot again. `shots` is the current board as numbered shot lines; `index` is 1-based."""
+               continuity: str = "", shots: str = "", index: int = 1, count: int = 5, beats: str = "",
+               write_beats: str = "") -> str:
+    """Instruction for an open LLM (Gemma 4 E4B) to write the storyboard. `beats` is the story as numbered beats
+    (optional); `shots` the board so far as numbered shot lines, which stay as they are; `index` is 1-based.
+    board: the shots for the beats in `write_beats` (or `count` shots that start, or continue and end, the film);
+    next: the one shot after the board, telling beat `write_beats`; rewrite: shot `index` again; beat: the story
+    beat shot `index` tells. `write_beats` "new" means the story has run out: every shot also writes a new beat
+    (a BEAT line before it), so the story grows with the film."""
     film = "\n".join(f"{k}: {v}" for k, v in (("Title", title), ("Logline", logline), ("World", world),
                                                  ("Look", look), ("The lead", lead), ("Never changes", continuity))
                      if v and v.strip())
-    fmt = ("SHOT: action | size | camera move | seconds | sound | lead | transition\n\n"
-           "action: one or two sentences of what the camera sees happen, present tense, concrete and physical: "
-           "what the lead does, what moves, what the light does. No dialogue, no thoughts, no names, no camera words.\n"
+    fmt = ("SHOT: beat | action | size | camera move | seconds | sound | lead | transition\n\n"
+           "beat: the number of the story beat this shot tells" + ("" if beats.strip() else " (write -)") + "\n"
+           "action: one or two sentences, present tense, concrete and physical. Start with where in the world the "
+           "camera is (for example: inside the lantern room, on the iron catwalk, on the ice below the tower), then "
+           "what the lead does, what moves, what the light does. No dialogue, no thoughts, no names, no cameras or "
+           "camera words. If the lead is not in the shot, do not mention them at all (no he, she, his or her)\n"
            f"size: exactly one of: {', '.join(SHOT_SIZES)}\n"
            f"camera move: exactly one of: {', '.join(CAMERA_MOVES)}\n"
            "seconds: a whole number from 3 to 8\n"
@@ -385,25 +421,61 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
            "transition: cut, or continue only when the camera keeps rolling in one unbroken take from the shot before")
     head = ("You are the director and storyboard artist of a short cinematic film made with AI. Every shot is one "
             "moving image of a few seconds, generated from a still of the film's world and a photo of the lead, so "
-            "every shot happens in that world, with at most one person: the lead.\n\nTHE FILM\n" + (film or "(nothing yet)"))
-    board = f"\n\nTHE STORYBOARD SO FAR\n{shots}" if shots.strip() else ""
+            "every shot happens in that world, with at most one person: the lead.\n\nHOW THE SHOTS GO TOGETHER\n"
+            "- The story is the lead's: most shots show what they do. A shot without the lead is either the one "
+            "opening view of the world or a close detail (an object, the light, the weather on a surface), never a "
+            "second wide view of the world.\n"
+            "- The camera moves through different places in the world, so the film never repeats a view.\n"
+            "- Each shot continues from the one before: same time of day and weather, the action picking up where the "
+            "last shot left off, building as the story builds.\n"
+            "- Every detail fits the world exactly.\n\nTHE FILM\n" + (film or "(nothing yet)"))
+    story = f"\n\nTHE STORY, BEAT BY BEAT (the film tells these in order)\n{beats}" if beats.strip() else ""
+    board = (f"\n\nTHE FILM SO FAR (these shots stay exactly as they are)\n{shots}" if shots.strip() else "")
+    vary = "Vary the shot sizes and camera moves like a great film editor; never the same size twice in a row."
+    one = "Reply with exactly one line and nothing else:\n"
+    extend = bool(story) and write_beats.strip() == "new"
+    told = len([b for b in beats.splitlines() if b.strip()])
+    if extend:  # each shot tells a new beat, written on the line before it
+        fmt = (_NEW_BEAT + f"\nSHOT: the same number as that beat (the story continues from beat {told + 1}) | action | "
+               "size | camera move | seconds | sound | lead | transition\n\n" + fmt.split("\n\n", 1)[1])
+    if mode == "beat":
+        return (head + story + board + f"\n\nShot {index} is not in the story yet. Write the story beat it tells, in "
+                "the same voice as the beats above, so it fits between the beats around it.\n\n" + one +
+                "BEAT: one sentence of at most 18 words saying what the lead does and where, something a camera can see")
     if mode == "next":
-        task = ("Write the ONE shot that comes next after the storyboard: the next beat of the story, with a "
-                "different size or camera move from the shot before so the cut feels deliberate.")
-        reply = "Reply with exactly one line and nothing else:\n"
+        task = ("Write the ONE shot that comes right after the film so far: the next moment of the story" +
+                (", a new beat that continues the story past its last beat" if extend else
+                 f", telling beat {write_beats.strip()}" if story and write_beats.strip() else "") +
+                ", with a different size or camera move from the shot before so the cut feels deliberate.")
+        reply = ("Reply with exactly two lines, the BEAT line then the SHOT line, and nothing else:\n" if extend
+                 else one)
     elif mode == "rewrite":
-        task = (f"Rewrite shot {index} so it tells its beat better and flows from the shot before it into the shot "
-                f"after it. Keep its place in the story.")
-        reply = "Reply with exactly one line and nothing else:\n"
+        task = (f"Rewrite shot {index} so it tells its moment of the story better and flows from the shot before it "
+                "into the shot after it. Keep its place in the story" + (" and its beat." if story else "."))
+        reply = one
     else:
-        count = max(2, min(8, int(count or 5)))
-        task = (f"Plan the film as a sequence of exactly {count} shots that tells the logline visually: open on the "
-                "world (a wide or aerial shot), introduce the lead, build to a striking moment with the lead's "
-                "signature prop, and end on a memorable final image. Vary the shot sizes and camera moves like a "
-                "great film editor: wide, then closer, then a detail; never the same size twice in a row." +
-                (" Replace the storyboard so far." if board else ""))
-        reply = f"Reply with exactly {count} lines, one per shot in order, and nothing else:\n"
-    return head + board + "\n\n" + task + "\n\n" + reply + fmt
+        count = max(1, min(8, int(count or 5)))
+        if extend:
+            task = (f"Continue the film so far with the next {count} moments of the story and bring it to a memorable "
+                    "ending: each one is a new beat with its shot. Do not restart the story or introduce the world "
+                    "again. " + vary)
+        elif story and write_beats.strip():
+            todo = [b.strip() for b in write_beats.split(",") if b.strip()]
+            task = (f"Write one shot for each of these beats, in order: beat {', beat '.join(todo)}. Each shot shows "
+                    "its beat as one striking image" + (" and fits between the shots that are already made" if board
+                                                          else "") + ". " + vary)
+            count = len(todo)
+        elif board:
+            task = (f"Continue the film so far with the next {count} shots and bring it to a memorable ending. Do "
+                    "not restart the story or introduce the world again. " + vary)
+        else:
+            task = (f"Plan the film as a sequence of exactly {count} shots that tells the logline visually: open on the "
+                    "world (a wide or aerial shot), introduce the lead, build to a striking moment with the lead's "
+                    "signature prop, and end on a memorable final image. " + vary)
+        reply = (f"Reply with exactly {count} pairs of lines (a BEAT line, then its SHOT line), in order, and "
+                 "nothing else:\n" if extend else
+                 f"Reply with exactly {count} lines, one per shot in order, and nothing else:\n")
+    return head + story + board + "\n\n" + task + "\n\n" + reply + fmt
 
 
 def _snap(value: str, options, fallback: str) -> str:
@@ -423,27 +495,88 @@ def _snap(value: str, options, fallback: str) -> str:
 
 def parse_shots(text: str) -> list[dict]:
     """The writer's reply → shot dicts with known sizes and moves and a 2-10 s length. Tolerates missing
-    'SHOT:' labels, numbering, bullets and missing trailing fields."""
+    'SHOT:' labels, numbering, bullets, a missing beat field and missing trailing fields."""
     import re
-    shots = []
+    shots, pending = [], None
     for raw in text.replace("**", "").splitlines():
-        line = re.sub(r"^\s*(?:[-*>]+\s*|#+\s+)?(?:shot\s*\d*\s*[:.)-]?|\d+\s*[.):-])\s*", "", raw, flags=re.I).strip()
+        if re.match(r"^\s*(?:[-*>]+\s*)?beat\s*\d*\s*:", raw, flags=re.I) and "|" not in raw:
+            pending = raw.split(":", 1)[1].strip().strip('"').strip() or None  # the new beat the next shot tells
+            continue
+        line = re.sub(r"^\s*(?:[-*>]+\s*|#+\s+)?(?:shot\s*\d*\s*[:.)-]?|\d+\s*[.)]\s+)\s*", "", raw, flags=re.I).strip()
         parts = [x.strip().strip('"') for x in line.split("|")]
-        if len(parts) < 3 or len(parts[0]) < 8:
+        beat = None
+        if parts and re.fullmatch(r"(?:beat\s*)?(\d+|-|—|none|n/a)", parts[0], flags=re.I):
+            found = re.findall(r"\d+", parts[0])
+            beat, parts = (int(found[0]) if found else None), parts[1:]
+        if len(parts) < 3 or len(parts[0]) < 8 or parts[0].lower().startswith("action"):
             continue  # prose, headings or the format line echoed back
         parts += [""] * (7 - len(parts))
-        if parts[0].lower().startswith("action"):
-            continue
         try:
             seconds = float(re.findall(r"\d+(?:\.\d+)?", parts[3])[0])
         except IndexError:
             seconds = 4.0
-        shots.append({"action": parts[0].rstrip(), "shot_size": _snap(parts[1], SHOT_SIZES, "Medium"),
+        action = parts[0].rstrip()
+        # small models often say "no lead" for a shot whose action is all about the lead
+        lead = not parts[5].lower().startswith("n") or bool(re.search(_LEAD_WORDS, action, flags=re.I))
+        shots.append({"beat": beat, "action": action, "shot_size": _snap(parts[1], SHOT_SIZES, "Medium"),
                       "camera_move": _snap(parts[2], CAMERA_MOVES, "Static"),
-                      "seconds": float(min(10, max(2, round(seconds)))), "sound": parts[4],
-                      "lead": not parts[5].lower().startswith("n"),
+                      "seconds": float(min(10, max(2, round(seconds)))), "sound": parts[4], "lead": lead,
                       "transition": "continue" if parts[6].lower().startswith("cont") else "cut"})
+        if pending:
+            shots[-1]["new_beat"], pending = pending, None
     return shots
+
+
+def parse_new_beats(text: str) -> list[str]:
+    """Every BEAT line in the writer's reply (the "beat" mode answers with just one)."""
+    import re
+    return [m.group(1).strip().strip('"').strip()
+            for m in re.finditer(r"^\s*(?:[-*>]+\s*)?beat\s*\d*\s*:\s*([^|\n]+)$", text.replace("**", ""),
+                                 flags=re.I | re.M) if m.group(1).strip()]
+
+
+# ---------------------------------------------------------------- storyboard sketches
+def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: bool = False, lead: bool = True,
+                  world: str = "", previous: bool = False, scene: str = "") -> str:
+    """A storyboard panel for Qwen-Image-Edit-2511 from the world plate (Picture 1), the lead (Picture 2) and,
+    when there is one, the panel of the shot before (Picture 3), so the storyboard reads as one sequence.
+    With `scene` (a panel without the lead), the world comes from that text and Picture 1 is the panel before,
+    as a style reference only: with nobody in it, a panel drawn from the world plate redraws the plate's view."""
+    framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
+    close = shot_size in ("Medium close-up", "Close-up", "Extreme close-up", "Insert")
+    if scene:
+        return _join("One single storyboard frame that fills the entire image edge to edge: " + framing,
+                     "In this frame: " + action if action else "", "The world of the film: " + scene,
+                     "Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple "
+                     "shading, black and white only",
+                     "Picture 1 is only a style reference: the storyboard frame of the shot just before this one. Draw "
+                     "in exactly the same style, as the next moment of the same scene, from a new camera position; do "
+                     "not repeat its composition and leave out anyone in it", people_note(False),
+                     "Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or "
+                     "borders")
+    return _join("One single storyboard frame that fills the entire image edge to edge: " + framing,
+                 "In this frame: " + action if action else "",
+                 "Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple "
+                 "shading, black and white only",
+                 ("The location of Picture 1 is only glimpsed behind" if close else
+                  "The place is the location of Picture 1" + (" (" + world + ")" if world else "")) +
+                 "; choose the camera position this framing needs, do not copy the layout of Picture 1",
+                 (lead and has_cast and "The lead is the person from Picture 2 (same hair, build and clothing), posed "
+                  "by this frame's action; do not copy the layout of Picture 2"), people_note(lead),
+                 previous and ("Picture " + ("3" if has_cast and lead else "2") + " is the storyboard frame of the "
+                               "shot just before this one: draw in exactly the same style, with the same time of day "
+                               "and weather, as the next moment of the same scene. This frame cuts to a new camera "
+                               "angle, so do not repeat its composition"),
+                 "Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or borders")
+
+
+def storyboard_guide(picture: int, lead: bool) -> str:
+    """How a frame follows its storyboard drawing (Picture 3, or Picture 2 in a shot without the lead's portrait)."""
+    follow = (", where the lead is placed and how they pose" if lead else
+              " (leave out any person drawn in it)")
+    return (f"Picture {picture} is the storyboard drawing of this shot: use its composition, camera angle, framing"
+            f"{follow}, but paint a real photographic film frame in full colour with the place and light of "
+            "Picture 1; nothing drawn or sketched")
 
 
 def _join(*parts: str) -> str:
@@ -489,9 +622,11 @@ PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure
 
 
 def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
-                camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "") -> str:
-    """A shot for Qwen-Image-Edit-2511: Picture 1 is the film's empty world plate (place, light, grade) and
-    Picture 2, when there is one, the lead's portrait (face, hair, wardrobe)."""
+                camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "",
+                storyboard: bool = False) -> str:
+    """A shot for Qwen-Image-Edit-2511: Picture 1 is the film's empty world plate (place, light, grade),
+    Picture 2, when there is one, the lead's portrait (face, hair, wardrobe), and Picture 3, when there is one,
+    the shot's storyboard drawing (composition)."""
     framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
     who = ("The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. "
            "Picture 2 is only an identity reference: take their pose, expression and body language from this shot's "
@@ -501,6 +636,7 @@ def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", ha
         "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: " + framing,
         "In this shot: " + action if action else "",
         world and "The setting is the world of Picture 1: " + world,
+        storyboard_guide(3 if has_cast else 2, lead) if storyboard else
         "Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its place, era, "
         "weather, light and colour",
         lead and who, people_note(lead), lead and identity and "The lead: " + identity, lead and continuity,

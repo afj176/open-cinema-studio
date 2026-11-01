@@ -494,3 +494,84 @@ button.danger.armed { background: rgba(220,70,70,.22); border-color: rgba(220,70
 .menu li .film-yes, .menu li .film-no { width: auto; flex: none; padding: 6px 10px; font-size: 12px; }
 .menu li .film-yes { background: rgba(220,70,70,.85); color: #fff; }
 .menu li .film-yes:hover { background: rgb(220,70,70); }
+/* the story, beat by beat */
+.beats-card { margin-top: 22px; padding: 22px 24px; }
+.beats-card .card-head { align-items: flex-start; gap: 16px; }
+.beats-card .card-head .hint { margin: 4px 0 0; max-width: 60ch; }
+.beats { list-style: none; margin: 14px 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.beat { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; gap: 10px; align-items: start; padding: 10px 8px;
+  border-radius: var(--r-sm); }
+.beat:hover { background: rgba(255,255,255,.03); }
+.beat-num { font: 700 13px var(--mono); color: var(--accent); padding-top: 9px; text-align: center; }
+.beat-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.beat-text { width: 100%; resize: none; font-size: 15px; line-height: 1.5; }
+.beat-shots { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 20px; }
+.beat-shots .hint { font-size: 12px; }
+.beat-shot { display: inline-flex; align-items: center; gap: 6px; padding: 4px; border-radius: 8px; border: 1px solid transparent;
+  background: rgba(255,255,255,.03); cursor: pointer; }
+.beat-shot:hover { border-color: var(--accent); }
+.beat-pic { position: relative; width: 132px; aspect-ratio: var(--frame, 16/9); border-radius: 5px; overflow: hidden; background: #0b0b0d;
+  display: grid; place-items: center; }
+.beat-pic.sketch { background: #f4f2ec; color: #9a968c; }
+.beat-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.beat-pic b { position: absolute; left: 5px; top: 4px; padding: 1px 5px; border-radius: 4px; font: 700 10.5px var(--mono); color: #fff; background: rgba(0,0,0,.6); }
+.beat-pic i { position: absolute; right: 5px; bottom: 4px; font-style: normal; font-size: 10px; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+.beat-arrow { color: var(--faint); font-size: 12px; }
+.beat-del { width: 28px; height: 28px; padding: 0; border: 0; background: none; color: var(--faint); font-size: 18px; opacity: 0; margin-top: 4px; }
+.beat:hover .beat-del, .beat-del:focus-visible { opacity: 1; }
+.beat-del:hover { color: #ff9b9b; }
+@media (hover: none) { .beat-del { opacity: .6; } }
+.beats-empty { padding: 10px 8px; }
+/* storyboard drawings on the board and in the inspector */
+.card.is-sketch .media { background: #f4f2ec; }
+.card.is-sketch .media img { filter: contrast(1.05); }
+.card .beat-chip { display: inline-block; margin: 0 0 6px; padding: 2px 8px; border-radius: 999px; font: 600 10.5px var(--mono);
+  letter-spacing: .04em; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.badge.ai { background: color-mix(in srgb, var(--accent) 30%, rgba(0,0,0,.5)); }
+.ins-sketch { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: rgba(255,255,255,.02); }
+.ins-sketch.stale { border-color: rgba(240,180,76,.4); }
+.ins-sketch-img { aspect-ratio: var(--frame, 16/9); border-radius: 6px; overflow: hidden; background: #f4f2ec; display: grid;
+  place-items: center; color: #9a968c; font-size: 22px; }
+.ins-sketch-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ins-sketch-side { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.ins-sketch-side b { font-size: 13px; }
+.ins-sketch-side .hint { font-size: 12px; line-height: 1.45; }
+/* auto-render and pausing */
+.auto-render { font-size: 12px; color: var(--muted); }
+.card .card-pause { position: absolute; left: 10px; bottom: 9px; z-index: 3; padding: 4px 10px; border-radius: 999px; font: 600 11px var(--sans);
+  background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.25); color: #fff; backdrop-filter: blur(6px); }
+.card .card-pause:hover { border-color: var(--accent); color: var(--accent); }
+.card.paused .media img { filter: grayscale(.6) brightness(.7); }
+/* the whole film on the Story page */
+.beat-count { font: 600 10.5px var(--mono); color: var(--accent); padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.beat.loose { border: 1px dashed var(--line-strong); background: rgba(255,255,255,.015); }
+.beat.loose .beat-num { color: var(--faint); }
+.loose-head { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.loose-shot { display: inline-flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.card .beat-chip.loose { color: var(--muted); background: rgba(255,255,255,.06); }
+.beat-pick { display: flex; gap: 10px; align-items: flex-end; }
+.beat-pick label { flex: 1; }
+/* continue the story */
+.beats-card { position: relative; }
+.beat-menu { position: absolute; z-index: 30; width: 330px; padding: 14px 16px; border-radius: var(--r); border: 1px solid var(--line-strong);
+  background: var(--glass-strong); backdrop-filter: blur(24px); box-shadow: 0 24px 60px rgba(0,0,0,.55); }
+.beat-menu .bm-title { margin: 0 0 4px; font-weight: 700; font-size: 14px; }
+.beat-menu .hint { margin: 0 0 12px; font-size: 12px; line-height: 1.45; }
+.bm-counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.bm-counts button.ai { padding: 6px 12px; font-size: 12.5px; }
+.bm-foot { display: flex; justify-content: space-between; margin-top: 12px; }
+.beat.ghost .line { height: 12px; margin: 8px 0; border-radius: 6px; font: 600 11px var(--mono); color: var(--accent); line-height: 12px;
+  background: linear-gradient(100deg, rgba(255,255,255,.03) 20%, color-mix(in srgb, var(--accent) 16%, transparent) 40%,
+  rgba(255,255,255,.03) 60%) 0 0 / 200% 100%; animation: shimmer 1.6s linear infinite; }
+.beat.ghost .line.short { width: 45%; }
+.beat-view button { padding: 4px 10px; font-size: 12px; }
+/* the storyboard strip: drawings only, like a comic */
+.strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 16px; padding: 10px;
+  background: #111; border-radius: var(--r-sm); }
+.panel { position: relative; padding: 0; border: 3px solid #f4f2ec; border-radius: 2px; background: #f4f2ec; overflow: hidden;
+  aspect-ratio: var(--frame, 16/9); cursor: pointer; display: block; }
+.panel img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.panel:hover { border-color: var(--accent); }
+.panel-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #8a867c; font-size: 12px; }

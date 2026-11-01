@@ -1,0 +1,229 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "1l": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "2": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "1l",
+        0
+      ],
+      "shift": 3.1
+    }
+  },
+  "3": {
+    "class_type": "CFGNorm",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "strength": 1.0
+    }
+  },
+  "4": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_world_plate.jpg"
+    }
+  },
+  "7": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "6",
+        0
+      ]
+    }
+  },
+  "8": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ],
+      "prompt": "One single storyboard frame that fills the entire image edge to edge: wide shot showing the full body and the location, low camera close to the ground. In this frame: He holds the lens up to the sun on the glass terrace; the city drifts behind him. Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple shading, black and white only. The place is the location of Picture 1 (The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms); choose the camera position this framing needs, do not copy the layout of Picture 1. The lead is the person from Picture 2 (same hair, build and clothing), posed by this frame's action; do not copy the layout of Picture 2. The lead is the only person anywhere in the frame; the rest of the landscape is empty of people. Picture 3 is the storyboard frame of the shot just before this one: draw in exactly the same style, with the same time of day and weather, as the next moment of the same scene. This frame cuts to a new camera angle, so do not repeat its composition. Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or borders.",
+      "image2": [
+        "17",
+        0
+      ],
+      "image3": [
+        "19",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": {
+      "conditioning": [
+        "8",
+        0
+      ],
+      "reference_latents_method": "index_timestep_zero"
+    }
+  },
+  "10": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "4",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ],
+      "image1": [
+        "7",
+        0
+      ],
+      "prompt": "",
+      "image2": [
+        "17",
+        0
+      ],
+      "image3": [
+        "19",
+        0
+      ]
+    }
+  },
+  "11": {
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "inputs": {
+      "conditioning": [
+        "10",
+        0
+      ],
+      "reference_latents_method": "index_timestep_zero"
+    }
+  },
+  "12": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 464,
+      "batch_size": 1
+    }
+  },
+  "13": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "positive": [
+        "9",
+        0
+      ],
+      "negative": [
+        "11",
+        0
+      ],
+      "latent_image": [
+        "12",
+        0
+      ],
+      "seed": 1414,
+      "steps": 4,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "14": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "13",
+        0
+      ],
+      "vae": [
+        "5",
+        0
+      ]
+    }
+  },
+  "15": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "14",
+        0
+      ],
+      "filename_prefix": "open-cinema/storyboard"
+    }
+  },
+  "16": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_lead_portrait.jpg"
+    }
+  },
+  "17": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "16",
+        0
+      ]
+    }
+  },
+  "18": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_storyboard_sketch.jpg"
+    }
+  },
+  "19": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "18",
+        0
+      ]
+    }
+  }
+}

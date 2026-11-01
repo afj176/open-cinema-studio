@@ -238,16 +238,18 @@ class OpenCinemaStoryBrief:
                 "optional": {"title": ("STRING", {"default": ""}), "logline": ("STRING", {"default": ""}),
                              "world": ("STRING", {"multiline": True, "default": ""}),
                              "look": ("STRING", {"default": ""}),
-                             "lead": ("STRING", {"multiline": True, "default": ""})}}
+                             "lead": ("STRING", {"multiline": True, "default": ""}),
+                             "beats": ("STRING", {"multiline": True, "default": ""}),
+                             "count": ("INT", {"default": 3, "min": 1, "max": 8})}}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
     FUNCTION = "build"
     CATEGORY = "Open Cinema"
 
-    def build(self, target, idea, title="", logline="", world="", look="", lead=""):
+    def build(self, target, idea, title="", logline="", world="", look="", lead="", beats="", count=3):
         from .director import story_brief
-        return (story_brief(target, idea, title, logline, world, look, lead),)
+        return (story_brief(target, idea, title, logline, world, look, lead, beats, count),)
 
 
 class OpenCinemaParseStory:
@@ -259,8 +261,8 @@ class OpenCinemaParseStory:
         return {"required": {"text": ("STRING", {"forceInput": True})},
                 "optional": {"target": (list(STORY_TARGETS), {"default": "everything"})}}
 
-    RETURN_TYPES = ("STRING",) * 8
-    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")
+    RETURN_TYPES = ("STRING",) * 9
+    RETURN_NAMES = ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats")
     FUNCTION = "parse"
     CATEGORY = "Open Cinema"
 
@@ -271,8 +273,9 @@ class OpenCinemaParseStory:
 
 
 class OpenCinemaShotsBrief:
-    """Writes the instruction for an LLM to plan the storyboard: the whole sequence ("board"), the shot that
-    comes next ("next"), or one shot again ("rewrite"). `shots` is the board so far, one numbered shot per line."""
+    """Writes the instruction for an LLM to plan the storyboard from the story beats: the shots for some beats
+    or the whole film ("board"), the shot that comes next ("next"), or one shot again ("rewrite"). `beats` is the
+    story, one numbered beat per line; `shots` the board so far (it stays as it is); `write_beats` e.g. "2, 3"."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -285,38 +288,44 @@ class OpenCinemaShotsBrief:
                              "look": ("STRING", {"default": ""}),
                              "lead": ("STRING", {"multiline": True, "default": ""}),
                              "continuity": ("STRING", {"default": ""}),
-                             "shots": ("STRING", {"multiline": True, "default": ""})}}
+                             "beats": ("STRING", {"multiline": True, "default": ""}),
+                             "shots": ("STRING", {"multiline": True, "default": ""}),
+                             "write_beats": ("STRING", {"default": ""})}}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
     FUNCTION = "build"
     CATEGORY = "Open Cinema"
 
-    def build(self, mode, count, index, title="", logline="", world="", look="", lead="", continuity="", shots=""):
+    def build(self, mode, count, index, title="", logline="", world="", look="", lead="", continuity="", beats="",
+              shots="", write_beats=""):
         from .director import shot_brief
-        return (shot_brief(mode, title, logline, world, look, lead, continuity, shots, index, count),)
+        return (shot_brief(mode, title, logline, world, look, lead, continuity, shots, index, count, beats,
+                           write_beats),)
 
 
 class OpenCinemaParseShots:
-    """Splits the LLM's reply into shots: JSON for the studio, and a readable storyboard."""
+    """Splits the LLM's reply into shots: JSON for the studio, a readable storyboard, and any new story beats
+    the writer added (one per line) when the film ran past the story."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"text": ("STRING", {"forceInput": True})}}
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("shots_json", "storyboard")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("shots_json", "storyboard", "new_beats")
     FUNCTION = "parse"
     CATEGORY = "Open Cinema"
 
     def parse(self, text):
         import json
-        from .director import parse_shots
+        from .director import parse_new_beats, parse_shots
         shots = parse_shots(text)
-        board = "\n\n".join(f"{n + 1}. {s['shot_size']} · {s['camera_move']} · {s['seconds']:g}s"
+        board = "\n\n".join(f"{n + 1}. {'Beat ' + str(s['beat']) + ' · ' if s['beat'] else ''}"
+                             f"{s['shot_size']} · {s['camera_move']} · {s['seconds']:g}s"
                              f"{'' if s['lead'] else ' · no lead'}{' · one take' if s['transition'] == 'continue' else ''}"
                              f"\n{s['action']}\nSound: {s['sound']}" for n, s in enumerate(shots))
-        return (json.dumps(shots), board)
+        return (json.dumps(shots), board, "\n".join(parse_new_beats(text)))
 
 
 class OpenCinemaParseLead:

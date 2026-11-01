@@ -136,6 +136,18 @@
         <div class="aspect-row"><span class="hint">Aspect</span><div id="aspects" class="seg"></div></div>
       </article>
     </div>
+    <article class="glass beats-card ai-field" id="beatsField">
+      <div class="card-head"><div><h2 class="serif">The story</h2>
+        <p class="hint">The film beat by beat. Shots are written from these and drawn as a storyboard; a shot can tell any beat, or none.</p></div>
+        <span class="ai-actions"><div class="seg beat-view" id="beatView" role="group" aria-label="View">
+            <button type="button" data-view="beats" class="on">Beats</button><button type="button" data-view="strip">Strip</button></div>
+          <button id="drawBoard" class="ghost small" type="button" hidden>Draw storyboard</button>
+          <button class="ai small" data-ai="beats" type="button">✨ Beats</button></span></div>
+      <div class="beat-menu glass" id="beatMenu" hidden role="dialog" aria-label="Continue the story"></div>
+      <ol class="beats" id="beats"></ol>
+      <div class="strip" id="strip" hidden></div>
+      <button id="addBeat" class="link" type="button">+ Add beat</button>
+    </article>
     <div class="stage-next"><button class="ghost" data-goto="shots" type="button">Next: plan the shots →</button></div>
   </section>
 
@@ -145,8 +157,9 @@
       <div><p class="eyebrow">Storyboard</p><h1 class="serif" id="shotsHeading">Shots</h1></div>
       <div class="row-actions">
         <button id="shotsUndo" class="link" type="button" hidden>Undo</button>
+        <label class="switch auto-render" title="When Gemma writes shots, draw and render them straight away: frames, videos and the cut. Pause any shot on its card."><input type="checkbox" id="autoRender"><span></span>Auto-render</label>
         <span class="write-shots" title="Gemma 4 E4B plans the film shot by shot from the story: action, framing, camera move, length and sound">
-          <button id="writeShots" class="ai" type="button">✨ Write shots</button><select id="shotCount" aria-label="How many shots">
+          <button id="writeShots" class="ai" type="button">✨ Write shots</button><select id="shotCount" aria-label="How many shots" title="How many shots">
           <option value="3">3</option><option value="4">4</option><option value="5" selected>5</option><option value="6">6</option><option value="8">8</option></select></span>
         <button id="addShot" class="ghost">+ Add shot</button></div>
     </div>

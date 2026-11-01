@@ -50,9 +50,11 @@ const plateStale = () => !!plateTake() && JSON.stringify(plateTake().of) !== JSO
 
 function plannedRecipe(shot, i) {  // what the next New frame will be made from (mirrors studio._run_keyframe)
   if (i > 0 && shot.transition === "continue") return { kind: "continue", from: project.shots[i - 1].id, steps: [`Last frame of shot ${i}`] };
-  return { kind: "shot", world: plateOf(), lead: leadIn(shot) ? project.reference : null,
+  const drawn = shot.sketch && !sketchStale(shot);
+  return { kind: "shot", world: plateOf(), lead: leadIn(shot) ? project.reference : null, sketch: drawn ? shot.sketch : null,
     steps: [...(plateOf() && !plateStale() ? [] : [`HiDream-O1 · paints ${plateOf() ? "a new" : "the"} world plate first`]),
-      "Qwen-Image-Edit 2511 · the world + the lead · 4 steps"] };
+      ...(drawn ? [] : [`Qwen-Image-Edit 2511 · ${shot.sketch ? "redraws" : "draws"} the storyboard first`]),
+      "Qwen-Image-Edit 2511 · the world + the lead + the storyboard · 4 steps"] };
 }
 
 function staleness(shot) {  // why the current frame no longer matches the film ("" when it does)
@@ -60,6 +62,8 @@ function staleness(shot) {  // why the current frame no longer matches the film 
   if (!shot.keyframe || !r || r.kind !== "shot") return "";
   if (leadIn(shot) && r.lead !== project.reference) return r.lead ? "Lead changed" : "Made before the lead";
   if (r.world !== plateOf()) return "World changed";
+  if (r.action !== undefined && r.action !== (shot.action || "")) return "Action changed";
+  if (r.shot_size !== undefined && (r.shot_size !== shot.shot_size || r.camera_move !== shot.camera_move)) return "Framing changed";
   return "";
 }
 const active = j => j.state === "queued" || j.state === "running";
@@ -223,6 +227,7 @@ function renderStory() {
   $("#scene").value = project.scene;
   $("#cast").value = project.cast || "";
   $("#continuity").value = project.continuity || "";
+  renderBeats();
   paintPortrait();
   requestAnimationFrame(() => growAll($("#story")));
   const grid = $("#looks");
@@ -270,17 +275,19 @@ function paintPortrait() {
 }
 
 const STORY_TARGET_FIELDS = {
-  everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField"],
+  everything: ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField", "beatsField"],
   title: ["titleField"], logline: ["loglineField"], world: ["worldField"], look: ["lookField"], trailer: ["trailerField"],
+  beats: ["beatsField"],
 };
 const AI_FIELDS = ["titleField", "loglineField", "worldField", "lookField", "castField", "continuityField", "sparkField",
-  "trailerField"];
+  "trailerField", "beatsField"];
 
 function paintLeadAI() {
   const job = busyFor(j => j.kind === "write_lead" || j.kind === "write_story");
   const status = job ? (job.state === "running" ? `${job.label}… ${Math.round(job.elapsed)}s` : `${job.label} · queued`) : "";
   let writing = [];
   if (job?.kind === "write_story") writing = STORY_TARGET_FIELDS[job.target] || [];
+  paintBeatGhosts(job?.kind === "write_story" ? job : null);
   if (job?.kind === "write_lead") writing = job.mode === "continuity" ? ["continuityField"] : ["castField", "continuityField"];
   for (const id of AI_FIELDS) {
     const el = $("#" + id), on = writing.includes(id);
@@ -296,10 +303,74 @@ function paintLeadAI() {
   $("#trailerUndo").hidden = !!job || !("motion" in ((project.story_history || []).at(-1) || {}));
 }
 
-async function writeStory(target) {
+async function writeStory(target, count) {
   await flush();
-  await post(`/api/projects/${project.id}/write-story`, { target });
+  await post(`/api/projects/${project.id}/write-story`, { target, count });
   poll();
+}
+
+function openBeatMenu(anchor, fromAdd) {  // ✨ Beats and + Add beat: continue the story with Gemma, or by hand
+  const menu = $("#beatMenu"), n = beatsOf().length;
+  const auto = project.auto_render !== false;
+  menu.innerHTML = `<p class="bm-title">Continue the story</p>
+    <p class="hint">Gemma writes the next beats after beat ${n}, following on from the story so far${auto ? ", then their shots and videos" : ", then you write their shots"}.</p>
+    <div class="bm-counts">${[1, 2, 3, 5].map(c => `<button type="button" class="ai" data-more="${c}">+ ${c} beat${c > 1 ? "s" : ""}</button>`).join("")}</div>
+    <div class="bm-foot">${fromAdd ? `<button type="button" class="link" data-own>Write one myself</button>`
+      : `<button type="button" class="link" data-redo title="Gemma writes a new set of beats; shots keep their numbers">Rewrite all beats</button>`}
+      <button type="button" class="link" data-close>Cancel</button></div>`;
+  menu.hidden = false;
+  const box = anchor.getBoundingClientRect(), card = $("#beatsField").getBoundingClientRect();
+  menu.style.top = `${box.bottom - card.top + 8}px`;
+  menu.style.left = `${Math.max(12, Math.min(box.left - card.left, card.width - 340))}px`;
+  $$("[data-more]", menu).forEach(b => b.onclick = () => { menu.hidden = true; writeStory("more beats", Number(b.dataset.more)); });
+  $("[data-own]", menu)?.addEventListener("click", () => {
+    menu.hidden = true; project.beats = [...beatsOf(), ""]; renderBeats(); $$("#beats .beat-text").at(-1)?.focus();
+  });
+  $("[data-redo]", menu)?.addEventListener("click", () => { menu.hidden = true; writeStory("beats"); });
+  $("[data-close]", menu).onclick = () => { menu.hidden = true; };
+  $("[data-more]", menu).focus();
+}
+
+function paintBeatGhosts(job) {  // placeholder rows while Gemma continues the story
+  const list = $("#beats"), want = job?.target === "more beats" ? Number(job.count || 1) : 0;
+  $$(".beat.ghost", list).forEach((g, n) => { if (n >= want) g.remove(); });
+  for (let n = $$(".beat.ghost", list).length; n < want; n++) {
+    const li = document.createElement("li");
+    li.className = "beat ghost";
+    li.innerHTML = `<span class="beat-num">${beatsOf().length + n + 1}</span><div class="beat-main"><p class="line"></p><p class="line short"></p></div>`;
+    list.appendChild(li);
+  }
+  const first = $(".beat.ghost .line", list);
+  if (first) first.textContent = job.state === "running" ? `${job.label} · ${Math.round(job.elapsed)}s` : `${job.label} · queued`;
+  $("#addBeat").disabled = !!want;
+}
+
+// ---------------------------------------------------------------- the storyboard as a comic strip
+let beatView = store.get("beatView") === "strip" ? "strip" : "beats";
+
+function setBeatView(view) {
+  beatView = view; store.set("beatView", view);
+  $$("#beatView button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
+  $("#beats").hidden = view === "strip";
+  $("#addBeat").hidden = view === "strip";
+  $("#strip").hidden = view !== "strip";
+  paintStrip();
+}
+
+function paintStrip() {
+  const strip = $("#strip");
+  if (strip.hidden) return;
+  const sig = JSON.stringify([beatsOf(), project.shots.map(s => [s.id, s.beat, s.sketch])]);
+  if (strip.dataset.sig === sig) return;
+  strip.dataset.sig = sig;
+  const panels = project.shots.filter(s => s.action?.trim());
+  if (!panels.length) { strip.innerHTML = `<p class="hint">No shots yet. Write shots and they're drawn here as a comic strip.</p>`; return; }
+  strip.innerHTML = panels.map(s => {  // just the drawings: the words and numbers live in the Beats view
+    const i = shotIndex(s.id);
+    return `<button type="button" class="panel" data-id="${s.id}" title="Shot ${i + 1}: ${escapeHtml(s.action)}">
+      ${s.sketch ? `<img src="${media(s.sketch)}" alt="Storyboard drawing for shot ${i + 1}">` : `<span class="panel-empty">✎ Not drawn yet</span>`}</button>`;
+  }).join("");
+  $$(".panel", strip).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
 }
 
 async function writeLead(mode) {
@@ -318,6 +389,9 @@ function adoptStory(fresh) {
     project[key] = fresh[key] || "";
     const el = $("#" + key); el.value = project[key]; if (el.tagName === "TEXTAREA") grow(el);
     flash(field);
+  }
+  if (JSON.stringify(project.beats || []) !== JSON.stringify(fresh.beats || [])) {
+    project.beats = fresh.beats || []; renderBeats(); flash("beatsField");
   }
   if (JSON.stringify(project.motion || null) !== JSON.stringify(fresh.motion || null)) {
     project.motion = fresh.motion; $("#mTrailerLines").value = motionState().trailer.lines; flash("trailerField");
@@ -344,10 +418,12 @@ function renderBoard() {
     card.innerHTML = `<div class="media"><img alt="" hidden><video muted loop playsinline preload="none" hidden></video>
       <div class="empty">No frame yet</div><div class="busy" hidden></div>
       <span class="num">${String(i + 1).padStart(2, "0")}</span><span class="badges"></span>
-      <img class="lead-dot" alt="" title="The lead is in this shot" hidden></div>
-      <div class="meta"><p class="action"></p><div class="facts"><span class="mini-cam"><span class="cam-scene"><span></span></span></span>
+      <img class="lead-dot" alt="" title="The lead is in this shot" hidden>
+      <button type="button" class="card-pause" hidden></button></div>
+      <div class="meta"><span class="beat-chip" hidden></span><p class="action"></p><div class="facts"><span class="mini-cam"><span class="cam-scene"><span></span></span></span>
       <span class="move"></span><span>·</span><span class="size"></span><span>·</span><span class="secs"></span></div></div>`;
     card.onclick = () => select(shot.id);
+    $(".card-pause", card).onclick = e => { e.stopPropagation(); pauseShot(project.shots[shotIndex(shot.id)], !project.shots[shotIndex(shot.id)].paused); };
     card.onkeydown = e => { if (e.key === "Enter") select(shot.id); };
     const vid = $("video", card);
     card.onmouseenter = () => { if (shot.video) { if (!vid.src) vid.src = media(shot.video); vid.play().catch(() => {}); } };
@@ -358,7 +434,7 @@ function renderBoard() {
   const end = document.createElement("div");
   end.className = "add-card";
   end.innerHTML = `<button type="button" class="add-plain">+ Add shot</button>
-    <button type="button" class="ai" data-next title="Gemma writes the beat that follows the last shot">✨ Next shot</button>`;
+    <button type="button" class="ai" data-next title="Gemma writes the next moment: the next beat no shot tells yet, or a new beat that continues the story">✨ Next shot</button>`;
   $(".add-plain", end).onclick = addShot;
   $("[data-next]", end).onclick = () => writeShots("next");
   board.appendChild(end);
@@ -366,17 +442,21 @@ function renderBoard() {
 }
 
 function paintShotWriter() {  // the ✨ buttons, and placeholder cards while the writer works
+  $("#autoRender").checked = project.auto_render !== false;
   const job = busyFor(j => j.kind === "write_shots");
   const status = job ? (job.state === "running" ? `${job.label} · ${Math.round(job.elapsed || 0)}s` : `${job.label} · queued`) : "";
   $("#writeShots").disabled = !!job;
   $("#shotCount").disabled = !!job;
-  $("#writeShots").textContent = job?.mode === "board" ? `Writing… ${Math.round(job.elapsed || 0)}s` : "✨ Write shots";
+  const plan = writePlan();
+  $("#writeShots").textContent = job?.mode === "board" ? `Writing… ${Math.round(job.elapsed || 0)}s` : plan.label;
+  $(".write-shots").title = plan.tip;
+  $("#shotCount").hidden = plan.byBeat;
   $("#shotsUndo").hidden = !!job || !(project.shots_history || []).length;
   $$("[data-next], [data-act='rewrite']").forEach(b => { b.disabled = !!job; });
   const board = $("#board"), end = $(".add-card", board);
-  const blanks = project.shots.filter(s => !s.action?.trim() && !s.keyframe && !s.video && !(s.takes?.keyframe || []).length);
-  const ghosts = !job ? 0 : job.mode === "board" ? Number(job.count) : job.mode === "next" ? 1 : 0;
-  // the board replaces blank shots, so hide them while their replacements are written
+  const blanks = project.shots.filter(s => !isKept(s));
+  const ghosts = !job ? 0 : job.mode === "board" ? (plan.byBeat ? plan.missing.length : Number(job.count)) || Number(job.count) : job.mode === "next" ? 1 : 0;
+  // the board replaces blank shots and Gemma's unrendered drafts, so hide them while their replacements are written
   $$(".card", board).forEach(c => { c.hidden = ghosts > 0 && job.mode === "board" && blanks.some(s => s.id === c.dataset.id); });
   $$(".card.ghost", board).forEach((g, n) => { if (n >= ghosts) g.remove(); });
   for (let n = $$(".card.ghost", board).length; n < ghosts; n++) {
@@ -389,6 +469,46 @@ function paintShotWriter() {  // the ✨ buttons, and placeholder cards while th
   const ins = $("#inspector"), rewriting = job?.mode === "rewrite" && job.shot === selected;
   $(".ins-action", ins)?.classList.toggle("writing", !!rewriting);
   if ($(".ins-action", ins)) $(".ins-action", ins).dataset.status = rewriting ? status : "";
+}
+
+const isMade = s => !!(s.keyframe || s.video || (s.takes?.keyframe || []).length);
+const isKept = s => isMade(s) || (!!s.action?.trim() && !s.ai);  // mirrors studio._run_write_shots
+
+function writePlan() {  // what ✨ Write shots will do on this board
+  const beats = beatsOf(), keep = project.shots.filter(isKept);
+  const missing = beats.map((_, n) => n + 1).filter(b => !keep.some(s => s.beat === b));
+  if (!keep.length) return { byBeat: !!beats.length, missing, label: "✨ Write shots",
+    tip: beats.length ? `Gemma writes one shot for each of the ${beats.length} story beats, then they're drawn as a storyboard` : "Gemma plans the film shot by shot from the story, then the shots are drawn as a storyboard" };
+  const drafts = project.shots.filter(s => !isKept(s) && s.action?.trim());
+  if (drafts.length) return { byBeat: !!beats.length && !!missing.length, missing, label: "✨ Redraft shots",
+    tip: `Gemma rewrites ${drafts.length === 1 ? "the unrendered draft" : `the ${drafts.length} unrendered drafts`}` +
+      (beats.length && missing.length ? ` (beat${missing.length > 1 ? "s" : ""} ${missing.join(", ")})` : "") +
+      ". Shots you wrote or edited, and rendered shots, stay." };
+  if (beats.length && missing.length) return { byBeat: true, missing, label: "✨ Fill in the story",
+    tip: `Gemma writes shots for beat${missing.length > 1 ? "s" : ""} ${missing.join(", ")}, which no kept shot tells yet. Your shots and rendered shots stay.` };
+  if (beats.length) return { byBeat: false, missing: [], label: "✨ Continue the story",
+    tip: "Every beat has a shot. Gemma writes the next moments of the story: new beats added to The story, each with its shot. Your shots stay." };
+  return { byBeat: false, missing: [], label: "✨ Continue the film",
+    tip: "Gemma continues the film from your last shot and brings it to an ending. Your shots and rendered shots stay." };
+}
+
+let seenFailures = null;
+function noticeFailures() {  // the writer and the storyboard fail quietly in the queue otherwise
+  const failed = jobs.filter(j => j.project === project.id && j.state === "failed" && ["write_shots", "sketch"].includes(j.kind));
+  if (seenFailures === null) { seenFailures = new Set(failed.map(j => j.id)); return; }
+  const fresh = failed.filter(j => !seenFailures.has(j.id));
+  fresh.forEach(j => seenFailures.add(j.id));
+  const j = fresh.at(-1);
+  if (!j) return;
+  if (j.kind === "write_shots") toast(`Gemma couldn't write the shots: ${j.error}`, "Try again", () => writeShots(j.mode, project.shots.find(s => s.id === j.shot)));
+  else toast(`Couldn't draw the storyboard: ${j.error}`);
+}
+
+async function pauseShot(shot, paused) {
+  await flush();
+  mergeServer(await post(`/api/projects/${project.id}/shots/${shot.id}/${paused ? "pause" : "resume"}`));
+  toast(paused ? `${shotLabel(shot.id)} paused; the rest carry on` : `${shotLabel(shot.id)} resumed`);
+  poll();
 }
 
 async function writeShots(mode, shot) {
@@ -404,12 +524,20 @@ async function undoShots() {
 }
 
 function paintCard(card, shot, i) {
-  const img = $("img", card), vid = $("video", card);
-  img.hidden = !shot.keyframe;
-  if (shot.keyframe && img.dataset.src !== shot.keyframe) { img.src = media(shot.keyframe); img.dataset.src = shot.keyframe; }
+  const img = $("img", card), vid = $("video", card), pic = shot.keyframe || shot.sketch;
+  img.hidden = !pic;
+  if (pic && img.dataset.src !== pic) { img.src = media(pic); img.dataset.src = pic; }
+  card.classList.toggle("is-sketch", !shot.keyframe && !!shot.sketch);
   vid.hidden = !shot.video;
   if (shot.video && vid.dataset.src !== shot.video) { vid.dataset.src = shot.video; vid.removeAttribute("src"); }
-  $(".empty", card).hidden = !!shot.keyframe;
+  $(".empty", card).hidden = !!pic;
+  const beat = shot.beat && beatsOf()[shot.beat - 1];
+  const chip = $(".beat-chip", card);
+  const loose = !beat && beatsOf().length && shot.action?.trim();
+  chip.hidden = !beat && !loose;
+  chip.classList.toggle("loose", !!loose);
+  if (beat) { chip.textContent = `Beat ${shot.beat}`; chip.title = beat; }
+  else if (loose) { chip.textContent = "Not in the story"; chip.title = "Pick a beat in the inspector, or ✨ Add to story"; }
   const action = $(".action", card);
   action.textContent = shot.action || "Describe what happens…";
   action.classList.toggle("empty", !shot.action);
@@ -419,7 +547,10 @@ function paintCard(card, shot, i) {
   $(".cam-scene", card).style.animation = CAMERA_ANIM[shot.camera_move] || "";
   const badges = [];
   if (i > 0 && shot.transition !== "cut") badges.push(`<span class="badge">${JOINT_NAME[shot.transition].toUpperCase()}</span>`);
+  if (shot.paused) badges.push(`<span class="badge warn">PAUSED</span>`);
   if (shot.lead === false) badges.push(`<span class="badge">NO LEAD</span>`);
+  if (!shot.keyframe && shot.sketch) badges.push(`<span class="badge" title="The storyboard drawing; the frame will follow it">STORYBOARD</span>`);
+  if (shot.ai) badges.push(`<span class="badge ai" title="Written by Gemma. Edit it to make it yours; a new Write shots replaces Gemma's unrendered drafts">✨</span>`);
   const stale = staleness(shot);
   if (stale) badges.push(`<span class="badge warn" title="Press New frame to rebuild it">${stale.toUpperCase()}</span>`);
   if (shot.video) badges.push(`<span class="badge accent">▶</span>`);
@@ -431,8 +562,14 @@ function paintCard(card, shot, i) {
   $(".badges", card).innerHTML = badges.join("");
   const job = busyFor(j => j.shot === shot.id);
   const busy = $(".busy", card);
-  busy.hidden = !job;
-  if (job) busy.textContent = job.state === "running" ? `${job.label}\n${Math.round(job.elapsed)}s` : `${job.label} · queued`;
+  busy.hidden = !job && !shot.paused;
+  card.classList.toggle("paused", !!shot.paused);
+  if (shot.paused) busy.textContent = "Paused";
+  else if (job) busy.textContent = job.state === "running" ? `${job.label}\n${Math.round(job.elapsed)}s` : `${job.label} · queued`;
+  const pause = $(".card-pause", card);  // only while it has work to stop, or is stopped
+  pause.hidden = !job && !shot.paused;
+  pause.textContent = shot.paused ? "▶ Resume" : "❚❚ Pause";
+  pause.title = shot.paused ? "Render this shot again from whatever changed" : "Stop this shot's rendering; the others carry on";
 }
 
 function paintShotsHeading() {
@@ -472,6 +609,11 @@ function renderInspector() {
     <div class="ai-field ins-action"><div class="field-head"><span>What happens</span>
       <button type="button" class="ai small" data-act="rewrite" title="Gemma rewrites this shot to flow from the one before into the one after">✨ ${shot.action?.trim() ? "Rewrite" : "Write"}</button></div>
       <textarea class="grow" data-k="action" rows="3" placeholder="Describe the action, as you'd see it" aria-label="What happens">${escapeHtml(shot.action)}</textarea></div>
+    ${beatsOf().length ? `<div class="beat-pick"><label>Story beat<select data-beat>${[`<option value="">Not in the story yet</option>`, ...beatsOf().map((b, n) =>
+      `<option value="${n + 1}"${shot.beat === n + 1 ? " selected" : ""}>${n + 1} · ${escapeHtml(b.length > 70 ? b.slice(0, 68) + "…" : b)}</option>`)].join("")}</select></label>
+      ${shot.beat ? "" : `<button type="button" class="ai small" data-act="place" title="Gemma writes the beat this shot tells and adds it to the story">✨ Add to story</button>`}</div>` : ""}
+    <div class="ins-sketch"><div class="ins-sketch-img"></div><div class="ins-sketch-side"><b>Storyboard</b><span class="hint"></span>
+      <button type="button" class="ghost small" data-act="sketch">Draw</button></div></div>
     <div class="cam-field"><label>Camera move<select data-k="camera_move">${opts(presets.camera_moves, shot.camera_move)}</select></label>
       <div class="cam-preview" title="Camera move preview"><div class="cam-scene"><span></span></div></div></div>
     <div class="field-row"><label>Shot size<select data-k="shot_size">${opts(presets.shot_sizes, shot.shot_size)}</select></label>
@@ -485,6 +627,7 @@ function renderInspector() {
     <div class="ins-actions">
       <button class="ghost" data-act="keyframe" ${shot.transition === "continue" && i > 0 ? 'disabled title="One take: this shot starts from the last frame of the shot before"' : ""}>New frame</button>
       <label class="button ghost">Upload frame<input type="file" accept="image/*" hidden data-act="upload"></label>
+      <button class="ghost" data-act="pause" hidden>Pause</button>
       <button class="primary" data-act="video">Render shot</button>
     </div>
     <section class="recipe">
@@ -498,6 +641,7 @@ function renderInspector() {
     const key = field.dataset.k;
     field.addEventListener(field.tagName === "SELECT" || field.type === "checkbox" ? "change" : "input", () => {
       shot[key] = field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value;
+      if (key === "action") shot.ai = false;  // edited by you: a new Write shots keeps it
       if (key === "seconds" && !(shot.seconds >= 2 && shot.seconds <= 10)) return;  // wait for a valid length; blur clamps it
       if (key === "camera_move") { $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || ""; $(".ins-head .serif", ins).textContent = shot.camera_move; }
       const card = $(`.card[data-id="${shot.id}"]`);
@@ -512,13 +656,18 @@ function renderInspector() {
   };
   $$("[data-tr]", ins).forEach(b => b.onclick = () => { shot.transition = b.dataset.tr; save(true); });
   $('[data-act="keyframe"]', ins).onclick = () => queueShot(shot, "keyframe");
-  $('[data-act="video"]', ins).onclick = () => queueShot(shot, "video");
+  $('[data-act="video"]', ins).onclick = () => shot.paused ? pauseShot(shot, false) : queueShot(shot, "video");
+  $('[data-act="pause"]', ins).onclick = () => pauseShot(shot, true);
   $('[data-act="upload"]', ins).onchange = e => uploadKeyframe(shot, e.target.files[0]);
   $('[data-act="dup"]', ins).onclick = () => {
     project.shots.splice(i + 1, 0, { ...shot, id: undefined, keyframe: null, video: null, takes: undefined, seed: undefined });
     save(true).then(() => select(project.shots[i + 1].id));
   };
   $('[data-act="rewrite"]', ins).onclick = () => writeShots("rewrite", shot);
+  $('[data-act="sketch"]', ins).onclick = async () => { await flush(); await post(`/api/projects/${project.id}/shots/${shot.id}/sketch`); poll(); };
+  $('[data-act="place"]', ins)?.addEventListener("click", () => writeShots("beat", shot));
+  const beatSel = $("[data-beat]", ins);
+  if (beatSel) beatSel.onchange = () => { shot.beat = beatSel.value ? Number(beatSel.value) : null; paintCard($(`.card[data-id="${shot.id}"]`), shot, i); save(true); };
   const del = $('[data-act="del"]', ins);  // no confirm(): embedded browsers silently answer "no"
   del.onclick = () => {
     if (project.shots.length < 2) return;
@@ -533,10 +682,32 @@ function renderInspector() {
   paintInspector();
 }
 
+function paintSketch(shot) {
+  const ins = $("#inspector"), box = $(".ins-sketch", ins);
+  if (!box) return;
+  const job = busyFor(j => j.kind === "sketch" && j.shot === shot.id) ||
+    busyFor(j => j.kind === "keyframe" && j.shot === shot.id && j.state === "running" && /storyboard/.test(j.label));
+  const stale = shot.sketch && sketchStale(shot);
+  const img = $(".ins-sketch-img", box), want = shot.sketch || "";
+  if (img.dataset.src !== want) { img.dataset.src = want; img.innerHTML = want ? `<img src="${media(want)}" alt="Storyboard drawing">` : "✎"; }
+  $(".hint", box).textContent = job ? (job.state === "running" ? `Drawing · ${Math.round(job.elapsed)}s` : "Drawing · queued")
+    : !shot.sketch ? "Drawn from the world and the lead before the first frame, which then follows its composition."
+    : stale ? "The shot changed since this was drawn. It's redrawn before the next frame."
+    : "The next frame follows this composition and pose.";
+  const b = $('[data-act="sketch"]', box);
+  b.disabled = !!job || !shot.action?.trim();
+  b.textContent = shot.sketch ? "Redraw" : "Draw";
+  box.classList.toggle("stale", !!stale);
+}
+
 function paintInspector() {
   const ins = $("#inspector"), i = shotIndex(selected);
   if (i < 0 || !$(".ins-media", ins)) return;
   const shot = project.shots[i], box = $(".ins-media", ins);
+  paintSketch(shot);
+  const working = busyFor(j => j.shot === shot.id);
+  $('[data-act="pause"]', ins).hidden = !working || !!shot.paused;
+  $('[data-act="video"]', ins).textContent = shot.paused ? "▶ Resume" : "Render shot";
   const want = shot.video ? `v:${shot.video}` : shot.keyframe ? `k:${shot.keyframe}` : "none";
   if (box.dataset.sig !== want) {
     box.dataset.sig = want;
@@ -593,14 +764,22 @@ function paintRecipe(shot, i) {
     return;
   }
   const ing = (src, title, sub, go) => `<button type="button" class="ingredient" data-go="${go}">
-    ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "The world" ? "¶" : "↺"}</span>`}
+    ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "The world" ? "¶" : title === "The storyboard" ? "✎" : "↺"}</span>`}
     <b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></button>`;
   const inputs = [];
   if (r.kind === "shot") inputs.push(ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
   if (r.lead) inputs.push(ing(media(r.lead), "The lead", "Face and wardrobe", "story"));
+  if (r.kind === "shot") inputs.push(ing(r.sketch ? media(r.sketch) : "", "The storyboard",
+    r.sketch ? "Composition and pose" : made ? "Not used" : "Drawn first", "sketch"));
   if (r.kind === "continue") inputs.push(ing(media(project.shots[shotIndex(r.from)]?.keyframe), shotLabel(r.from), "Its last frame", "shot:" + r.from));
   if (r.kind === "upload") inputs.push(ing(media(shot.keyframe), "Your frame", "Uploaded", ""));
   const steps = [...(r.steps || [])];
+  const drawing = r.sketch && (shot.sketches || []).find(t => t.name === r.sketch);
+  if (drawing) {  // the storyboard is the first step: what it was drawn from
+    const from = [drawing.plain ? "the world in words" : "the world", drawing.of?.reference ? "the lead" : "",
+      drawing.before ? `the panel before${drawing.before === project.shots[i - 1]?.sketch ? ` (${shotLabel(project.shots[i - 1].id)})` : ""}` : ""];
+    steps.unshift(`Qwen-Image-Edit 2511 · draws the storyboard from ${from.filter(Boolean).join(" + ")} · half size`);
+  }
   const video = `LTX 2.5 · ${shot.seconds}s · ${shot.camera_move.toLowerCase()}${shot.sound ? " · with sound" : ""}`;
   body.innerHTML = `
     <p class="recipe-when">${made ? "Made from" : "The next frame will be made from"}</p>
@@ -615,9 +794,100 @@ function paintRecipe(shot, i) {
     if (go === "story") { setStage("story"); $("#refDrop").scrollIntoView({ behavior: "smooth", block: "center" }); }
     else if (go === "world") { setStage("story"); $(".world-plate").scrollIntoView({ behavior: "smooth", block: "center" }); }
     else if (go.startsWith("shot:")) select(go.slice(5));
+    else if (go === "sketch") $(".ins-sketch", ins)?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
   const refresh = $("[data-refresh]", body);
   if (refresh) refresh.onclick = () => queueShot(shot, "keyframe");
+}
+
+// ---------------------------------------------------------------- story: beats and their storyboard
+const beatsOf = () => project.beats || [];
+
+function renderBeats() {
+  const list = $("#beats");
+  list.innerHTML = "";
+  list.dataset.sig = "";  // the rows are new, so their shots must be painted again
+  beatsOf().forEach((text, n) => {
+    const li = document.createElement("li");
+    li.className = "beat";
+    li.innerHTML = `<span class="beat-num">${n + 1}</span>
+      <div class="beat-main"><textarea class="grow beat-text" rows="1" aria-label="Beat ${n + 1}" placeholder="What happens in this beat?"></textarea>
+        <div class="beat-shots"></div></div>
+      <button type="button" class="beat-del" title="Remove this beat" aria-label="Remove beat ${n + 1}">×</button>`;
+    const area = $("textarea", li);
+    area.value = text;
+    area.oninput = () => { project.beats[n] = area.value; save(); };
+    area.onblur = () => { if (!area.value.trim()) removeBeat(n); };
+    $(".beat-del", li).onclick = () => removeBeat(n);
+    list.appendChild(li);
+  });
+  if (!beatsOf().length) list.innerHTML = `<li class="beats-empty hint">No beats yet. ✨ Beats writes them from the logline, or Generate the whole story writes everything.</li>`;
+  requestAnimationFrame(() => growAll(list));
+  paintBeatShots();
+  setBeatView(beatView);
+}
+
+function removeBeat(n) {  // shots keep telling the same moment: later beats move up, this beat's shots have none
+  project.beats.splice(n, 1);
+  for (const s of project.shots) if (s.beat === n + 1) s.beat = null; else if (s.beat > n + 1) s.beat -= 1;
+  renderBeats(); save(true);
+}
+
+function picture(shot) { return shot.keyframe ? media(shot.keyframe) : shot.sketch ? media(shot.sketch) : ""; }
+
+function paintBeatShots() {  // under each beat, the shots that tell it: frame if there is one, else the drawing
+  const sig = JSON.stringify([beatsOf().length, project.shots.map(s => [s.id, s.beat, s.keyframe, s.sketch, !!s.video, !!s.action?.trim()])]);
+  const list = $("#beats");
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  const thumb = s => {  // the drawing always stays; a rendered frame comes after it, never instead of it
+    const i = shotIndex(s.id), num = String(i + 1).padStart(2, "0");
+    const drawn = s.sketch ? `<span class="beat-pic sketch"><img src="${media(s.sketch)}" alt="Storyboard drawing"><b>${num}</b></span>`
+      : `<span class="beat-pic sketch empty"><span>✎</span><b>${num}</b></span>`;
+    const made = s.keyframe ? `<span class="beat-arrow" aria-hidden="true">→</span>
+      <span class="beat-pic"><img src="${media(s.keyframe)}" alt="Frame">${s.video ? `<i title="Rendered">▶</i>` : ""}</span>` : "";
+    return `<button type="button" class="beat-shot" data-id="${s.id}" title="${escapeHtml(s.action || "")}">${drawn}${made}</button>`;
+  };
+  $$(".beat:not(.loose)", list).forEach((li, n) => {
+    const shots = project.shots.filter(s => s.beat === n + 1);
+    $(".beat-shots", li).innerHTML = (shots.length > 1 ? `<span class="beat-count">${shots.length} shots</span>` : "") +
+      (shots.map(thumb).join("") || `<span class="hint">No shot tells this beat yet</span>`);
+  });
+  // shots that aren't in the story sit where they are in the film, so the page never shows less film than exists
+  $$(".beat.loose", list).forEach(li => li.remove());
+  if (beatsOf().length) {
+    const rows = [];  // [beat the row follows (0 = before the first), [shots]]
+    let after = 0;
+    for (const s of project.shots) {
+      if (s.beat && s.beat <= beatsOf().length) { after = s.beat; continue; }
+      if (!s.action?.trim()) continue;
+      const row = rows.at(-1);
+      if (row && row[0] === after && row.end === project.shots.indexOf(s) - 1) { row[1].push(s); row.end++; }
+      else { const r = [after, [s]]; r.end = project.shots.indexOf(s); rows.push(r); }
+    }
+    for (const [beat, shots] of rows.reverse()) {
+      const li = document.createElement("li");
+      li.className = "beat loose";
+      li.innerHTML = `<span class="beat-num">·</span><div class="beat-main"><p class="loose-head">Not in the story yet</p>
+        <div class="beat-shots">${shots.map(s => `<span class="loose-shot">${thumb(s)}
+          <button type="button" class="ai small" data-place="${s.id}" title="Gemma writes the beat this shot tells and adds it to the story">✨ Add to story</button></span>`).join("")}</div></div>`;
+      const anchor = $$(".beat:not(.loose)", list)[beat - 1];
+      if (anchor) anchor.after(li); else list.prepend(li);
+    }
+    $$("[data-place]", list).forEach(b => b.onclick = () => writeShots("beat", project.shots[shotIndex(b.dataset.place)]));
+  }
+  $$(".beat-shot", list).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
+  $("#drawBoard").hidden = !project.shots.some(s => s.action?.trim() && !s.sketch) || !!busyFor(j => j.kind === "sketch");
+  paintStrip();
+}
+
+function sketchStale(shot) {  // mirrors studio._current_sketch: is the drawing from today's shot, world and lead?
+  const take = (shot.sketches || []).find(t => t.name === shot.sketch);
+  if (!take) return !!shot.sketch;
+  const of = take.of || {};
+  return of.action !== (shot.action || "") || of.shot_size !== shot.shot_size || of.camera_move !== shot.camera_move
+    || of.lead !== (shot.lead !== false) || of.world !== plateOf() || plateStale()
+    || of.reference !== (shot.lead !== false ? project.reference || null : null);
 }
 
 function paintWorld() {  // the Story page shows the world plate every shot is made in
@@ -883,25 +1153,32 @@ async function flush() { clearTimeout(saveTimer); mergeServer(await post(`/api/p
 
 function mergeServer(fresh, rerender) {
   const sameShots = fresh.shots.length === project.shots.length && fresh.shots.every((s, i) => !project.shots[i].id || s.id === project.shots[i].id);
-  const wrote = (fresh.shots_history || []).length > (project.shots_history || []).length;
-  if (rerender || !sameShots || wrote) {
+  const revised = (fresh.shots_rev || 0) !== (project.shots_rev || 0);
+  const wrote = revised && (fresh.shots_history || []).length >= (project.shots_history || []).length;
+  if (rerender || !sameShots || revised) {
     if (wrote) {
       const added = fresh.shots.find(s => !project.shots.some(p => p.id === s.id));
       if (added) selected = added.id;
-      toast(added ? "Shots written by Gemma" : "Shot rewritten", "Undo", undoShots);
+      const grew = (fresh.beats || []).length - (project.beats || []).length;
+      toast(grew > 0 ? (!added ? "Added to the story" : grew === 1 ? `Beat ${(fresh.beats || []).length} added to the story, with its shot`
+        : `The story grew by ${grew} beats, each with its shot`)
+        : added ? "Shots written by Gemma" : "Shot rewritten", "Undo", undoShots);
     }
     project = fresh;
     if (shotIndex(selected) < 0) selected = project.shots[0]?.id || null;
     renderBoard(); renderInspector(); renderTimeline(); renderViewer(); renderEditPanel(); renderScreen(); renderHeader(); applyTheme();
+    renderBeats();
     return;
   }
   // keep what the user is typing; take generated media from the server
-  fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed }));
+  fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed,
+    sketch: s.sketch, sketches: s.sketches, paused: s.paused }));
   for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
     "lead_identity", "lead_identity_of", "world"]) project[k] = fresh[k];
   if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
   project.story_history = fresh.story_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
+  paintBeatShots();
 }
 
 async function queueShot(shot, kind) { await flush(); await post(`/api/projects/${project.id}/shots/${shot.id}/${kind}`); toast(kind === "video" ? "Shot queued" : "New frame queued"); poll(); }
@@ -951,6 +1228,7 @@ async function poll() {
       if (stage === "screen") renderScreen();
     }
     renderStatus();
+    noticeFailures();
   } catch { presets.comfy = false; renderStatus(); }
 }
 
@@ -985,6 +1263,13 @@ drop.ondragleave = () => drop.classList.remove("drag");
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove("drag"); uploadReference(e.dataTransfer.files[0]); };
 $("#addShot").onclick = addShot;
 $("#writeShots").onclick = () => writeShots("board");
+$("#autoRender").onchange = e => { project.auto_render = e.target.checked; save();
+  toast(e.target.checked ? "Shots Gemma writes will render straight away" : "Shots Gemma writes wait for Render film"); };
+$("#addBeat").onclick = e => {
+  if (!beatsOf().length) { project.beats = [""]; renderBeats(); $$("#beats .beat-text").at(-1)?.focus(); return; }
+  e.stopPropagation(); openBeatMenu($("#addBeat"), true);
+};
+$("#drawBoard").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/storyboard`); toast("Drawing the storyboard"); poll(); };
 $("#shotsUndo").onclick = undoShots;
 $("#aiLead").onclick = () => writeLead((project.cast || "").trim() ? "refine" : "write");
 $("#aiPhoto").onclick = () => writeLead("from photo");
@@ -994,7 +1279,13 @@ $("#aiUndo").onclick = async () => { clearTimeout(saveTimer); mergeServer(await 
 $("#aiEverything").onclick = () => writeStory("everything");
 $("#worldBtn").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/world`); poll(); };
 $("#redescribe").onclick = async () => { await post(`/api/projects/${project.id}/describe-lead`); poll(); };
-$$("[data-ai]").forEach(b => b.onclick = () => writeStory(b.dataset.ai));
+$$("[data-ai]").forEach(b => b.onclick = e => {
+  if (b.dataset.ai === "beats" && beatsOf().length) { e.stopPropagation(); openBeatMenu(b, false); return; }
+  writeStory(b.dataset.ai);
+});
+$$("#beatView button").forEach(b => b.onclick = () => setBeatView(b.dataset.view));
+document.addEventListener("click", e => { if (!e.target.closest("#beatMenu")) $("#beatMenu").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#beatMenu").hidden = true; });
 $("#idea").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); writeStory("everything"); } };
 $$("[data-pal]").forEach(input => input.oninput = () => {
   const [ink, accent, glow, bg] = effectivePalette();

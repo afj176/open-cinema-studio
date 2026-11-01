@@ -164,19 +164,28 @@ class Handler(BaseHTTPRequestHandler):
                 shot = options.get("shot")
                 number = next((i + 1 for i, s in enumerate(project["shots"]) if s["id"] == shot), 0)
                 label = {"board": "Writing the shots", "next": "Writing the next shot",
-                         "rewrite": f"Rewriting shot {number}"}[mode]
-                return self._json(studio.enqueue("write_shots", m.group(1), shot if mode == "rewrite" else None, label,
+                         "rewrite": f"Rewriting shot {number}", "beat": f"Adding shot {number} to the story"}[mode]
+                return self._json(studio.enqueue("write_shots", m.group(1), shot if mode in ("rewrite", "beat") else None, label,
                                                  mode=mode, count=max(2, min(8, int(options.get("count", 5))))))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/(pause|resume)", route):
+                return self._json(studio.pause_shot(m.group(1), m.group(2), m.group(3) == "pause"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/sketch", route):
+                return self._json(studio.queue_sketches(m.group(1), [m.group(2)], redraw=True))
+            if m := re.fullmatch(r"/api/projects/(\w+)/storyboard", route):
+                return self._json(studio.queue_sketches(m.group(1)))
             if m := re.fullmatch(r"/api/projects/(\w+)/undo-shots", route):
                 return self._json(studio.undo_shots(m.group(1)))
             if m := re.fullmatch(r"/api/projects/(\w+)/write-story", route):
-                target = json.loads(self._body() or b"{}").get("target", "everything")
+                options = json.loads(self._body() or b"{}")
+                target, count = options.get("target", "everything"), max(1, min(8, int(options.get("count", 3))))
                 if target not in director.STORY_TARGETS:
                     return self._json({"error": f"unknown target {target}"}, 400)
                 label = {"everything": "Writing the whole story", "title": "Writing a title",
                          "logline": "Writing a logline", "world": "Writing the world",
-                         "look": "Choosing look & colours", "trailer": "Writing trailer cards"}[target]
-                return self._json(studio.enqueue("write_story", m.group(1), None, label, target=target))
+                         "look": "Choosing look & colours", "trailer": "Writing trailer cards",
+                         "beats": "Writing the story beats",
+                         "more beats": f"Adding {count} beat{'s' if count > 1 else ''} to the story"}[target]
+                return self._json(studio.enqueue("write_story", m.group(1), None, label, target=target, count=count))
             if m := re.fullmatch(r"/api/projects/(\w+)/title-shot", route):
                 options = json.loads(self._body() or b"{}")
                 return self._json(studio.queue_title_shot(m.group(1), frame=options.get("frame", True)))

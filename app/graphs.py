@@ -74,14 +74,15 @@ def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
 
 
 def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: str,
-                   second_reference: str | None = None, keep_layout: bool = False) -> dict[str, Any]:
+                   second_reference: str | None = None, keep_layout: bool = False,
+                   third_reference: str | None = None, scale: float = 1.0) -> dict[str, Any]:
     """New camera setup of the same film with Qwen-Image-Edit-2511 + 4-step Lightning.
 
-    Picture 1 is the world, Picture 2 (optional) the cast. It samples onto an empty canvas at
-    the film's aspect rather than re-noising the reference, so the references steer identity
-    and world but not the composition.
+    Picture 1 is the world, Picture 2 (optional) the cast, Picture 3 (optional) the storyboard drawing that
+    sets the composition. It samples onto an empty canvas at the film's aspect rather than re-noising the
+    reference. `scale` makes smaller canvases (storyboard sketches are drawn at half size).
     """
-    width, height = COVERAGE_SIZES[aspect]
+    width, height = (int(v * scale) // 16 * 16 for v in COVERAGE_SIZES[aspect])
     graph: dict[str, Any] = {
         "1": node("UNETLoader", unet_name=MODELS["qwen_edit"], weight_dtype="default"),
         "1l": node("LoraLoaderModelOnly", model=["1", 0], lora_name=MODELS["qwen_lightning"], strength_model=1.0),
@@ -110,6 +111,11 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
         graph["17"] = node("FluxKontextImageScale", image=["16", 0])
         for encoder in ("8", "10"):
             graph[encoder]["inputs"]["image2"] = ["17", 0]
+    if third_reference:
+        graph["18"] = node("LoadImage", image=third_reference)
+        graph["19"] = node("FluxKontextImageScale", image=["18", 0])
+        for encoder in ("8", "10"):
+            graph[encoder]["inputs"]["image3"] = ["19", 0]
     return graph
 
 
@@ -312,13 +318,15 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
 
 
 def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str, lead: str, continuity: str,
-                      shots: str, index: int = 1, count: int = 5, seed: int = 1) -> dict[str, Any]:
+                      shots: str, index: int = 1, count: int = 5, seed: int = 1, beats: str = "",
+                      write_beats: str = "") -> dict[str, Any]:
     """Gemma 4 E4B writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
     return {
         "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
         "2": node("OpenCinemaShotsBrief", mode=mode, count=count, index=index, title=title, logline=logline,
-                  world=world, look=look, lead=lead, continuity=continuity, shots=shots),
-        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=110 * count if mode == "board" else 160,
+                  world=world, look=look, lead=lead, continuity=continuity, beats=beats, shots=shots,
+                  write_beats=write_beats),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=120 * count if mode == "board" else 170,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.75, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
                      "sampling_mode.min_p": 0.05, "sampling_mode.repetition_penalty": 1.05,
@@ -326,23 +334,25 @@ def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str
         "4": node("OpenCinemaParseShots", text=["3", 0]),
         "shots": node("PreviewAny", source=["4", 0]),
         "storyboard": node("PreviewAny", source=["4", 1]),
+        "new_beats": node("PreviewAny", source=["4", 2]),
     }
 
 
 def story_writer_graph(target: str, idea: str, title: str, logline: str, world: str, look: str, lead: str,
-                       seed: int = 1) -> dict[str, Any]:
+                       seed: int = 1, beats: str = "", count: int = 3) -> dict[str, Any]:
     """Gemma 4 E4B develops the story page (or one field of it) through ComfyUI's native TextGenerate."""
     graph = {
         "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
         "2": node("OpenCinemaStoryBrief", target=target, idea=idea, title=title, logline=logline, world=world,
-                  look=look, lead=lead),
-        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=900 if target == "everything" else 320,
+                  look=look, lead=lead, beats=beats, count=count),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=1100 if target == "everything" else 320,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.8 if target == "everything" else 0.75, "sampling_mode.top_k": 64,
                      "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.05,
                      "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": seed}),
         "4": node("OpenCinemaParseStory", text=["3", 0], target=target),
     }
-    for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")):
+    for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer",
+                                   "beats")):
         graph[field] = node("PreviewAny", source=["4", index])
     return graph

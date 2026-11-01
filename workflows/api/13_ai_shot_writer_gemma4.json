@@ -19,7 +19,9 @@
       "look": "Golden hour",
       "lead": "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.",
       "continuity": "Thin build, indigo linen, dark braids, glowing crucible",
-      "shots": ""
+      "beats": "1. The glass city drifts above the dunes at dawn, steam vents sighing\n2. The artisan's lens cracks in the furnace heat\n3. He finds a shard that bends the sunlight into rainbows\n4. On the terrace he raises the new lens to the sun\n5. Through it, the invisible desert wind becomes ribbons of light",
+      "shots": "",
+      "write_beats": "1, 2, 3, 4, 5"
     }
   },
   "3": {
@@ -33,7 +35,7 @@
         "2",
         0
       ],
-      "max_length": 550,
+      "max_length": 600,
       "sampling_mode": "on",
       "sampling_mode.temperature": 0.75,
       "sampling_mode.top_k": 64,
@@ -67,6 +69,15 @@
       "source": [
         "4",
         1
+      ]
+    }
+  },
+  "new_beats": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        2
       ]
     }
   }

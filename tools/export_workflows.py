@@ -41,8 +41,14 @@ examples = {
         director.world_plate_prompt(SCENE, LOOK), 101, "16:9", "open-cinema/world"),
     "02_shot_frame_qwen_image_edit_2511.json": graphs.coverage_graph(
         director.shot_prompt(CLOSE, "Medium close-up", LOOK, CONTINUITY, has_cast=True, camera_move="Orbit left",
-                             world=SCENE.split(". ")[0], identity=IDENTITY),
-        202, "oc_world_plate.jpg", "open-cinema/shot_frame", "16:9", second_reference="oc_lead_portrait.jpg"),
+                             world=SCENE.split(". ")[0], identity=IDENTITY, storyboard=True),
+        202, "oc_world_plate.jpg", "open-cinema/shot_frame", "16:9", second_reference="oc_lead_portrait.jpg",
+        third_reference="oc_storyboard_sketch.jpg"),
+    "14_storyboard_sketch_qwen_image_edit_2511.json": graphs.coverage_graph(
+        director.sketch_prompt("He holds the lens up to the sun on the glass terrace; the city drifts behind him.",
+                               "Wide", "Crane up", has_cast=True, world=SCENE.split(". ")[0], previous=True),
+        1414, "oc_world_plate.jpg", "open-cinema/storyboard", "16:9", second_reference="oc_lead_portrait.jpg",
+        third_reference="oc_storyboard_sketch.jpg", scale=0.5),
     "03_shot_ltx25_i2v_audio.json": graphs.shot_graph(
         "oc_shot_keyframe.jpg", director.motion_prompt(ACTION, "Dolly in", "howling wind, crackling furnace", LOOK,
                                                        director._join(CAST, IDENTITY), "Wide", CONTINUITY),
@@ -77,9 +83,15 @@ examples["09_inworld_title_frame.json"] = graphs.title_frame_graph(
     director.title_frame_prompt("The Colossus Pass", director.TITLE_MATERIALS["70mm epic"]), 909,
     "oc_world_plate.jpg", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")
 examples["12_world_plate_people_check_gemma4.json"] = graphs.people_check_graph("oc_world_plate.jpg", director.PEOPLE_CHECK)
+BEATS = ["The glass city drifts above the dunes at dawn, steam vents sighing",
+         "The artisan's lens cracks in the furnace heat",
+         "He finds a shard that bends the sunlight into rainbows",
+         "On the terrace he raises the new lens to the sun",
+         "Through it, the invisible desert wind becomes ribbons of light"]
 examples["13_ai_shot_writer_gemma4.json"] = graphs.shot_writer_graph(
     "board", "Glass Eye", "In a sun-drenched glass city, a young artisan must craft a vision-lens capable of perceiving "
-    "the invisible currents of the desert wind.", SCENE, LOOK, CAST, CONTINUITY, "", count=5, seed=7)
+    "the invisible currents of the desert wind.", SCENE, LOOK, CAST, CONTINUITY, "", count=5, seed=7,
+    beats=director.beat_list_text(BEATS), write_beats="1, 2, 3, 4, 5")
 
 # What each canvas should say: groups (title, colour role, node ids), node titles and a note.
 LEAD = ("The lead → Picture 2", "lead", ["16", "17"])
@@ -99,20 +111,36 @@ ANNOTATE = {
     "13_ai_shot_writer_gemma4.json": dict(
         titles={"2": "Shots brief (board · next · rewrite)", "3": "Gemma 4 E4B writes the shots",
                 "shots": "Shots (JSON for the studio)", "storyboard": "Storyboard"},
-        note="## 0b · The shots\nGemma 4 E4B plans the film shot by shot from the story: what the camera sees, the "
-             "shot size, the camera move, the length, the sound, and whether the lead is in it.\n\n**mode**: "
-             "*board* writes `count` shots; *next* writes the shot after the board in `shots`; *rewrite* writes shot "
-             "`index` again to flow between its neighbours. Sizes and moves are snapped to the studio's presets."),
+        note="## 0b · The shots\nGemma 4 E4B turns the story **beats** (written by 11 · story writer) into shots: "
+             "the beat each shot tells, what the camera sees, the shot size, the camera move, the length, the sound, "
+             "and whether the lead is in it.\n\n**mode**: *board* writes one shot for each beat in `write_beats` "
+             "(around the kept shots in `shots`), or `count` shots that start or continue the film; *next* writes "
+             "the shot after `shots`; *rewrite* writes shot `index` again. Sizes and moves are snapped to the "
+             "studio's presets. Each shot is then drawn by **14 · storyboard**."),
+    "14_storyboard_sketch_qwen_image_edit_2511.json": dict(
+        groups=[("The world → Picture 1", "world", ["6", "7"]), LEAD,
+                ("The panel before → Picture 3", "sketch", ["18", "19"])],
+        titles={**EDIT_TITLES, "8": "Instruction (sees Picture 1 + 2 + 3)", "6": "World plate",
+                "18": "Storyboard panel of the shot before", "19": "Scale panel", "12": "Empty canvas (half size)",
+                "15": "Save storyboard drawing"},
+        note="## 2c · The storyboard\nQwen-Image-Edit 2511 draws each shot as a pencil storyboard frame, from the "
+             "world plate (**Picture 1**), the lead (**Picture 2**) and the panel of the shot before (**Picture 3**), "
+             "so every panel shows the real place and person and the storyboard reads as one sequence: same style, "
+             "light and weather, a new camera angle each time.\n\nThe drawing then goes into the shot's frame as its "
+             "own **Picture 3** (see **3 · a shot**), which follows its composition and pose. About 10 s."),
     "12_world_plate_people_check_gemma4.json": dict(
         titles={"2": "World plate", "3": "Is anyone in it? (YES / NO)"},
         note="## 2b · People check\nGemma 4 E4B looks at the world plate and answers YES or NO. A plate with "
              "anyone in it would put a second face into every shot, so the studio re-rolls it."),
     "02_shot_frame_qwen_image_edit_2511.json": dict(
-        groups=[("The world → Picture 1", "world", ["6", "7"]), LEAD],
-        titles={**EDIT_TITLES, "6": "World plate", "12": "Empty canvas (the shot's own composition)"},
-        note="## 3 · A shot\nEvery shot is made from the same two pictures: **Picture 1** is the empty world plate "
-             "(place, light, grade) and **Picture 2** is the lead (face, hair, wardrobe), plus the shot's action and "
-             "camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."),
+        groups=[("The world → Picture 1", "world", ["6", "7"]), LEAD,
+                ("The storyboard → Picture 3", "sketch", ["18", "19"])],
+        titles={**EDIT_TITLES, "8": "Instruction (sees Picture 1 + 2 + 3)", "6": "World plate",
+                "18": "Storyboard drawing", "19": "Scale storyboard", "12": "Empty canvas"},
+        note="## 3 · A shot\nEvery shot is made from the same pictures: **Picture 1** is the empty world plate "
+             "(place, light, grade), **Picture 2** is the lead (face, hair, wardrobe) and **Picture 3** is the "
+             "shot's storyboard drawing (composition and pose), plus the shot's action and camera.\n\nNo picture "
+             "ever shows a second face, so the lead stays one person across the film."),
     "03_shot_ltx25_i2v_audio.json": dict(
         note="## 4 · Motion\nLTX 2.5 animates a frame into a shot with sound, in two stages (half resolution, then "
              "a x2 latent upscale)."),

@@ -16,7 +16,9 @@
       "logline": "",
       "world": "",
       "look": "",
-      "lead": ""
+      "lead": "",
+      "beats": "",
+      "count": 3
     }
   },
   "3": {
@@ -30,7 +32,7 @@
         "2",
         0
       ],
-      "max_length": 900,
+      "max_length": 1100,
       "sampling_mode": "on",
       "sampling_mode.temperature": 0.8,
       "sampling_mode.top_k": 64,
@@ -119,6 +121,15 @@
       "source": [
         "4",
         7
+      ]
+    }
+  },
+  "beats": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        8
       ]
     }
   }

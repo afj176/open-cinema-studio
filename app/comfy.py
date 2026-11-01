@@ -24,11 +24,16 @@ class Comfy:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(self.server + path, data=data,
                                          headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                return json.loads(response.read() or b"null")
-        except urllib.error.HTTPError as error:
-            raise ComfyError(f"{path}: HTTP {error.code}: {error.read().decode('utf-8', 'replace')[:2000]}") from error
+        for attempt in range(3):  # a ComfyUI busy loading weights can miss a connection; try again before failing
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    return json.loads(response.read() or b"null")
+            except urllib.error.HTTPError as error:
+                raise ComfyError(f"{path}: HTTP {error.code}: {error.read().decode('utf-8', 'replace')[:2000]}") from error
+            except (urllib.error.URLError, TimeoutError):
+                if attempt == 2 or timeout < 10:
+                    raise
+                time.sleep(3)
 
     def alive(self) -> bool:
         try:

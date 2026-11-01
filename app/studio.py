@@ -5,6 +5,7 @@ from __future__ import annotations
 import array
 import copy
 import hashlib
+import itertools
 import json
 import queue
 import random
@@ -52,7 +53,11 @@ def palette_string(project: dict[str, Any]) -> str:
     return ",".join(colours) if all(c.startswith("#") and len(c) == 7 for c in colours) else ""
 
 
-STORY_FIELDS = ("title", "logline", "scene", "look", "palette", "cast", "continuity")
+STORY_FIELDS = ("title", "logline", "scene", "look", "palette", "cast", "continuity", "beats")
+# Text jobs jump ahead of queued renders, then the lead, world and storyboard; renders keep their order.
+PRIORITY = {"write_shots": 0, "write_story": 0, "write_lead": 0, "cast": 1, "describe_lead": 1, "world": 1,
+            "sketch": 1}
+SIDE_JOBS = {"write_shots", "write_story", "write_lead", "sketch", "motion_preview"}  # a failure doesn't stop the film
 
 
 def default_credits(project: dict[str, Any]) -> str:
@@ -119,6 +124,34 @@ def world_of(project: dict[str, Any]) -> dict[str, Any]:
 
 def world_plate(project: dict[str, Any]) -> str | None:
     return (project.get("world") or {}).get("plate")
+
+
+def is_blank(shot: dict[str, Any]) -> bool:
+    return not shot.get("action", "").strip() and not is_made(shot)
+
+
+def is_made(shot: dict[str, Any]) -> bool:
+    return bool(shot.get("keyframe") or shot.get("video") or (shot.get("takes") or {}).get("keyframe"))
+
+
+def sketch_of(shot: dict[str, Any], plate: str | None, reference: str | None) -> dict[str, Any]:
+    """What a storyboard drawing depends on: if any of it changes, the drawing is redrawn before the next frame."""
+    return {"action": shot.get("action", ""), "shot_size": shot.get("shot_size"), "camera_move": shot.get("camera_move"),
+            "lead": shot.get("lead", True) is not False, "world": plate, "reference": reference}
+
+
+def frame_stale(project: dict[str, Any], shot: dict[str, Any]) -> bool:
+    """The shot's frame no longer matches it (mirrors staleness() in the web app): a new lead, world, action or
+    framing. Frames from before a field was recorded aren't flagged for it."""
+    take = next((t for t in (shot.get("takes") or {}).get("keyframe", []) if t["name"] == shot.get("keyframe")), None)
+    r = (take or {}).get("recipe") or {}
+    if not shot.get("keyframe") or r.get("kind") != "shot":
+        return False
+    lead = shot.get("lead", True) is not False and project.get("reference")
+    return bool((lead and r.get("lead") != project.get("reference")) or r.get("world") != current_plate(project)
+                or ("action" in r and r["action"] != shot.get("action", ""))
+                or ("shot_size" in r and (r["shot_size"] != shot.get("shot_size")
+                                          or r.get("camera_move") != shot.get("camera_move"))))
 
 
 def current_plate(project: dict[str, Any]) -> str | None:
@@ -216,7 +249,8 @@ class Studio:
         self.comfy = Comfy(comfy_url)
         self.lock = threading.RLock()
         self.jobs: list[dict[str, Any]] = []
-        self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self.queue: queue.PriorityQueue[tuple[int, int, dict[str, Any]]] = queue.PriorityQueue()
+        self.order = itertools.count()
         PROJECTS.mkdir(exist_ok=True)
         threading.Thread(target=self._worker, daemon=True).start()
 
@@ -287,8 +321,10 @@ class Studio:
         """Apply edits from the UI; generated media stays owned by the server."""
         with self.lock:
             project = self.load(project_id)
+            if isinstance(data.get("beats"), list):
+                project["beats"] = [str(b).strip() for b in data["beats"] if str(b).strip()]
             for key in ("title", "scene", "look", "aspect", "continuity", "cast", "finish", "motion", "idea",
-                        "logline", "palette"):
+                        "logline", "palette", "auto_render"):
                 if key in data:
                     project[key] = data[key]
             if "shots" in data:
@@ -297,7 +333,7 @@ class Studio:
                 for incoming in data["shots"]:
                     shot = existing.get(incoming.get("id")) or new_shot(takes={"keyframe": [], "video": []})
                     for key in ("action", "shot_size", "camera_move", "seconds", "sound", "transition", "seed",
-                                "lead"):
+                                "lead", "beat", "ai"):
                         if key in incoming:
                             shot[key] = incoming[key]
                     try:  # LTX shots are 2-10 s; anything else would blow the VRAM or render nothing
@@ -347,26 +383,39 @@ class Studio:
         with self.lock:
             self.jobs.append(job)
             self.jobs = self.jobs[-200:]
-        self.queue.put(job)
+        self.queue.put((PRIORITY.get(kind, 2), next(self.order), job))
         return job
 
-    def queue_film(self, project_id: str, redo_keyframes: bool = False) -> list[dict[str, Any]]:
-        """Everything still missing, in dependency order.
+    def queue_film(self, project_id: str, redo_keyframes: bool = False,
+                   only: set[str] | None = None) -> list[dict[str, Any]]:
+        """Everything missing or out of date, in dependency order (`only`: just these shots).
 
         All keyframes run before any video so ComfyUI swaps the Qwen and LTX
-        weights once instead of once per shot.
+        weights once instead of once per shot. Paused shots are skipped, a step
+        already waiting in the queue isn't queued again, and the film is cut only
+        when every shot will have a video.
         """
         project = self.load(project_id)
+        with self.lock:
+            waiting = {(j["kind"], j["shot"]) for j in self.jobs if j["project"] == project_id
+                       and j["state"] in ("queued", "running")}
+        held = set()  # paused shots, and one-take shots that start from one
+        for index, shot in enumerate(project["shots"]):
+            if shot.get("paused") or (shot["transition"] == "continue" and index > 0
+                                      and project["shots"][index - 1]["id"] in held):
+                held.add(shot["id"])
+        wanted = lambda shot: shot["id"] not in held and (only is None or shot["id"] in only)  # noqa: E731
         jobs = []
         if project.get("cast", "").strip() and not project.get("reference"):
             jobs.append(self.enqueue("cast", project_id, None, "Casting"))
         elif project.get("reference") and not lead_identity(project):
             jobs.append(self.enqueue("describe_lead", project_id, None, "Describing the lead's face"))
         if not current_plate(project):  # every shot is made in the world plate, so it comes first
-            jobs.append(self.enqueue("world", project_id, None, "Painting the world"))
+            jobs.append(self.enqueue("world", project_id, None, "Painting the world", auto=True))
         for index, shot in enumerate(project["shots"]):
             continues = shot["transition"] == "continue" and index > 0
-            if not continues and (redo_keyframes or not shot.get("keyframe")):
+            if not continues and wanted(shot) and ("keyframe", shot["id"]) not in waiting and \
+                    (redo_keyframes or not shot.get("keyframe") or frame_stale(project, shot)):
                 jobs.append(self.enqueue("keyframe", project_id, shot["id"], f"Keyframe {index + 1}"))
         with self.lock:  # a keyframe still in the queue will replace this shot's start frame
             reframing = {j["shot"] for j in self.jobs if j["project"] == project_id and j["kind"] == "keyframe"
@@ -375,13 +424,46 @@ class Studio:
         for index, shot in enumerate(project["shots"]):
             continues = shot["transition"] == "continue" and index > 0
             # a one-take continuation starts on the previous shot's last frame, so it follows that shot
-            redo = (redo_keyframes or not shot.get("video") or shot["id"] in reframing
-                    or (continues and previous_redone))
-            if redo:
+            redo = wanted(shot) and (redo_keyframes or not shot.get("video") or shot["id"] in reframing
+                                     or (continues and previous_redone))
+            if redo and ("video", shot["id"]) not in waiting:
                 jobs.append(self.enqueue("video", project_id, shot["id"], f"Shot {index + 1}"))
             previous_redone = redo
-        jobs.append(self.enqueue("stitch", project_id, None, "Final cut"))
+        with self.lock:
+            coming = {j["shot"] for j in self.jobs if j["project"] == project_id and j["kind"] == "video"
+                      and j["state"] in ("queued", "running")}
+        if not held and all(s.get("video") or s["id"] in coming for s in project["shots"]) and \
+                ("stitch", None) not in waiting:
+            jobs.append(self.enqueue("stitch", project_id, None, "Final cut"))
         return jobs
+
+    def pause_shot(self, project_id: str, shot_id: str, paused: bool) -> dict[str, Any]:
+        """Pause: drop the shot's waiting work and stop it if it's running. Resume: render it again from
+        whatever is now missing or out of date (drawing, frame, video), then cut the film if it's complete."""
+        with self.lock:
+            project = self.load(project_id)
+            shot = self._shot(project, shot_id)
+            shot["paused"] = paused
+            saved = self.save(project)
+            running = None
+            if paused:
+                for job in self.jobs:
+                    if job["project"] == project_id and job["shot"] == shot_id and job["state"] == "queued":
+                        job["state"], job["error"] = "cancelled", "paused"
+                    elif job["project"] == project_id and job["shot"] == shot_id and job["state"] == "running":
+                        running = job
+                        job["stopped"] = True
+                    elif job["project"] == project_id and job["kind"] == "stitch" and job["state"] == "queued":
+                        job["state"], job["error"] = "cancelled", "a shot is paused"  # resuming cuts it again
+        if running:
+            try:
+                self.comfy.interrupt()
+            except Exception:
+                pass
+        if not paused:
+            self.queue_sketches(project_id, [shot_id])
+            self.queue_film(project_id, only={shot_id})
+        return saved
 
     def cancel(self) -> None:
         with self.lock:
@@ -399,7 +481,7 @@ class Studio:
 
     def _worker(self) -> None:
         while True:
-            job = self.queue.get()
+            job = self.queue.get()[2]
             if job["state"] == "cancelled":
                 continue
             job["state"], started = "running", time.monotonic()
@@ -408,10 +490,14 @@ class Studio:
                 getattr(self, f"_run_{job['kind']}")(job, tick)
                 job["state"] = "done"
             except Exception as error:  # surface every failure in the UI
+                if job.get("stopped"):  # its shot was paused while it ran
+                    job["state"], job["error"] = "cancelled", "paused"
+                    job["elapsed"] = time.monotonic() - started
+                    continue
                 job["state"], job["error"] = "failed", str(error)
                 traceback.print_exc()
-                with self.lock:  # later steps of this film depend on this one
-                    for later in self.jobs:
+                with self.lock:  # later steps of this film depend on this one (unless it was a side job)
+                    for later in self.jobs if job["kind"] not in SIDE_JOBS else []:
                         if later["project"] == job["project"] and later["state"] == "queued":
                             later["state"], later["error"] = "cancelled", "an earlier step failed"
             job["elapsed"] = time.monotonic() - started
@@ -490,6 +576,8 @@ class Studio:
         return name
 
     def _run_world(self, job: dict[str, Any], tick) -> None:
+        if job.get("auto") and current_plate(self.load(job["project"])):
+            return  # something earlier in the queue already painted it
         self._make_world(job["project"], tick, job)
 
     def choose_world(self, project_id: str, name: str) -> dict[str, Any]:
@@ -517,17 +605,27 @@ class Studio:
             job["label"] = f"Keyframe {index + 1} · describing the lead"
             self._describe_lead(project["id"], tick)
             project = self.load(job["project"])
+        sketch = self._current_sketch(project, shot, plate, reference)
+        if not sketch:  # the storyboard drawing sets the composition, so it's drawn (or redrawn) first
+            job["label"] = f"Keyframe {index + 1} · drawing the storyboard"
+            sketch = self._draw_sketch(project["id"], shot["id"], tick)
+            project = self.load(job["project"])
+            shot = self._shot(project, shot["id"])
         job["label"] = f"Keyframe {index + 1}"
         seed = take_seed(shot, "keyframe")
         identity = lead_identity(project) if reference else ""
         prompt = director.shot_prompt(shot["action"], shot["shot_size"], look, continuity, has_cast=bool(reference),
                                       camera_move=shot["camera_move"], lead=lead,
                                       world=scene.split(". ")[0].strip().rstrip("."), identity=identity,
-                                      cast=project.get("cast", ""))
+                                      cast=project.get("cast", ""), storyboard=bool(sketch))
+        refs = [self._upload(project["id"], name) for name in (reference, sketch) if name]  # Picture 2, 3 in order
         graph = graphs.coverage_graph(prompt, seed, self._upload(project["id"], plate), prefix, aspect,
-                                      second_reference=self._upload(project["id"], reference) if reference else None)
-        recipe = {"kind": "shot", "world": plate, "lead": reference, "identity": identity,
-                  "steps": ["Qwen-Image-Edit 2511 · the world + the lead · 4 steps"]}
+                                      second_reference=refs[0] if refs else None,
+                                      third_reference=refs[1] if len(refs) > 1 else None)
+        recipe = {"kind": "shot", "world": plate, "lead": reference, "identity": identity, "sketch": sketch,
+                  "action": shot["action"], "shot_size": shot["shot_size"], "camera_move": shot["camera_move"],
+                  "steps": ["Qwen-Image-Edit 2511 · the world + the lead" + (" + the storyboard" if sketch else "") +
+                            " · 4 steps"]}
         files = self.comfy.run(graph, on_tick=tick)
         name = f"key_{shot['id']}_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project["id"]) / name)
@@ -537,6 +635,80 @@ class Studio:
             add_take(current, "keyframe", name, prompt=prompt, seed=seed, recipe=recipe)
             project["film"] = None
             self.save(project)
+
+    # ---------- storyboard drawings ----------
+    def _current_sketch(self, project: dict[str, Any], shot: dict[str, Any], plate: str | None,
+                        reference: str | None) -> str | None:
+        """The shot's storyboard drawing, if it was drawn from today's action, framing, world and lead."""
+        take = next((t for t in shot.get("sketches", []) if t["name"] == shot.get("sketch")), None)
+        return shot.get("sketch") if take and take.get("of") == sketch_of(shot, plate, reference) else None
+
+    def _draw_sketch(self, project_id: str, shot_id: str, tick, job: dict[str, Any] | None = None) -> str:
+        """Qwen-Image-Edit-2511 draws the shot as a pencil storyboard panel from the world plate and the lead."""
+        project = self.load(project_id)
+        index = next(i for i, s in enumerate(project["shots"]) if s["id"] == shot_id)
+        plate = current_plate(project) or self._make_world(project_id, tick)
+        project = self.load(project_id)
+        shot = project["shots"][index]
+        lead = shot.get("lead", True) is not False
+        reference = project.get("reference") if lead else None
+        if job:
+            job["label"] = f"Storyboard {index + 1}"
+        # the panel before sets the style, light and weather, so the storyboard reads as one sequence
+        before = project["shots"][index - 1].get("sketch") if index > 0 else None
+        if before and not (self.path(project_id) / before).exists():
+            before = None
+        # with nobody in it, a panel drawn from the world plate just redraws the plate's own view, so a later
+        # panel without the lead takes the world from the text and only the style from the panel before
+        plain = not reference and bool(before)
+        prompt = director.sketch_prompt(shot["action"], shot["shot_size"], shot["camera_move"], has_cast=bool(reference),
+                                        lead=lead, world=project["scene"].split(". ")[0].strip().rstrip("."),
+                                        previous=bool(before), scene=project["scene"] if plain else "")
+        refs = [self._upload(project_id, name) for name in (reference, before) if name]
+        seed = (shot["seed"] + 7_777 * len(shot.get("sketches", []))) % 2**31
+        files = self.comfy.run(graphs.coverage_graph(
+            prompt, seed, refs[0] if plain else self._upload(project_id, plate),
+            f"open-cinema/{project_id}/sketch_{shot_id}", project["aspect"],
+            second_reference=None if plain else refs[0] if refs else None,
+            third_reference=None if plain else refs[1] if len(refs) > 1 else None, scale=0.5), on_tick=tick)
+        name = f"sketch_{shot_id}_{uuid.uuid4().hex[:6]}.png"
+        self.comfy.download(files[0], self.path(project_id) / name)
+        with self.lock:
+            fresh = self.load(project_id)
+            current = self._shot(fresh, shot_id)
+            current.setdefault("sketches", []).append({"name": name, "prompt": prompt, "seed": seed,
+                                                       "of": sketch_of(shot, plate, reference),
+                                                       "before": before, "plain": plain})
+            current["sketch"] = name
+            self.save(fresh)
+        return name
+
+    def _run_sketch(self, job: dict[str, Any], tick) -> None:
+        project = self.load(job["project"])
+        try:
+            shot = self._shot(project, job["shot"])
+        except KeyError:
+            return  # the shot was deleted while its drawing waited in the queue
+        lead = shot.get("lead", True) is not False
+        plate = current_plate(project)
+        if not job.get("redraw") and plate and self._current_sketch(project, shot, plate,
+                                                                    project.get("reference") if lead else None):
+            return
+        self._draw_sketch(job["project"], job["shot"], tick, job)
+
+    def queue_sketches(self, project_id: str, shot_ids: list[str] | None = None, redraw: bool = False) -> list[dict[str, Any]]:
+        project = self.load(project_id)
+        with self.lock:
+            waiting = {j["shot"] for j in self.jobs if j["project"] == project_id and j["kind"] == "sketch"
+                       and j["state"] in ("queued", "running")}
+        plate, jobs = current_plate(project), []
+        for index, shot in enumerate(project["shots"]):
+            reference = project.get("reference") if shot.get("lead", True) is not False else None
+            drawn = plate and self._current_sketch(project, shot, plate, reference)
+            if (shot_ids is None or shot["id"] in shot_ids) and shot.get("action", "").strip() and \
+                    (redraw or (shot["id"] not in waiting and not drawn)):
+                jobs.append(self.enqueue("sketch", project_id, shot["id"], f"Storyboard {index + 1}", redraw=redraw))
+        return jobs
 
     def _last_frame(self, project_id: str, video: str) -> str:
         name = f"{Path(video).stem}_last.png"
@@ -579,7 +751,10 @@ class Studio:
                                         shot["shot_size"], project.get("continuity", ""),
                                         shot.get("lead", True))
         seed = take_seed(shot, "video")
-        guide = director.CAMERA_PATHS.get(shot["camera_move"])
+        # the zoomed end frame also pins the subject to its first pose, so a shot with someone acting in it
+        # comes out as a zooming still: only empty wide views get the guide
+        guide = (director.CAMERA_PATHS.get(shot["camera_move"])
+                 if shot.get("lead") is False and shot["shot_size"] in director.WIDE_SIZES else None)
         end, end_strength = (self._path_guide(project["id"], start, guide), guide[3]) if guide else (None, 1.0)
         graph = graphs.shot_graph(self._upload(project["id"], start), prompt, seed, project["aspect"],
                                   float(shot["seconds"]), f"open-cinema/{project['id']}/shot_{shot['id']}",
@@ -955,13 +1130,16 @@ class Studio:
         graph = graphs.story_writer_graph(target, project.get("idea", ""), project["title"], project.get("logline", ""),
                                           project["scene"], project["look"] if target != "everything" else "",
                                           project.get("cast", "") if target != "everything" else "",
-                                          seed=random.randrange(1, 2**31))
+                                          seed=random.randrange(1, 2**31),
+                                          beats=director.beat_list_text(project.get("beats") or []),
+                                          count=int(job.get("count", 3)))
         record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
         out = {k: "".join(record["outputs"].get(k, {}).get("text", [""])).strip()
-               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer")}
-        wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity"),
+               for k in ("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer", "beats")}
+        wanted = {"everything": ("title", "logline", "world", "look", "palette", "lead", "continuity", "beats"),
                   "title": ("title",), "logline": ("logline",), "world": ("world",),
-                  "look": ("look", "palette"), "trailer": ("trailer",)}[target]
+                  "look": ("look", "palette"), "trailer": ("trailer",), "beats": ("beats",),
+                  "more beats": ("beats",)}[target]
         if not any(out[k] for k in wanted):
             raise RuntimeError("The writer returned nothing usable; try again")
         with self.lock:
@@ -977,6 +1155,11 @@ class Studio:
                     fresh["palette"] = {"bg": bg, "ink": ink, "accent": accent, "glow": glow}
                 elif key == "look":
                     fresh["look"] = value
+                elif key == "beats":
+                    new = [b.strip() for b in value.splitlines() if b.strip()]
+                    if target == "more beats":  # continuing: on the end, never more than were asked for
+                        new = (fresh.get("beats") or []) + new[:int(job.get("count", 3))]
+                    fresh["beats"] = new
                 elif key == "trailer":
                     motion = fresh.setdefault("motion", {}) or {}
                     motion.setdefault("trailer", {})["lines"] = value
@@ -990,45 +1173,115 @@ class Studio:
             repaint = target in ("everything", "world", "look") and not current_plate(fresh) and not any(
                 j["project"] == fresh["id"] and j["kind"] == "world" and j["state"] in ("queued", "running")
                 for j in self.jobs)
+            storyboard = target == "everything" and fresh.get("beats") and all(is_blank(x) for x in fresh["shots"])
+            # new beats get their shots (and, with auto-render, their videos) like everything Gemma writes
+            fill = target == "more beats" and fresh.get("auto_render", True)
         if recast:  # the page is complete only with the lead's face; never replaces an uploaded photo
             self.enqueue("cast", job["project"], None, "Casting the new lead")
         if repaint:  # a new world needs its own plate before any shot is made in it
-            self.enqueue("world", job["project"], None, "Painting the world")
+            self.enqueue("world", job["project"], None, "Painting the world", auto=True)
+        if fill:
+            self.enqueue("write_shots", job["project"], None, "Writing shots for the new beats", mode="board",
+                         count=int(job.get("count", 3)))
+        if storyboard:  # a new story on an empty board: write its shots, which then get drawn
+            self.enqueue("write_shots", job["project"], None, "Writing the shots", mode="board",
+                         count=len(fresh["beats"]))
 
     # ---------- AI shot writer ----------
     def _run_write_shots(self, job: dict[str, Any], tick) -> None:
-        """Gemma 4 E4B writes the storyboard ("board"), the shot after the last ("next") or one shot again
-        ("rewrite"). Shots that already have a frame or a video are never replaced."""
+        """Gemma 4 E4B writes shots from the story beats: "board" fills in the beats no kept shot tells yet (or,
+        without beats, starts or continues the film), "next" adds the shot after the last, "rewrite" writes one shot
+        again. Kept shots are the ones with a frame and the ones you wrote or edited; Gemma's own unmade drafts
+        are replaced by a new board, so writing again gives a new draft instead of piling up."""
         project = self.load(job["project"])
         mode, count = job.get("mode", "board"), int(job.get("count", 5))
-        shots = project["shots"]
+        shots, beats = project["shots"], project.get("beats") or []
         index = next((n for n, s in enumerate(shots) if s["id"] == job.get("shot")), len(shots) - 1)
-        made = [s for s in shots if s.get("keyframe") or s.get("video") or (s.get("takes") or {}).get("keyframe")]
-        blank = [s for s in shots if s not in made and not s.get("action", "").strip()]
-        # the board replaces blank shots; it follows any shot you have written or rendered
-        context = [s for s in shots if s not in blank] if mode == "board" else shots
-        graph = graphs.shot_writer_graph(mode, project["title"], project.get("logline", ""), project["scene"],
-                                         project["look"], project.get("cast", ""), project.get("continuity", ""),
-                                         director.shot_list_text(context), index + 1, count,
-                                         seed=random.randrange(1, 2**31))
+        kept = [s for s in shots if is_made(s) or (s.get("action", "").strip() and not s.get("ai"))]
+        context = kept if mode == "board" else shots
+        missing = [n + 1 for n in range(len(beats)) if not any(s.get("beat") == n + 1 for s in kept)]
+        # past the end of the story, every new shot brings a new beat with it, so the story grows with the film
+        write = ", ".join(map(str, missing)) if missing else "new" if beats and kept else ""
+        if mode == "next" and beats:
+            told = {s.get("beat") for s in shots}
+            last = max((s["beat"] for s in shots if s.get("beat")), default=0)
+            untold = [b for b in range(1, len(beats) + 1) if b not in told]
+            write = str(next((b for b in untold if b > last), untold[0] if untold else "new"))
+        graph = graphs.shot_writer_graph(
+            mode, project["title"], project.get("logline", ""), project["scene"], project["look"],
+            project.get("cast", ""), project.get("continuity", ""), director.shot_list_text(context), index + 1,
+            len(missing) if missing else count, seed=random.randrange(1, 2**31), beats=director.beat_list_text(beats),
+            write_beats=write)
         record = self.comfy.wait(self.comfy.submit(graph), on_tick=tick, timeout=900)
+        if mode == "beat":
+            return self._place_in_story(job, record)
         written = json.loads("".join(record["outputs"].get("shots", {}).get("text", ["[]"])) or "[]")
         if not written:
-            raise RuntimeError("The writer returned no shots; try again")
+            raise RuntimeError("Gemma's reply had no shots in it")
+        for shot in written:  # a beat that doesn't exist is no beat, unless the shot brought it
+            if not (isinstance(shot.get("beat"), int) and 1 <= shot["beat"] <= len(beats)):
+                shot["beat"] = None
+            if write != "new" or mode == "rewrite":
+                shot.pop("new_beat", None)
         with self.lock:
             fresh = self.load(job["project"])
-            fresh["shots_history"] = (fresh.get("shots_history") or [])[-9:] + [copy.deepcopy(fresh["shots"])]
+            fresh["shots_history"] = (fresh.get("shots_history") or [])[-9:] + [
+                {"shots": copy.deepcopy(fresh["shots"]), "beats": list(fresh.get("beats") or [])}]
+            fresh["shots_rev"] = fresh.get("shots_rev", 0) + 1
+            for shot in written:  # new beats go on the end of the story, in order
+                text = shot.pop("new_beat", None)
+                if text:
+                    fresh.setdefault("beats", []).append(text)
+                    shot["beat"] = len(fresh["beats"])
             if mode == "rewrite":
                 target = self._shot(fresh, job["shot"])
-                keep = {"transition": target["transition"]} if index == 0 else {}
-                target.update({k: v for k, v in written[0].items() if k in director.SHOT_FIELDS}, **keep)
-            elif mode == "next":
-                fresh["shots"].append(new_shot(takes={"keyframe": [], "video": []}, **written[0]))
+                update = {k: v for k, v in written[0].items() if k in director.SHOT_FIELDS}
+                if index == 0:
+                    update.pop("transition", None)
+                if update.get("beat") is None:
+                    update.pop("beat", None)
+                target.update(update, ai=True)
+                new = [target]
             else:
-                ids = {s["id"] for s in blank}
-                kept = [s for s in fresh["shots"] if s["id"] not in ids]
-                fresh["shots"] = kept + [new_shot(takes={"keyframe": [], "video": []}, **w) for w in written[:count]]
+                new = [new_shot(takes={"keyframe": [], "video": []}, ai=True, **w)
+                       for w in (written[:1] if mode == "next" else written[:len(missing) or count])]
+                if mode == "next":
+                    fresh["shots"].append(new[0])
+                else:
+                    keep = {s["id"] for s in kept}
+                    board = [s for s in fresh["shots"] if s["id"] in keep or (is_made(s) or (
+                        s.get("action", "").strip() and not s.get("ai")))]  # also anything edited meanwhile
+                    for shot in new:  # by beat: before the first kept shot of a later beat, else at the end
+                        at = next((n for n, s in enumerate(board) if s["id"] in keep and s.get("beat")
+                                   and shot.get("beat") and s["beat"] > shot["beat"]), len(board))
+                        board.insert(at, shot)
+                    fresh["shots"] = board
             fresh["shots"][0]["transition"] = "cut"
+            self.save(fresh)
+        self.queue_sketches(job["project"], [s["id"] for s in new], redraw=mode == "rewrite")
+        if fresh.get("auto_render", True):  # then frames, videos and the cut; frames a rewrite outdated are redone
+            self.queue_film(job["project"])
+
+    def _place_in_story(self, job: dict[str, Any], record: dict[str, Any]) -> None:
+        """✨ Add to story: Gemma's beat for a shot that isn't in the story goes in right after the beat of the
+        nearest shot before it, and the beats after it move down one."""
+        text = next(iter(director.parse_new_beats("".join(record["outputs"].get("new_beats", {}).get("text", [""])))
+                         ), "") or "".join(record["outputs"].get("new_beats", {}).get("text", [""])).strip()
+        if not text:
+            raise RuntimeError("Gemma's reply had no beat in it")
+        with self.lock:
+            fresh = self.load(job["project"])
+            fresh["shots_history"] = (fresh.get("shots_history") or [])[-9:] + [
+                {"shots": copy.deepcopy(fresh["shots"]), "beats": list(fresh.get("beats") or [])}]
+            fresh["shots_rev"] = fresh.get("shots_rev", 0) + 1
+            index = next(n for n, s in enumerate(fresh["shots"]) if s["id"] == job["shot"])
+            after = next((s["beat"] for s in reversed(fresh["shots"][:index]) if s.get("beat")), 0)
+            beats = fresh.setdefault("beats", [])
+            beats.insert(after, text)
+            for s in fresh["shots"]:
+                if s.get("beat") and s["beat"] > after:
+                    s["beat"] += 1
+            fresh["shots"][index]["beat"] = after + 1
             self.save(fresh)
 
     def undo_shots(self, project_id: str) -> dict[str, Any]:
@@ -1038,11 +1291,14 @@ class Studio:
             if project.get("shots_history"):
                 current = {s["id"]: s for s in project["shots"]}
                 previous = project["shots_history"].pop()
+                if isinstance(previous, dict):  # the beats a write added go too
+                    project["beats"], previous = previous["beats"], previous["shots"]
                 for shot in previous:
                     if shot["id"] in current:
-                        for key in ("keyframe", "video", "takes"):
+                        for key in ("keyframe", "video", "takes", "sketch", "sketches"):
                             shot[key] = current[shot["id"]].get(key, shot.get(key))
                 project["shots"] = previous
+                project["shots_rev"] = project.get("shots_rev", 0) + 1
             return self.save(project)
 
     def _run_motion_preview(self, job: dict[str, Any], tick) -> None:
