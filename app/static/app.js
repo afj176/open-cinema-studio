@@ -954,6 +954,52 @@ function posterFrame() {  // the film's opening image, shown before play
   return frame ? media(frame) : "";
 }
 
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;  // as the player shows it
+
+function filmChanges() {  // what changed since the cut was made ([] when it's up to date, or when we can't tell)
+  const was = project.film_of, now = project.film_now;
+  if (!project.film || !was || !now) return [];
+  const changes = [], before = new Map(was.shots.map(([id, video, tr], i) => [id, { video, tr, i }]));
+  const ids = now.shots.map(s => s[0]);
+  const added = ids.filter(id => !before.has(id)).length, removed = was.shots.filter(s => !ids.includes(s[0])).length;
+  if (added) changes.push(`${added} shot${added > 1 ? "s" : ""} added`);
+  if (removed) changes.push(`${removed} shot${removed > 1 ? "s" : ""} removed`);
+  const kept = was.shots.map(s => s[0]).filter(id => ids.includes(id));
+  if (JSON.stringify(kept) !== JSON.stringify(ids.filter(id => before.has(id)))) changes.push("shots reordered");
+  const redone = now.shots.map(([id, video], i) => before.has(id) && before.get(id).video !== video ? i + 1 : 0).filter(Boolean);
+  if (redone.length) changes.push(`shot${redone.length > 1 ? "s" : ""} ${redone.join(", ")} re-rendered`);
+  if (now.shots.some(([id, , tr]) => before.has(id) && before.get(id).tr !== tr)) changes.push("transitions changed");
+  if (JSON.stringify([was.titles, was.title, was.look, was.palette, was.title_shot]) !==
+      JSON.stringify([now.titles, now.title, now.look, now.palette, now.title_shot])) changes.push("titles changed");
+  if (was.finish !== now.finish) changes.push("film finish changed");
+  return changes;
+}
+
+let autoCutFor = null, autoCutTimer = null;
+function autoRecut(changes) {  // with auto-render on, an out-of-date cut re-cuts itself once there's nothing to wait for
+  const ready = changes.length && project.auto_render !== false && project.shots.every(s => s.video && !s.paused)
+    && !busyFor(() => true);
+  const sig = JSON.stringify(project.film_now);
+  if (!ready || autoCutFor === sig) { clearTimeout(autoCutTimer); autoCutTimer = null; return; }
+  if (autoCutTimer) return;
+  autoCutTimer = setTimeout(async () => {  // wait for the edits to settle before cutting
+    autoCutTimer = null;
+    jobs = await api("/api/jobs");  // a fresh look: another action may have just queued a cut
+    if (JSON.stringify(project.film_now) !== sig || busyFor(() => true)) return;
+    autoCutFor = sig;
+    await post(`/api/projects/${project.id}/stitch`); poll();
+  }, 2500);
+}
+
+function pausedNote() {
+  const paused = project.shots.map((s, i) => s.paused ? i + 1 : 0).filter(Boolean);
+  return paused.length ? `Shot${paused.length > 1 ? "s" : ""} ${paused.join(", ")} ${paused.length > 1 ? "are" : "is"} paused` : "";
+}
+
+function resumeAll() {
+  project.shots.filter(s => s.paused).forEach(s => pauseShot(s, false));
+}
+
 function renderViewer() {
   $$("#viewerTabs button").forEach(b => { b.classList.toggle("on", b.dataset.view === view); b.disabled = b.dataset.view === "trailer" && !project.trailer; });
   const src = view === "trailer" ? project.trailer : project.film;
@@ -964,14 +1010,21 @@ function renderViewer() {
   $("#viewerEmpty").hidden = !!src;
   const total = project.shots.reduce((s, x) => s + Number(x.seconds || 0), 0);
   const done = project.shots.filter(s => s.video).length;
-  const length = v.duration > 0 && src ? `${Math.round(v.duration)}s` : `about ${total}s`;  // the cut adds titles and credits
+  const length = v.duration > 0 && src ? fmtTime(v.duration) : `about ${fmtTime(total)}`;  // the cut adds titles and credits
   $("#viewerInfo").textContent = src ? (view === "trailer" ? `Trailer · ${length} · score composed by LTX`
     : `${project.shots.length} shot${project.shots.length === 1 ? "" : "s"} · ${length}`) : `${done}/${project.shots.length} shots rendered`;
-  const cutting = busyFor(j => j.kind === "stitch");
-  $("#stitch").disabled = !!cutting;
+  const cutting = busyFor(j => j.kind === "stitch"), changes = view === "film" ? filmChanges() : [];
+  const paused = pausedNote(), stale = $("#filmStale");
+  stale.hidden = !(changes.length || paused) || !!cutting;
+  stale.textContent = paused ? `${paused}, so the film can't be cut` : `Out of date: ${changes.join(", ")}`;
+  const missing = done < project.shots.length;
+  const known = !!project.film_of;  // a cut from before cuts remembered their inputs: we can't tell, so offer it
+  $("#stitch").disabled = !!cutting || (!!project.film && known && !changes.length && !missing && !paused);
   $("#stitch").textContent = cutting ? (cutting.state === "running" ? "Cutting…" : "Queued…")
-    : done < project.shots.length ? "Render & cut" : project.film ? "Re-cut film" : "Cut film";
-  $("#stitch").title = done < project.shots.length ? "Renders the missing shots, then cuts the film" : "";
+    : paused ? "▶ Resume & cut" : missing ? "Render & cut" : !project.film ? "Cut film" : changes.length || !known ? "Re-cut film" : "Up to date";
+  $("#stitch").title = paused ? "Resume the paused shots; the film is cut when they're done"
+    : missing ? "Renders the missing shots, then cuts the film" : project.film && !changes.length ? "Nothing changed since this cut" : "";
+  autoRecut(changes);
 }
 
 function renderEditPanel() {
@@ -1048,8 +1101,21 @@ let dragId = null;
 function renderTimeline() {
   const m = motionState(), shots = project.shots;
   const inworld = m.title.on && m.title.style === "inworld" && project.title_shot?.video;
-  const pic = $("#pictureTrack"), titles = $("#titlesTrack"), sound = $("#soundTrack");
-  pic.innerHTML = ""; titles.innerHTML = ""; sound.innerHTML = `<div class="wave"></div>`;
+  const pic = $("#pictureTrack"), titles = $("#titlesTrack"), sound = $("#soundTrack"), story = $("#storyTrack");
+  pic.innerHTML = ""; titles.innerHTML = ""; story.innerHTML = "";
+  // the cut's real sound once there is one; it spans the whole film, titles and credits included
+  sound.innerHTML = project.film_wave ? `<div class="wave real" style="background-image:url('${media(project.film_wave)}')" title="The film's sound"></div>`
+    : `<div class="wave" title="Cut the film to see its sound"></div>`;
+  if (project.film && !project.film_wave && !renderTimeline.asked) {
+    renderTimeline.asked = true;
+    post(`/api/projects/${project.id}/waveform`).then(fresh => { project.film_wave = fresh.film_wave; if (fresh.film_wave) renderTimeline(); });
+  }
+  const band = (grow, joints, text, cls) => {  // a story beat spanning its shots (and the joints between them)
+    const el = document.createElement("div");
+    el.className = "band " + cls; el.style.flexGrow = grow; el.style.flexBasis = `${joints * 24}px`;
+    el.textContent = text; el.title = text;
+    story.appendChild(el);
+  };
   const clip = (grow, html, cls, bg) => {
     const el = document.createElement("div");
     el.className = "clip " + cls; el.style.flexGrow = grow; el.innerHTML = html;
@@ -1059,13 +1125,23 @@ function renderTimeline() {
   const layer = (grow, text, on) => {
     const el = document.createElement("div");
     el.className = "layer " + (text ? (on ? "on" : "off") : "gap"); el.style.flexGrow = grow; el.textContent = text || ".";
+    if (text) el.title = text;
     titles.appendChild(el);
   };
   if (inworld) {
     pic.appendChild(clip(4, `<b>TITLE</b><small>in-world · 4s</small>`, "", media(project.title_shot.keyframe)));
     pic.appendChild(Object.assign(document.createElement("button"), { className: "joint dissolve", textContent: JOINT.dissolve, title: "Dissolve", disabled: true }));
     layer(4, "IN-WORLD TITLE", true);
+    band(4, 0, "", "gap");
   }
+  let run = null;  // consecutive shots telling the same beat share one band
+  const endRun = () => { if (run) band(run.secs, run.n - 1, run.beat ? `${run.beat} · ${beatsOf()[run.beat - 1]}` : "", run.beat ? "on" : "gap"); };
+  shots.forEach(shot => {
+    const beat = shot.beat && shot.beat <= beatsOf().length ? shot.beat : 0;
+    if (run && run.beat === beat && beat) { run.secs += Number(shot.seconds); run.n++; return; }
+    endRun(); run = { beat, secs: Number(shot.seconds), n: 1 };
+  });
+  endRun();
   shots.forEach((shot, i) => {
     if (i > 0) {
       const t = shot.transition || "cut";
@@ -1075,8 +1151,9 @@ function renderTimeline() {
       pic.appendChild(j);
     }
     const c = clip(shot.seconds, `<b>${String(i + 1).padStart(2, "0")}</b><small>${escapeHtml(shot.camera_move)} · ${shot.seconds}s</small>`,
-      shot.video ? "" : "pending", shot.keyframe ? media(shot.keyframe) : "");
-    c.draggable = true; c.dataset.id = shot.id; c.title = "Drag to reorder · click to open";
+      (shot.video ? "" : "pending") + (shot.paused ? " paused" : ""), shot.keyframe ? media(shot.keyframe) : "");
+    c.draggable = true; c.dataset.id = shot.id;
+    c.title = `Shot ${i + 1} · ${shot.camera_move} · ${shot.seconds}s${shot.paused ? " · paused" : shot.video ? "" : " · not rendered"}\nDrag to reorder · click to open`;
     c.ondragstart = e => { dragId = shot.id; c.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; };
     c.ondragend = () => { dragId = null; c.classList.remove("dragging"); $$(".clip.drop-before").forEach(x => x.classList.remove("drop-before")); };
     c.ondragover = e => { if (dragId && dragId !== shot.id) { e.preventDefault(); c.classList.add("drop-before"); } };
@@ -1093,6 +1170,7 @@ function renderTimeline() {
     const cards = (m.credits.lines || project.motion_defaults?.credits || "").split("\n").filter(Boolean).length;
     pic.appendChild(clip(3, `<b>CREDITS</b><small>${cards} card${cards === 1 ? "" : "s"}</small>`, ""));
     layer(3, "CREDITS", true);
+    band(3, 0, "", "gap");
   }
 }
 
@@ -1173,7 +1251,7 @@ function mergeServer(fresh, rerender) {
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed,
     sketch: s.sketch, sketches: s.sketches, paused: s.paused }));
-  for (const k of ["film", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
+  for (const k of ["film", "film_of", "film_now", "film_wave", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
     "lead_identity", "lead_identity_of", "world"]) project[k] = fresh[k];
   if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
   project.story_history = fresh.story_history;
@@ -1244,7 +1322,13 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#projectMenu").hidden = true; $("#queue").hidden = true; } });
 $("#cancelAll").onclick = () => post("/api/cancel").then(poll);
-$("#renderFilm").onclick = async () => { await flush(); await post(`/api/projects/${project.id}/render`); toast("Rendering everything that's missing"); poll(); };
+$("#renderFilm").onclick = async () => {
+  await flush(); await post(`/api/projects/${project.id}/render`);
+  const paused = pausedNote();  // paused shots are skipped, and the film can't be cut without them
+  if (paused) toast(`Rendering the rest. ${paused}, so the film won't be cut until you resume`, "Resume", resumeAll);
+  else toast("Rendering everything that's missing");
+  poll();
+};
 
 for (const id of ["title", "idea", "logline", "scene", "continuity", "cast"]) $("#" + id).oninput = e => {
   project[id] = e.target.value;
@@ -1300,6 +1384,7 @@ $("#viewer").onloadedmetadata = () => renderViewer();
 $("#screenVideo").onloadedmetadata = () => renderScreen();
 $("#stitch").onclick = async () => {
   await flush();
+  if (pausedNote()) { resumeAll(); toast("Resuming the paused shots; the film is cut when they're done"); return; }
   const complete = project.shots.every(s => s.video);  // missing shots render first, then the cut
   await post(`/api/projects/${project.id}/${complete ? "stitch" : "render"}`);
   if (!complete) toast("Rendering the missing shots, then cutting");

@@ -179,7 +179,7 @@
         </div>
         <div class="viewer-frame"><video id="viewer" controls playsinline></video><div class="viewer-empty" id="viewerEmpty">Render the shots, then cut the film</div></div>
         <div class="viewer-actions">
-          <span class="hint" id="viewerInfo"></span>
+          <span class="viewer-status"><span class="hint" id="viewerInfo"></span><span class="film-stale" id="filmStale" hidden></span></span>
           <div class="row-actions">
             <label class="switch"><input type="checkbox" id="finish"><span></span>Film finish</label>
             <button id="stitch" class="primary">Cut film</button>
@@ -187,6 +187,7 @@
         </div>
       </div>
         <div class="timeline glass">
+          <div class="track-label">Story</div><div class="track story-track" id="storyTrack"></div>
           <div class="track-label">Titles</div><div class="track titles-track" id="titlesTrack"></div>
           <div class="track-label">Picture</div><div class="track picture-track" id="pictureTrack"></div>
           <div class="track-label">Sound</div><div class="track sound-track" id="soundTrack"></div>

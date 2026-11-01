@@ -90,7 +90,7 @@ class Comfy:
         record = self.wait(self.submit(graph), **kwargs)
         files: list[dict[str, Any]] = []
         for output in record.get("outputs", {}).values():
-            for key in ("images", "videos", "gifs", "video"):
+            for key in ("images", "videos", "gifs", "video", "audio"):
                 # loaders (e.g. LoadVideo) report their input file as a preview; only saved outputs count
                 files.extend(item for item in output.get(key, [])
                              if isinstance(item, dict) and item.get("type", "output") == "output")

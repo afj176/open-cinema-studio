@@ -292,6 +292,8 @@ def story_brief(target: str, idea: str = "", title: str = "", logline: str = "",
     if target != "everything":  # keep the field being rewritten out of the context so it is truly new
         skip = {"title": "Title", "logline": "Logline", "world": "World", "look": "Look"}.get(target)
         known = [(k, v) for k, v in known if k != skip]
+    if target == "trailer" and beats.strip():  # trailer cards tease the actual story
+        known.append(("The story, beat by beat", "\n" + beats))
     context = "\n".join(f"{k}: {v}" for k, v in known if v and v.strip())
     lines = "\n".join(_STORY_LINES[label].format(looks=", ".join(LOOKS)) for label in wants)
     if target == "more beats":

@@ -2,7 +2,7 @@
   "1": {
     "class_type": "LoadVideo",
     "inputs": {
-      "file": "film.mp4"
+      "file": "oc_example_film.mp4"
     }
   },
   "2": {

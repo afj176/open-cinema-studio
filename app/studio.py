@@ -62,8 +62,17 @@ SIDE_JOBS = {"write_shots", "write_story", "write_lead", "sketch", "motion_previ
 
 def default_credits(project: dict[str, Any]) -> str:
     return "\n".join([project["title"],
-                      "Made with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5 · SeedVR2",
+                      "Made with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5 · SeedVR2 · Gemma 4",
                       "Made in | Open Cinema Studio"])
+
+
+def film_inputs(project: dict[str, Any]) -> dict[str, Any]:
+    """Everything the final cut is made from. The cut keeps a copy, so the Edit page can say what changed since."""
+    settings = motion_settings(project)
+    return {"shots": [[s["id"], s.get("video"), s.get("transition", "cut")] for s in project["shots"]],
+            "titles": {k: settings[k] for k in ("title", "stamps", "credits")},
+            "title": project["title"], "look": project["look"], "palette": palette_string(project),
+            "title_shot": (project.get("title_shot") or {}).get("video"), "finish": bool(project.get("finish"))}
 
 
 def default_trailer(project: dict[str, Any]) -> str:
@@ -273,7 +282,6 @@ class Studio:
         with self.lock:
             project = self.load(project_id)
             select_take(self._shot(project, shot_id), kind, name)
-            project["film"] = None
             return self.save(project)
 
     def save(self, project: dict[str, Any]) -> dict[str, Any]:
@@ -281,9 +289,10 @@ class Studio:
             folder = self.path(project["id"])
             folder.mkdir(parents=True, exist_ok=True)
             temporary = folder / "project.json.tmp"
+            project.pop("film_now", None)  # computed for the web app, never stored
             temporary.write_text(json.dumps(project, indent=2), encoding="utf-8")
             temporary.replace(folder / "project.json")
-        return project
+        return {**project, "film_now": film_inputs(project)}
 
     def list_projects(self) -> list[dict[str, Any]]:
         items = []
@@ -571,7 +580,6 @@ class Studio:
             unit.setdefault("takes", []).append({"name": name, "prompt": prompt, "seed": seed + attempt,
                                                  "of": world_of(fresh), "empty": empty})
             unit["plate"] = name
-            fresh["film"] = None
             self.save(fresh)
         return name
 
@@ -586,7 +594,7 @@ class Studio:
             unit = project.get("world") or {}
             if not any(t["name"] == name for t in unit.get("takes", [])):
                 raise KeyError(f"no world plate {name}")
-            unit["plate"], project["film"] = name, None
+            unit["plate"] = name
             return self.save(project)
 
     def _run_keyframe(self, job: dict[str, Any], tick) -> None:
@@ -633,7 +641,6 @@ class Studio:
             project = self.load(job["project"])
             current = self._shot(project, shot["id"])
             add_take(current, "keyframe", name, prompt=prompt, seed=seed, recipe=recipe)
-            project["film"] = None
             self.save(project)
 
     # ---------- storyboard drawings ----------
@@ -766,7 +773,6 @@ class Studio:
             project = self.load(job["project"])
             current = self._shot(project, shot["id"])
             add_take(current, "video", name, prompt=prompt, seed=seed, keyframe=start)
-            project["film"] = None
             self.save(project)
 
     def _run_master(self, job: dict[str, Any], tick) -> None:
@@ -817,12 +823,33 @@ class Studio:
         folder = self.path(project["id"])
         name = f"film_{uuid.uuid4().hex[:6]}.mp4"
         _, _, width, height = graphs.ASPECTS[project["aspect"]]
+        cut_from = film_inputs(project)
         self._assemble(project, [folder / v for v in videos], name, width, height, job, tick,
                        title_clip=self._title_clip(project))
+        wave = self._waveform(project["id"], name)
         with self.lock:
             project = self.load(job["project"])
-            project["film"] = name
+            project["film"], project["film_of"], project["film_wave"] = name, cut_from, wave
             self.save(project)
+
+    def _waveform(self, project_id: str, film: str) -> str | None:
+        """The cut's sound as a picture, for the Sound track on the Edit page."""
+        name = f"{Path(film).stem}_wave.png"
+        if not (self.path(project_id) / name).is_file():
+            result = subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", str(self.path(project_id) / film),
+                                     "-filter_complex", "aformat=channel_layouts=mono,showwavespic=s=2400x120:colors=white",
+                                     "-frames:v", "1", str(self.path(project_id) / name)])
+            if result.returncode:
+                return None
+        return name
+
+    def waveform(self, project_id: str) -> dict[str, Any]:
+        """Draw the waveform of a cut made before the Sound track was real."""
+        with self.lock:
+            project = self.load(project_id)
+            if project.get("film") and not project.get("film_wave"):
+                project["film_wave"] = self._waveform(project_id, project["film"])
+            return self.save(project)
 
     # ---------- titles & motion ----------
     def _motion_clip(self, project: dict[str, Any], key: list[Any], graph_for, tick,
@@ -940,7 +967,6 @@ class Studio:
         with self.lock:
             project = self.load(project_id)
             select_take(project.setdefault("title_shot", {}), kind, name)
-            project["film"] = None
             return self.save(project)
 
     def _run_title_frame(self, job: dict[str, Any], tick) -> None:
@@ -961,7 +987,6 @@ class Studio:
             unit.setdefault("seed", seed)
             add_take(unit, "keyframe", name, prompt=prompt, seed=seed,
                      recipe={"kind": "title", "world": source})
-            project["film"] = None
             self.save(project)
 
     def _run_title_video(self, job: dict[str, Any], tick) -> None:
@@ -983,7 +1008,6 @@ class Studio:
         with self.lock:
             project = self.load(job["project"])
             add_take(project.setdefault("title_shot", {}), "video", name, prompt=prompt, seed=seed, keyframe=start)
-            project["film"] = None
             self.save(project)
 
     def _score(self, project: dict[str, Any], seconds: float, tick, reroll: bool = False) -> Path:
@@ -1002,7 +1026,7 @@ class Studio:
         files = self.comfy.run(graphs.score_graph(self._upload(project["id"], start),
                                                   director.score_prompt(project["look"], project["title"]), seed,
                                                   seconds, f"open-cinema/{project['id']}/score"), on_tick=tick)
-        name = f"score_{uuid.uuid4().hex[:6]}.mp4"
+        name = f"score_{uuid.uuid4().hex[:6]}{Path(files[0]['filename']).suffix or '.flac'}"
         self.comfy.download(files[0], folder / name)
         with self.lock:
             fresh = self.load(project["id"])
@@ -1018,8 +1042,14 @@ class Studio:
             raise RuntimeError("Every shot needs a rendered video before cutting a trailer")
         folder, settings = self.path(project["id"]), motion_settings(project)
         _, _, width, height = graphs.ASPECTS[project["aspect"]]
+        if not settings["trailer"]["lines"].strip() and (project.get("beats") or project.get("logline")):
+            job["label"] = "Trailer · writing the cards"  # from the story, rather than a generic "A film in N shots"
+            self._run_write_story({"project": project["id"], "target": "trailer"}, tick)
+            project = self.load(job["project"])
+            settings = motion_settings(project)
         lines = [l.strip() for l in (settings["trailer"]["lines"] or default_trailer(project)).splitlines() if l.strip()]
-        if lines and lines[-1].lower() == project["title"].strip().lower():
+        bare = lambda text: "".join(ch for ch in text.lower() if ch.isalnum())  # noqa: E731
+        if lines and bare(lines[-1]) == bare(project["title"]):
             lines.pop()  # the title card closes the trailer anyway
         card_len, clip_len, title_len = 0.9, 1.5, 2.6
         count = len(project["shots"])

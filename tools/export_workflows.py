@@ -68,20 +68,23 @@ director_shot["40"] = graphs.node(
     continuity=CONTINUITY, cast=CAST)
 director_shot["9"]["inputs"]["text"] = ["40", 2]
 examples["05_director_node_keyframe_to_keyframe.json"] = director_shot
-examples["06_master_1080p_seedvr2.json"] = graphs.master_graph("film.mp4", "open-cinema/master")
+examples["06_master_1080p_seedvr2.json"] = graphs.master_graph("oc_example_film.mp4", "open-cinema/master")
 examples["07_motion_title_over_shot.json"] = graphs.motion_overlay_graph(
-    "shot.mp4", "open-cinema/title", "OpenCinemaTitleOverlay", title="The Colossus Pass",
-    subtitle="A film made with open models", look="70mm epic", start=0.5, hold=3.2)
+    "oc_example_shot.mp4", "open-cinema/title", "OpenCinemaTitleOverlay", title="Glass Eye",
+    subtitle="A film made with open models", look=LOOK, start=0.5, hold=3.2)
 examples["08_motion_kinetic_cards.json"] = graphs.cards_graph(
-    "Two stone kings.\nOne storm.\nOne last beacon.\nMade with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5",
-    "70mm epic", 1280, 704, "open-cinema/cards", 1.1)
-examples["10_ai_lead_writer_gemma4.json"] = graphs.lead_writer_graph(
-    "write", "The Colossus Pass", SCENE, "70mm epic", seed=7)
+    "A city of glass.\nA wind no one can see.\nOne lens to find it.\n"
+    "Made with open models | HiDream-O1 · Qwen-Image-Edit · LTX 2.5 · SeedVR2 · Gemma 4", LOOK, 1280, 704,
+    "open-cinema/cards", 1.1)
+examples["10_ai_lead_writer_gemma4.json"] = graphs.lead_writer_graph("write", "Glass Eye", SCENE, LOOK, seed=7)
 examples["11_ai_story_writer_gemma4.json"] = graphs.story_writer_graph(
-    "everything", "two stone kings guard the last mountain pass before a storm", "", "", "", "", "", seed=7)
+    "everything", "a young glassblower in a floating desert city makes a lens that can see the wind", "", "", "", "",
+    "", seed=7)
 examples["09_inworld_title_frame.json"] = graphs.title_frame_graph(
-    director.title_frame_prompt("The Colossus Pass", director.TITLE_MATERIALS["70mm epic"]), 909,
-    "oc_world_plate.jpg", "open-cinema/inworld_title", "The Colossus Pass", "70mm epic")
+    director.title_frame_prompt("Glass Eye", director.TITLE_MATERIALS.get(LOOK, "")), 909,
+    "oc_world_plate.jpg", "open-cinema/inworld_title", "Glass Eye", LOOK)
+examples["15_trailer_score_ltx25.json"] = graphs.score_graph(
+    "oc_title_card.jpg", director.score_prompt(LOOK, "Glass Eye"), 1515, 18, "open-cinema/trailer_score")
 examples["12_world_plate_people_check_gemma4.json"] = graphs.people_check_graph("oc_world_plate.jpg", director.PEOPLE_CHECK)
 BEATS = ["The glass city drifts above the dunes at dawn, steam vents sighing",
          "The artisan's lens cracks in the furnace heat",
@@ -141,6 +144,16 @@ ANNOTATE = {
              "(place, light, grade), **Picture 2** is the lead (face, hair, wardrobe) and **Picture 3** is the "
              "shot's storyboard drawing (composition and pose), plus the shot's action and camera.\n\nNo picture "
              "ever shows a second face, so the lead stays one person across the film."),
+    "06_master_1080p_seedvr2.json": dict(
+        note="## 6 · The 1080p master\nSeedVR2 upscales the cut to 1080p. The example input is the first seconds "
+             "of Glass Eye (`oc_example_film.mp4`)."),
+    "07_motion_title_over_shot.json": dict(
+        note="## 5 · The main title\nThe kinetic title is drawn over the opening shot in the film's look and "
+             "colours (example: Glass Eye's shot 2, `oc_example_shot.mp4`)."),
+    "15_trailer_score_ltx25.json": dict(
+        note="## 7 · The trailer score\nLTX 2.5 renders one long, small shot from the film's dark title card "
+             "(`oc_title_card.jpg`): with nothing moving in frame, its audio comes out as music. The studio keeps "
+             "only the sound and cuts the trailer's cards and shots on its hits."),
     "03_shot_ltx25_i2v_audio.json": dict(
         note="## 4 · Motion\nLTX 2.5 animates a frame into a shot with sound, in two stages (half resolution, then "
              "a x2 latent upscale)."),
@@ -154,8 +167,8 @@ def install_into_runtime() -> None:
         return
     inputs.mkdir(exist_ok=True)
     sidebar.mkdir(parents=True, exist_ok=True)
-    for image in (OUT / "inputs").glob("*.jpg"):
-        shutil.copy2(image, inputs / image.name)
+    for example in [*(OUT / "inputs").glob("*.jpg"), *(OUT / "inputs").glob("*.mp4")]:
+        shutil.copy2(example, inputs / example.name)
     for flow in OUT.glob("*.json"):
         shutil.copy2(flow, sidebar / flow.name)
     print("installed into", sidebar)

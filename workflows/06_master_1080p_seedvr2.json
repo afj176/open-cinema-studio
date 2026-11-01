@@ -1,12 +1,36 @@
 {
- "last_node_id": 15,
+ "last_node_id": 16,
  "last_link_id": 22,
  "nodes": [
+  {
+   "id": 16,
+   "type": "MarkdownNote",
+   "pos": [
+    60,
+    120
+   ],
+   "size": [
+    360,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "How this works",
+   "properties": {},
+   "widgets_values": [
+    "## 6 \u00b7 The 1080p master\nSeedVR2 upscales the cut to 1080p. The example input is the first seconds of Glass Eye (`oc_example_film.mp4`)."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
   {
    "id": 1,
    "type": "LoadVideo",
    "pos": [
-    60,
+    490,
     160
    ],
    "size": [
@@ -14,7 +38,7 @@
     354
    ],
    "flags": {},
-   "order": 0,
+   "order": 1,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -32,14 +56,14 @@
     "Node name for S&R": "LoadVideo"
    },
    "widgets_values": [
-    "film.mp4"
+    "oc_example_film.mp4"
    ]
   },
   {
    "id": 5,
    "type": "UNETLoader",
    "pos": [
-    470,
+    900,
     160
    ],
    "size": [
@@ -47,7 +71,7 @@
     118
    ],
    "flags": {},
-   "order": 1,
+   "order": 2,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -74,7 +98,7 @@
    "id": 6,
    "type": "VAELoader",
    "pos": [
-    470,
+    900,
     318
    ],
    "size": [
@@ -82,7 +106,7 @@
     94
    ],
    "flags": {},
-   "order": 2,
+   "order": 3,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -108,7 +132,7 @@
    "id": 2,
    "type": "GetVideoComponents",
    "pos": [
-    880,
+    1310,
     160
    ],
    "size": [
@@ -116,7 +140,7 @@
     190
    ],
    "flags": {},
-   "order": 3,
+   "order": 4,
    "mode": 0,
    "inputs": [
     {
@@ -173,7 +197,7 @@
    "id": 3,
    "type": "ResizeImageMaskNode",
    "pos": [
-    880,
+    1310,
     390
    ],
    "size": [
@@ -181,7 +205,7 @@
     214
    ],
    "flags": {},
-   "order": 4,
+   "order": 5,
    "mode": 0,
    "inputs": [
     {
@@ -217,7 +241,7 @@
    "id": 4,
    "type": "SeedVR2Preprocess",
    "pos": [
-    880,
+    1310,
     644
    ],
    "size": [
@@ -225,7 +249,7 @@
     94
    ],
    "flags": {},
-   "order": 5,
+   "order": 6,
    "mode": 0,
    "inputs": [
     {
@@ -254,7 +278,7 @@
    "id": 7,
    "type": "VAEEncodeTiled",
    "pos": [
-    880,
+    1310,
     778
    ],
    "size": [
@@ -262,7 +286,7 @@
     214
    ],
    "flags": {},
-   "order": 6,
+   "order": 7,
    "mode": 0,
    "inputs": [
     {
@@ -301,7 +325,7 @@
    "id": 8,
    "type": "SeedVR2TemporalChunk",
    "pos": [
-    880,
+    1310,
     1032
    ],
    "size": [
@@ -309,7 +333,7 @@
     166
    ],
    "flags": {},
-   "order": 7,
+   "order": 8,
    "mode": 0,
    "inputs": [
     {
@@ -350,7 +374,7 @@
    "id": 9,
    "type": "SeedVR2Conditioning",
    "pos": [
-    880,
+    1310,
     1238
    ],
    "size": [
@@ -358,7 +382,7 @@
     142
    ],
    "flags": {},
-   "order": 8,
+   "order": 9,
    "mode": 0,
    "inputs": [
     {
@@ -400,7 +424,7 @@
    "id": 10,
    "type": "KSampler",
    "pos": [
-    880,
+    1310,
     1420
    ],
    "size": [
@@ -408,7 +432,7 @@
     334
    ],
    "flags": {},
-   "order": 9,
+   "order": 10,
    "mode": 0,
    "inputs": [
     {
@@ -460,7 +484,7 @@
    "id": 11,
    "type": "SeedVR2TemporalMerge",
    "pos": [
-    880,
+    1310,
     1794
    ],
    "size": [
@@ -468,7 +492,7 @@
     142
    ],
    "flags": {},
-   "order": 10,
+   "order": 11,
    "mode": 0,
    "inputs": [
     {
@@ -507,7 +531,7 @@
    "id": 13,
    "type": "SeedVR2PostProcessing",
    "pos": [
-    880,
+    1310,
     1976
    ],
    "size": [
@@ -515,7 +539,7 @@
     142
    ],
    "flags": {},
-   "order": 11,
+   "order": 12,
    "mode": 0,
    "inputs": [
     {
@@ -551,7 +575,7 @@
    "id": 12,
    "type": "VAEDecodeTiled",
    "pos": [
-    1290,
+    1720,
     160
    ],
    "size": [
@@ -559,7 +583,7 @@
     214
    ],
    "flags": {},
-   "order": 12,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
@@ -598,7 +622,7 @@
    "id": 14,
    "type": "CreateVideo",
    "pos": [
-    1290,
+    1720,
     414
    ],
    "size": [
@@ -606,7 +630,7 @@
     238
    ],
    "flags": {},
-   "order": 13,
+   "order": 14,
    "mode": 0,
    "inputs": [
     {
@@ -653,7 +677,7 @@
    "id": 15,
    "type": "SaveVideo",
    "pos": [
-    1290,
+    1720,
     692
    ],
    "size": [
@@ -661,7 +685,7 @@
     214
    ],
    "flags": {},
-   "order": 14,
+   "order": 15,
    "mode": 0,
    "inputs": [
     {
@@ -873,7 +897,7 @@
   {
    "title": "Inputs",
    "bounding": [
-    40,
+    470,
     100,
     340,
     434
@@ -885,7 +909,7 @@
   {
    "title": "Models",
    "bounding": [
-    450,
+    880,
     100,
     340,
     332
@@ -897,7 +921,7 @@
   {
    "title": "Sample",
    "bounding": [
-    860,
+    1290,
     100,
     340,
     2038
@@ -909,7 +933,7 @@
   {
    "title": "Output",
    "bounding": [
-    1270,
+    1700,
     100,
     340,
     826

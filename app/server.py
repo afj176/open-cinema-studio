@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from studio import PROJECTS, Studio, default_credits, default_trailer, director, graphs  # noqa: E402
+from studio import PROJECTS, Studio, default_credits, default_trailer, director, film_inputs, graphs  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -96,6 +96,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.studio.list_projects())
             if m := re.fullmatch(r"/api/projects/(\w+)", route):
                 project = self.studio.load(m.group(1))
+                project["film_now"] = film_inputs(project)
                 project["motion_defaults"] = {"credits": default_credits(project), "trailer": default_trailer(project),
                                               "material": director.TITLE_MATERIALS.get(project["look"], "")}
                 return self._json(project)
@@ -150,6 +151,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(studio.choose_world(m.group(1), name))
             if m := re.fullmatch(r"/api/projects/(\w+)/describe-lead", route):
                 return self._json(studio.enqueue("describe_lead", m.group(1), None, "Describing the lead's face"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/waveform", route):
+                return self._json(studio.waveform(m.group(1)))
             if m := re.fullmatch(r"/api/projects/(\w+)/delete", route):
                 try:
                     return self._json(studio.delete(m.group(1)))
@@ -202,7 +205,9 @@ class Handler(BaseHTTPRequestHandler):
             if m := re.fullmatch(r"/api/projects/(\w+)/master", route):
                 return self._json(studio.enqueue("master", m.group(1), None, "1080p master"))
             if m := re.fullmatch(r"/api/projects/(\w+)/stitch", route):
-                return self._json(studio.enqueue("stitch", m.group(1), None, "Final cut"))
+                waiting = next((j for j in studio.list_jobs(m.group(1)) if j["kind"] == "stitch"
+                                and j["state"] == "queued"), None)  # one cut in the queue is enough
+                return self._json(waiting or studio.enqueue("stitch", m.group(1), None, "Final cut"))
             if route == "/api/cancel":
                 studio.cancel()
                 return self._json({"ok": True})

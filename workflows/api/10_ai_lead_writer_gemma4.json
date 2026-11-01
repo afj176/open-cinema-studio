@@ -11,9 +11,9 @@
     "class_type": "OpenCinemaLeadBrief",
     "inputs": {
       "mode": "write",
-      "title": "The Colossus Pass",
+      "title": "Glass Eye",
       "world": "The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.",
-      "look": "70mm epic",
+      "look": "Golden hour",
       "draft": ""
     }
   },

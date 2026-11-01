@@ -293,8 +293,13 @@ SCORE_SIZE = (768, 448)  # the trailer score only needs LTX's audio, so the pict
 
 
 def score_graph(start_image: str, prompt: str, seed: int, seconds: float, prefix: str) -> dict[str, Any]:
-    """A continuous LTX 2.5 soundtrack for the trailer: one long, small render whose audio is the score."""
-    return shot_graph(start_image, prompt, seed, "16:9", seconds, prefix, size=SCORE_SIZE)
+    """A continuous LTX 2.5 soundtrack for the trailer: one long, small render whose audio is the score. Only
+    the sound is decoded and saved: decoding a trailer's worth of frames in one tile overflows the GPU."""
+    graph = shot_graph(start_image, prompt, seed, "16:9", seconds, prefix, size=SCORE_SIZE)
+    for key in ("34", "36", "37"):  # the picture decode, and the video it would have made
+        del graph[key]
+    graph["37"] = node("SaveAudio", audio=["35", 0], filename_prefix=prefix)
+    return graph
 
 
 def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str = "", photo: str | None = None,
