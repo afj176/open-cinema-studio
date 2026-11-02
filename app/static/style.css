@@ -120,6 +120,23 @@ label > input, label > textarea, label > select { margin-top: 6px; }
 .stages .state { font: 600 11px var(--mono); color: var(--faint); }
 .stages .state.done { color: var(--accent); }
 .top-actions { display: flex; gap: 10px; align-items: center; }
+.workspace-link { display: inline-flex; align-items: center; gap: 9px; flex-shrink: 0;
+  min-height: 42px; padding: 7px 11px; border: 1px solid var(--line-strong); border-radius: 12px;
+  background: rgba(255,255,255,.035); color: var(--text); text-decoration: none;
+  transition: background .18s, border-color .18s; }
+.workspace-icon { flex: none; color: var(--muted); }
+.workspace-label { display: grid; gap: 2px; font: 600 12px/1.15 var(--sans); }
+.workspace-caption { font-size: 10px; font-weight: 500; color: var(--muted); }
+.workspace-arrow { margin-left: 3px; color: var(--muted); flex: none; }
+.workspace-link:hover { background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.workspace-link:hover .workspace-icon, .workspace-link:hover .workspace-arrow { color: var(--accent); }
+.workspace-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 400px) {
+  .workspace-link { gap: 7px; padding-inline: 9px; }
+  .workspace-arrow { display: none; }
+  .top-actions { gap: 7px; flex-wrap: wrap; }
+}
 .status-pill { background: rgba(0,0,0,.3); color: var(--muted); font-weight: 500; max-width: 320px; }
 .status-pill span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex: none; }

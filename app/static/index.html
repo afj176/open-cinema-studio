@@ -31,7 +31,11 @@
   </nav>
 
   <div class="top-actions">
-    <a class="ghost small" href="/comfy" target="_blank" rel="noopener" title="Open the connected ComfyUI workflow workspace">ComfyUI ↗</a>
+    <a class="workspace-link" href="/comfy" target="_blank" rel="noopener" aria-label="Open ComfyUI workflows in a new tab" title="Open ComfyUI workflows in a new tab">
+      <svg class="workspace-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 6h4a3 3 0 0 1 3 3v6M8 18h4a3 3 0 0 0 3-3"/><rect x="2" y="3" width="6" height="6" rx="1.5"/><rect x="2" y="15" width="6" height="6" rx="1.5"/><rect x="15" y="9" width="7" height="6" rx="1.5"/></svg>
+      <span class="workspace-label"><span>ComfyUI</span><span class="workspace-caption">Workflows</span></span>
+      <svg class="workspace-arrow" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12 12 4M4 4h8v8"/></svg>
+    </a>
     <button id="setupBtn" class="ghost small" type="button">Setup</button>
     <button id="statusPill" class="status-pill" aria-controls="queue" aria-expanded="false"><span class="dot" id="comfyDot"></span><span id="statusText">Idle</span></button>
     <button id="renderFilm" class="primary">Render film <span aria-hidden="true">▶</span></button>
