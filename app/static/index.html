@@ -31,17 +31,45 @@
   </nav>
 
   <div class="top-actions">
-    <button id="statusPill" class="status-pill"><span class="dot" id="comfyDot"></span><span id="statusText">Idle</span></button>
+    <a class="ghost small" href="/comfy" target="_blank" rel="noopener" title="Open the connected ComfyUI workflow workspace">ComfyUI ↗</a>
+    <button id="setupBtn" class="ghost small" type="button">Setup</button>
+    <button id="statusPill" class="status-pill" aria-controls="queue" aria-expanded="false"><span class="dot" id="comfyDot"></span><span id="statusText">Idle</span></button>
     <button id="renderFilm" class="primary">Render film <span aria-hidden="true">▶</span></button>
   </div>
 </header>
 
-<div id="queue" class="popover" hidden>
-  <div class="popover-head"><h3>Render queue</h3><button id="cancelAll" class="ghost small danger">Cancel queued</button></div>
+<div id="queue" class="popover" hidden role="region" aria-label="Production activity">
+  <div class="popover-head"><h3>Production activity</h3><button id="closeQueue" class="ghost small" aria-label="Close production activity">Close</button></div>
+  <p id="queueSummary" class="hint"></p>
   <ul id="jobs"></ul>
+  <details id="jobHistory"><summary>Earlier activity</summary><ul id="earlierJobs"></ul></details>
+  <button id="cancelAll" class="ghost small danger">Stop generation</button>
 </div>
 
 <main>
+  <section id="setupPanel" class="glass setup-panel" hidden aria-label="Studio setup"></section>
+  <section class="production-bar glass" aria-label="Generation controls">
+    <div class="performance-heading">
+      <span class="performance-title" id="performanceLabel">Performance</span>
+      <fieldset class="performance-options" aria-labelledby="performanceLabel" aria-describedby="aiModeHelp">
+        <legend class="visually-hidden">Performance mode</legend>
+        <label><input type="radio" name="performance" data-ai-mode value="normal" checked><span>Standard</span></label>
+        <label><input type="radio" name="performance" data-ai-mode value="fast"><span>Fast</span></label>
+      </fieldset>
+      <p id="aiModeHelp" class="performance-description">Full-resolution video and more detailed writing.</p>
+      <div class="row-actions"><button id="resumeWork" class="primary small" hidden>Resume missing work</button>
+        <button id="productionDetails" class="ghost small" aria-controls="queue" aria-expanded="false">Activity</button></div>
+    </div>
+    <p id="productionSummary" class="production-summary" role="status" aria-live="polite"></p>
+    <details class="performance-details">
+      <summary>Details</summary>
+      <div class="performance-explainer">
+        <div><strong>Writing and review</strong><p id="performanceWriting">Gemma 4 12B at 8-bit.</p></div>
+        <div><strong>Video</strong><p id="performanceVideo">Two-stage, full-resolution video.</p></div>
+        <p class="performance-note">New jobs only; existing work stays. Frame quality is selected separately.</p>
+      </div>
+    </details>
+  </section>
   <!-- STORY -->
   <section class="stage" id="story">
     <div class="spark glass" id="sparkField">
@@ -50,7 +78,7 @@
       <button id="aiEverything" class="primary" type="button">✨ Generate the whole story</button>
     </div>
     <div class="spark-foot">
-      <span class="hint" id="aiStoryStatus">Title, logline, world, look &amp; colours, and the lead, written locally by Gemma 4 E4B (open, Apache-2.0). Every field also has its own ✨.</span>
+      <span class="hint" id="aiStoryStatus">Title, logline, world, look &amp; colours, and the lead, written locally by Gemma 4 12B (8-bit) (open, Apache-2.0). Every field also has its own ✨.</span>
       <button id="aiUndo" class="link" type="button" hidden>Undo AI change</button>
     </div>
 
@@ -71,7 +99,7 @@
             <span class="portrait-busy" id="worldBusy" hidden></span></div>
           <div class="wp-side">
             <b>The world plate</b>
-            <p class="hint">Every shot happens here. HiDream-O1 paints this place with nobody in it and Gemma checks it's empty, so the only face any shot ever sees is the lead's.</p>
+            <p class="hint">The film's location, materials and light. Each shot follows its own storyboard composition; the world plate supplies the setting and palette.</p>
             <p class="wp-stale" id="worldStale" hidden>The world, look or aspect changed since this plate was painted. A new one is painted before the next frame, or press New world plate now.</p>
             <div class="takes" id="worldTakes"></div>
             <button id="worldBtn" class="ghost small" type="button">Paint the world</button>
@@ -111,12 +139,12 @@
               <div class="field-head"><span>Other characters</span>
                 <span class="ai-actions"><button class="ai small" data-ai="characters" type="button">✨ Characters</button></span></div>
               <textarea id="characters" class="grow" rows="2" placeholder="One per line, as Name: what they look like. Mara: a wiry old woman in a grey shawl…"></textarea>
-              <p class="hint">Shots name them, and every frame they're in is told what they look like and that they look nothing like the lead.</p>
+              <p class="hint">Name the people visible in each shot. New characters use these descriptions; following shots can carry established appearances forward from the preceding frame.</p>
             </div>
           </div>
         </div>
         <div class="identity-note" id="identityNote" hidden>
-          <div class="field-head"><span>What every shot is told about this face</span>
+          <div class="field-head"><span>Lead identity notes</span>
             <button id="redescribe" class="link" type="button">Describe again</button></div>
           <p id="identityText"></p>
         </div>
@@ -124,11 +152,18 @@
       </article>
 
       <article class="glass look-card ai-field" id="lookField">
-        <div class="card-head"><h2 class="serif">The look</h2><button class="ai small" data-ai="look" type="button">✨ Look &amp; colours</button></div>
+        <div class="card-head"><h2 class="serif">The look</h2><button class="ai small" data-ai="look" type="button">✨ Film look</button></div>
+        <label for="filmLook" class="look-label">Film look · image and video</label>
+        <textarea id="filmLook" class="grow" rows="3" placeholder="Describe the medium, light, colour, texture and camera style…"></textarea>
+        <label>Frame generation<select id="imageQuality"><option value="fast">Fast previews</option><option value="detailed">Detailed frames · slower</option></select></label>
+        <p class="hint">Detailed frames use the full image editor. State repairs use it automatically when a frame fails review.</p>
+        <p class="hint look-hint">This direction follows the film from casting and world through frames and motion. Write your own, generate one, or start with a preset.</p>
+        <div class="look-label">Starting points</div>
         <div id="looks" class="look-grid"></div>
         <div class="palette">
-          <div class="palette-head"><span>Colours</span><span class="hint" id="paletteSource">From the look</span>
+          <div class="palette-head"><span>Titles &amp; graphics colours</span><span class="hint" id="paletteSource">From the look</span>
             <button id="paletteReset" class="link" type="button" hidden>Use the look's colours</button></div>
+          <p class="hint look-hint">These colours style titles, cards and the studio. They do not set the image or video grade.</p>
           <div class="palette-body">
             <div class="swatch-row" id="paletteInputs">
               <label class="swatch"><input type="color" data-pal="bg"><span>Background</span></label>
@@ -142,6 +177,7 @@
         <div class="aspect-row"><span class="hint">Aspect</span><div id="aspects" class="seg"></div></div>
       </article>
     </div>
+    <article class="glass beats-card" id="continuityPanel" aria-label="Scene continuity"></article>
     <article class="glass beats-card ai-field" id="beatsField">
       <div class="card-head"><div><h2 class="serif">The story</h2>
         <p class="hint">The film beat by beat. Shots are written from these and drawn as a storyboard; a shot can tell any beat, or none.</p></div>
@@ -165,7 +201,7 @@
       <div class="row-actions">
         <button id="shotsUndo" class="link" type="button" hidden>Undo</button>
         <label class="switch auto-render" title="When Gemma writes shots, draw and render them straight away: frames, videos and the cut. Pause any shot on its card."><input type="checkbox" id="autoRender"><span></span>Auto-render</label>
-        <span class="write-shots" title="Gemma 4 E4B plans the film shot by shot from the story: action, framing, camera move, length and sound">
+        <span class="write-shots" title="Gemma 4 12B (8-bit) plans the film shot by shot from the story: action, framing, camera move, length and sound">
           <button id="writeShots" class="ai" type="button">✨ Write shots</button><select id="shotCount" aria-label="How many shots" title="How many shots">
           <option value="3">3</option><option value="4">4</option><option value="5" selected>5</option><option value="6">6</option><option value="8">8</option></select></span>
         <button id="addShot" class="ghost">+ Add shot</button></div>

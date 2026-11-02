@@ -1,10 +1,8 @@
 {
   "1": {
-    "class_type": "CLIPLoader",
+    "class_type": "OpenCinemaWriter",
     "inputs": {
-      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
-      "type": "stable_diffusion",
-      "device": "default"
+      "mode": "normal"
     }
   },
   "2": {
@@ -19,7 +17,9 @@
       "lead": "",
       "beats": "",
       "count": 3,
-      "characters": ""
+      "characters": "",
+      "creative_seed": 7,
+      "avoid_title_words": ""
     }
   },
   "3": {
@@ -50,14 +50,18 @@
         "3",
         0
       ],
-      "target": "everything"
+      "target": "everything",
+      "idea": [
+        "2",
+        1
+      ]
     }
   },
   "title": {
     "class_type": "PreviewAny",
     "inputs": {
       "source": [
-        "4",
+        "title_selected",
         0
       ]
     }
@@ -141,6 +145,49 @@
         "4",
         9
       ]
+    }
+  },
+  "title_brief": {
+    "class_type": "OpenCinemaTitleBrief",
+    "inputs": {
+      "idea": "a young glassblower in a floating desert city makes a lens that can see the wind",
+      "story": [
+        "3",
+        0
+      ],
+      "avoid_words": ""
+    }
+  },
+  "title_candidates": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "title_brief",
+        0
+      ],
+      "max_length": 300,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.8,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 7
+    }
+  },
+  "title_selected": {
+    "class_type": "OpenCinemaSelectTitle",
+    "inputs": {
+      "text": [
+        "title_candidates",
+        0
+      ],
+      "avoid_words": "",
+      "idea": "a young glassblower in a floating desert city makes a lens that can see the wind"
     }
   }
 }

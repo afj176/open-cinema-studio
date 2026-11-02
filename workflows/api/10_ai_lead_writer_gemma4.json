@@ -1,10 +1,8 @@
 {
   "1": {
-    "class_type": "CLIPLoader",
+    "class_type": "OpenCinemaWriter",
     "inputs": {
-      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
-      "type": "stable_diffusion",
-      "device": "default"
+      "mode": "normal"
     }
   },
   "2": {

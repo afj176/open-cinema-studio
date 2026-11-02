@@ -1,10 +1,8 @@
 {
   "1": {
-    "class_type": "CLIPLoader",
+    "class_type": "OpenCinemaWriter",
     "inputs": {
-      "clip_name": "gemma4_e4b_it_fp8_scaled.safetensors",
-      "type": "stable_diffusion",
-      "device": "default"
+      "mode": "normal"
     }
   },
   "2": {
@@ -36,7 +34,7 @@
         "2",
         0
       ],
-      "max_length": 600,
+      "max_length": 1600,
       "sampling_mode": "on",
       "sampling_mode.temperature": 0.75,
       "sampling_mode.top_k": 64,
@@ -50,9 +48,10 @@
     "class_type": "OpenCinemaParseShots",
     "inputs": {
       "text": [
-        "3",
+        "review",
         0
-      ]
+      ],
+      "lead_description": "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible."
     }
   },
   "shots": {
@@ -80,6 +79,40 @@
         "4",
         2
       ]
+    }
+  },
+  "review_brief": {
+    "class_type": "OpenCinemaReviewShotsBrief",
+    "inputs": {
+      "brief": [
+        "2",
+        0
+      ],
+      "draft": [
+        "3",
+        0
+      ]
+    }
+  },
+  "review": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "review_brief",
+        0
+      ],
+      "max_length": 1600,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.35,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 7
     }
   }
 }

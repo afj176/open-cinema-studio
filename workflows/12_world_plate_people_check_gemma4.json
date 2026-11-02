@@ -21,7 +21,7 @@
    "title": "How this works",
    "properties": {},
    "widgets_values": [
-    "## 2b \u00b7 People check\nGemma 4 E4B looks at the world plate and answers YES or NO. A plate with anyone in it would put a second face into every shot, so the studio re-rolls it."
+    "## 2b \u00b7 People check\nGemma 4 12B (8-bit) looks at the world plate and answers YES or NO. A plate with anyone in it would put a second face into every shot, so the studio re-rolls it.\n\nAI mode: Normal uses Gemma 4 12B at 8-bit; Fast uses E4B. Change the Open Cinema Writer mode widget. Image and video models stay the same. Cast-review findings retain the saved candidate; inspect it before using it downstream."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -67,14 +67,14 @@
   },
   {
    "id": 1,
-   "type": "CLIPLoader",
+   "type": "OpenCinemaWriter",
    "pos": [
     900,
     160
    ],
    "size": [
     300,
-    142
+    94
    ],
    "flags": {},
    "order": 2,
@@ -90,14 +90,12 @@
      "slot_index": 0
     }
    ],
-   "title": "Load CLIP",
+   "title": "AI mode \u00b7 Normal 12B / Fast E4B",
    "properties": {
-    "Node name for S&R": "CLIPLoader"
+    "Node name for S&R": "OpenCinemaWriter"
    },
    "widgets_values": [
-    "gemma4_e4b_it_fp8_scaled.safetensors",
-    "stable_diffusion",
-    "default"
+    "normal"
    ]
   },
   {
@@ -242,14 +240,14 @@
    "flags": {}
   },
   {
-   "title": "Models",
+   "title": "Open Cinema",
    "bounding": [
     880,
     100,
     340,
-    222
+    174
    ],
-   "color": "#444444",
+   "color": "#b06634",
    "font_size": 22,
    "flags": {}
   },

@@ -1,227 +1,182 @@
 {
   "1": {
-    "class_type": "UNETLoader",
+    "class_type": "CheckpointLoaderSimple",
     "inputs": {
-      "unet_name": "qwen_image_edit_2511_int8_convrot.safetensors",
-      "weight_dtype": "default"
+      "ckpt_name": "hidream_o1_image_fp8_scaled.safetensors"
     }
   },
-  "1l": {
-    "class_type": "LoraLoaderModelOnly",
+  "2": {
+    "class_type": "ModelNoiseScale",
     "inputs": {
       "model": [
         "1",
         0
       ],
-      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
-      "strength_model": 1.0
-    }
-  },
-  "2": {
-    "class_type": "ModelSamplingAuraFlow",
-    "inputs": {
-      "model": [
-        "1l",
-        0
-      ],
-      "shift": 3.1
+      "noise_scale": 8.0
     }
   },
   "3": {
-    "class_type": "CFGNorm",
+    "class_type": "HiDreamO1PatchSeamSmoothing",
     "inputs": {
       "model": [
         "2",
         0
       ],
+      "start_percent": 0.8,
+      "end_percent": 1.0,
+      "pattern": "single_shift",
+      "passes": "ramp_2_4",
+      "blend": "median",
       "strength": 1.0
     }
   },
   "4": {
-    "class_type": "CLIPLoader",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-      "type": "qwen_image",
-      "device": "default"
+      "clip": [
+        "1",
+        1
+      ],
+      "text": "One uninterrupted monochrome pencil storyboard image, a single camera view. Exactly 1 visible characters, each appearing once. Empty background with no other figures or bystanders. Stage this exact opening moment: He holds the lens up to the sun on the glass terrace; the city drifts behind him. The scene action for context, not its later outcome: He holds the lens up to the sun on the glass terrace; the city drifts behind him. Preserve the specified viewing angle and eyelines. Show the participants engaged in the action, not lined up for a portrait. Camera framing: medium close-up from the chest up. Readable acting poses and separated silhouettes; the characters interact with the scene, not the viewer. Lead wardrobe and appearance within this crop: Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible. Continuity: Thin build, indigo linen, dark braids, glowing crucible. Indicate only the location named in the staging with sparse pencil marks; leave all other space white. Tight crop: the subject fills the frame and extends beyond its edges; no full body or whole building. Exactly 1 visible characters, each appearing once. Empty background with no other figures or bystanders. All named colours are grey values in this drawing. Black, grey and white only. One panel edge to edge, no lettering, borders or drawing equipment."
     }
   },
   "5": {
-    "class_type": "VAELoader",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "vae_name": "qwen_image_vae.safetensors"
+      "clip": [
+        "1",
+        1
+      ],
+      "text": "colour, colored, coloured, photograph, 3d render, doll, polished illustration, comic page, paper craft, diorama, paper border, multiple panels, split screen, divided frame, diptych, character lineup, separate portraits, border, text, caption, watermark, drawing equipment, extra limbs, duplicate people"
     }
   },
   "6": {
-    "class_type": "LoadImage",
+    "class_type": "EmptyHiDreamO1LatentImage",
     "inputs": {
-      "image": "oc_world_plate.jpg"
-    }
-  },
-  "7": {
-    "class_type": "FluxKontextImageScale",
-    "inputs": {
-      "image": [
-        "6",
-        0
-      ]
-    }
-  },
-  "8": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "4",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ],
-      "image1": [
-        "7",
-        0
-      ],
-      "prompt": "One single storyboard frame that fills the entire image edge to edge: wide shot showing the full body and the location, low camera close to the ground. In this frame: He holds the lens up to the sun on the glass terrace; the city drifts behind him. Drawn as a rough black pencil and grey marker storyboard sketch, loose confident lines, simple shading, black and white only. The place is the location of Picture 1 (The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms); choose the camera position this framing needs, do not copy the layout of Picture 1. The lead is the person from Picture 2 (same hair, build and clothing), posed by this frame's action; do not copy the layout of Picture 2. The lead is the only person in the frame. Picture 3 is the storyboard frame of the shot just before this one: draw in exactly the same style, with the same time of day and weather, as the next moment of the same scene. This frame cuts to a new camera angle, so do not repeat its composition. Not a page: no paper, sketchbook, pencils, desk, photographs, multiple panels, cameras, text or borders.",
-      "image2": [
-        "17",
-        0
-      ],
-      "image3": [
-        "19",
-        0
-      ]
-    }
-  },
-  "9": {
-    "class_type": "FluxKontextMultiReferenceLatentMethod",
-    "inputs": {
-      "conditioning": [
-        "8",
-        0
-      ],
-      "reference_latents_method": "index_timestep_zero"
-    }
-  },
-  "10": {
-    "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": {
-      "clip": [
-        "4",
-        0
-      ],
-      "vae": [
-        "5",
-        0
-      ],
-      "image1": [
-        "7",
-        0
-      ],
-      "prompt": "",
-      "image2": [
-        "17",
-        0
-      ],
-      "image3": [
-        "19",
-        0
-      ]
-    }
-  },
-  "11": {
-    "class_type": "FluxKontextMultiReferenceLatentMethod",
-    "inputs": {
-      "conditioning": [
-        "10",
-        0
-      ],
-      "reference_latents_method": "index_timestep_zero"
-    }
-  },
-  "12": {
-    "class_type": "EmptySD3LatentImage",
-    "inputs": {
-      "width": 832,
-      "height": 464,
+      "width": 1280,
+      "height": 704,
       "batch_size": 1
     }
   },
-  "13": {
-    "class_type": "KSampler",
+  "7": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "2",
+        0
+      ],
+      "scheduler": "normal",
+      "steps": 40,
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "dpmpp_2m_sde_gpu"
+    }
+  },
+  "9": {
+    "class_type": "SamplerCustom",
     "inputs": {
       "model": [
         "3",
         0
       ],
+      "add_noise": true,
+      "noise_seed": 1414,
+      "cfg": 5.0,
       "positive": [
-        "9",
+        "4",
         0
       ],
       "negative": [
-        "11",
+        "5",
+        0
+      ],
+      "sampler": [
+        "8",
+        0
+      ],
+      "sigmas": [
+        "7",
         0
       ],
       "latent_image": [
-        "12",
-        0
-      ],
-      "seed": 1414,
-      "steps": 4,
-      "cfg": 1.0,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "denoise": 1.0
-    }
-  },
-  "14": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": [
-        "13",
-        0
-      ],
-      "vae": [
-        "5",
+        "6",
         0
       ]
     }
   },
-  "15": {
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "9",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    }
+  },
+  "11": {
     "class_type": "SaveImage",
     "inputs": {
       "images": [
-        "14",
+        "mono",
         0
       ],
       "filename_prefix": "open-cinema/storyboard"
     }
   },
-  "16": {
-    "class_type": "LoadImage",
+  "mono": {
+    "class_type": "OpenCinemaMonochrome",
     "inputs": {
-      "image": "oc_lead_portrait.jpg"
-    }
-  },
-  "17": {
-    "class_type": "FluxKontextImageScale",
-    "inputs": {
-      "image": [
-        "16",
+      "images": [
+        "10",
         0
       ]
     }
   },
-  "18": {
-    "class_type": "LoadImage",
+  "count_model": {
+    "class_type": "OpenCinemaWriter",
     "inputs": {
-      "image": "oc_storyboard_sketch.jpg"
+      "mode": "normal"
     }
   },
-  "19": {
-    "class_type": "FluxKontextImageScale",
+  "count": {
+    "class_type": "TextGenerate",
     "inputs": {
+      "clip": [
+        "count_model",
+        0
+      ],
       "image": [
-        "18",
+        "mono",
+        0
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "checked": {
+    "class_type": "OpenCinemaCastReview",
+    "inputs": {
+      "observed": [
+        "count",
+        0
+      ],
+      "expected": 1
+    }
+  },
+  "cast_review": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "checked",
         0
       ]
     }

@@ -1,20 +1,78 @@
 {
- "last_node_id": 14,
- "last_link_id": 13,
+ "last_node_id": 18,
+ "last_link_id": 18,
  "nodes": [
   {
-   "id": 2,
-   "type": "OpenCinemaStoryBrief",
+   "id": 18,
+   "type": "MarkdownNote",
    "pos": [
     60,
+    120
+   ],
+   "size": [
+    360,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "How this works",
+   "properties": {},
+   "widgets_values": [
+    "\n\nAI mode: Normal uses Gemma 4 12B at 8-bit; Fast uses E4B. Change the Open Cinema Writer mode widget. Image and video models stay the same. Cast-review findings retain the saved candidate; inspect it before using it downstream."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 1,
+   "type": "OpenCinemaWriter",
+   "pos": [
+    490,
     160
    ],
    "size": [
     300,
-    310
+    94
    ],
    "flags": {},
-   "order": 0,
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      1,
+      16
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "AI mode \u00b7 Normal 12B / Fast E4B",
+   "properties": {
+    "Node name for S&R": "OpenCinemaWriter"
+   },
+   "widgets_values": [
+    "normal"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "OpenCinemaStoryBrief",
+   "pos": [
+    490,
+    294
+   ],
+   "size": [
+    300,
+    382
+   ],
+   "flags": {},
+   "order": 2,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -25,6 +83,14 @@
       2
      ],
      "slot_index": 0
+    },
+    {
+     "name": "director_idea",
+     "type": "STRING",
+     "links": [
+      4
+     ],
+     "slot_index": 1
     }
    ],
    "title": "Open Cinema Story Brief (for an LLM)",
@@ -41,6 +107,8 @@
     "",
     "",
     3,
+    "",
+    7,
     ""
    ]
   },
@@ -48,15 +116,15 @@
    "id": 4,
    "type": "OpenCinemaParseStory",
    "pos": [
-    60,
-    510
+    490,
+    716
    ],
    "size": [
     300,
-    358
+    406
    ],
    "flags": {},
-   "order": 1,
+   "order": 3,
    "mode": 0,
    "inputs": [
     {
@@ -66,22 +134,28 @@
      "widget": {
       "name": "text"
      }
+    },
+    {
+     "name": "idea",
+     "type": "STRING",
+     "link": 4,
+     "widget": {
+      "name": "idea"
+     }
     }
    ],
    "outputs": [
     {
      "name": "title",
      "type": "STRING",
-     "links": [
-      4
-     ],
+     "links": [],
      "slot_index": 0
     },
     {
      "name": "logline",
      "type": "STRING",
      "links": [
-      5
+      6
      ],
      "slot_index": 1
     },
@@ -89,7 +163,7 @@
      "name": "world",
      "type": "STRING",
      "links": [
-      6
+      7
      ],
      "slot_index": 2
     },
@@ -97,7 +171,7 @@
      "name": "look",
      "type": "STRING",
      "links": [
-      7
+      8
      ],
      "slot_index": 3
     },
@@ -105,7 +179,7 @@
      "name": "palette",
      "type": "STRING",
      "links": [
-      8
+      9
      ],
      "slot_index": 4
     },
@@ -113,7 +187,7 @@
      "name": "lead",
      "type": "STRING",
      "links": [
-      9
+      10
      ],
      "slot_index": 5
     },
@@ -121,7 +195,7 @@
      "name": "continuity",
      "type": "STRING",
      "links": [
-      10
+      11
      ],
      "slot_index": 6
     },
@@ -129,7 +203,7 @@
      "name": "trailer",
      "type": "STRING",
      "links": [
-      11
+      12
      ],
      "slot_index": 7
     },
@@ -137,7 +211,7 @@
      "name": "beats",
      "type": "STRING",
      "links": [
-      12
+      13
      ],
      "slot_index": 8
     },
@@ -145,7 +219,7 @@
      "name": "characters",
      "type": "STRING",
      "links": [
-      13
+      14
      ],
      "slot_index": 9
     }
@@ -156,49 +230,103 @@
    },
    "widgets_values": [
     "",
-    "everything"
+    "everything",
+    ""
    ]
   },
   {
-   "id": 1,
-   "type": "CLIPLoader",
+   "id": 15,
+   "type": "OpenCinemaTitleBrief",
    "pos": [
-    470,
-    160
+    490,
+    1162
    ],
    "size": [
     300,
-    142
+    166
    ],
    "flags": {},
-   "order": 2,
+   "order": 4,
    "mode": 0,
-   "inputs": [],
+   "inputs": [
+    {
+     "name": "story",
+     "type": "STRING",
+     "link": 15,
+     "widget": {
+      "name": "story"
+     }
+    }
+   ],
    "outputs": [
     {
-     "name": "CLIP",
-     "type": "CLIP",
+     "name": "STRING",
+     "type": "STRING",
      "links": [
-      1
+      17
      ],
      "slot_index": 0
     }
    ],
-   "title": "Load CLIP",
+   "title": "OpenCinemaTitleBrief",
    "properties": {
-    "Node name for S&R": "CLIPLoader"
+    "Node name for S&R": "OpenCinemaTitleBrief"
    },
    "widgets_values": [
-    "gemma4_e4b_it_fp8_scaled.safetensors",
-    "stable_diffusion",
-    "default"
+    "a young glassblower in a floating desert city makes a lens that can see the wind",
+    "",
+    ""
+   ]
+  },
+  {
+   "id": 17,
+   "type": "OpenCinemaSelectTitle",
+   "pos": [
+    490,
+    1368
+   ],
+   "size": [
+    300,
+    166
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 18,
+     "widget": {
+      "name": "text"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "OpenCinemaSelectTitle",
+   "properties": {
+    "Node name for S&R": "OpenCinemaSelectTitle"
+   },
+   "widgets_values": [
+    "",
+    "",
+    "a young glassblower in a floating desert city makes a lens that can see the wind"
    ]
   },
   {
    "id": 3,
    "type": "TextGenerate",
    "pos": [
-    880,
+    900,
     160
    ],
    "size": [
@@ -206,7 +334,7 @@
     550
    ],
    "flags": {},
-   "order": 3,
+   "order": 6,
    "mode": 0,
    "inputs": [
     {
@@ -243,7 +371,8 @@
      "name": "generated_text",
      "type": "STRING",
      "links": [
-      3
+      3,
+      15
      ],
      "slot_index": 0
     },
@@ -276,10 +405,91 @@
    ]
   },
   {
+   "id": 16,
+   "type": "TextGenerate",
+   "pos": [
+    900,
+    750
+   ],
+   "size": [
+    300,
+    550
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 16
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 17,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      18
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    300,
+    "on",
+    0.8,
+    64,
+    0.95,
+    0.05,
+    1.05,
+    7,
+    0.0,
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
    "id": 5,
    "type": "PreviewAny",
    "pos": [
-    1290,
+    1310,
     160
    ],
    "size": [
@@ -287,42 +497,7 @@
     94
    ],
    "flags": {},
-   "order": 4,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 4
-    }
-   ],
-   "outputs": [
-    {
-     "name": "STRING",
-     "type": "STRING",
-     "links": [],
-     "slot_index": 0
-    }
-   ],
-   "title": "Preview as Text",
-   "properties": {
-    "Node name for S&R": "PreviewAny"
-   },
-   "widgets_values": []
-  },
-  {
-   "id": 6,
-   "type": "PreviewAny",
-   "pos": [
-    1290,
-    294
-   ],
-   "size": [
-    300,
-    94
-   ],
-   "flags": {},
-   "order": 5,
+   "order": 8,
    "mode": 0,
    "inputs": [
     {
@@ -346,18 +521,18 @@
    "widgets_values": []
   },
   {
-   "id": 7,
+   "id": 6,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    428
+    1310,
+    294
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 6,
+   "order": 9,
    "mode": 0,
    "inputs": [
     {
@@ -381,18 +556,18 @@
    "widgets_values": []
   },
   {
-   "id": 8,
+   "id": 7,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    562
+    1310,
+    428
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 7,
+   "order": 10,
    "mode": 0,
    "inputs": [
     {
@@ -416,18 +591,18 @@
    "widgets_values": []
   },
   {
-   "id": 9,
+   "id": 8,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    696
+    1310,
+    562
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 8,
+   "order": 11,
    "mode": 0,
    "inputs": [
     {
@@ -451,18 +626,18 @@
    "widgets_values": []
   },
   {
-   "id": 10,
+   "id": 9,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    830
+    1310,
+    696
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 9,
+   "order": 12,
    "mode": 0,
    "inputs": [
     {
@@ -486,18 +661,18 @@
    "widgets_values": []
   },
   {
-   "id": 11,
+   "id": 10,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    964
+    1310,
+    830
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 10,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
@@ -521,18 +696,18 @@
    "widgets_values": []
   },
   {
-   "id": 12,
+   "id": 11,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    1098
+    1310,
+    964
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 11,
+   "order": 14,
    "mode": 0,
    "inputs": [
     {
@@ -556,18 +731,18 @@
    "widgets_values": []
   },
   {
-   "id": 13,
+   "id": 12,
    "type": "PreviewAny",
    "pos": [
-    1290,
-    1232
+    1310,
+    1098
    ],
    "size": [
     300,
     94
    ],
    "flags": {},
-   "order": 12,
+   "order": 15,
    "mode": 0,
    "inputs": [
     {
@@ -591,10 +766,45 @@
    "widgets_values": []
   },
   {
+   "id": 13,
+   "type": "PreviewAny",
+   "pos": [
+    1310,
+    1232
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Preview as Text",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
+  },
+  {
    "id": 14,
    "type": "PreviewAny",
    "pos": [
-    1290,
+    1310,
     1366
    ],
    "size": [
@@ -602,13 +812,13 @@
     94
    ],
    "flags": {},
-   "order": 13,
+   "order": 17,
    "mode": 0,
    "inputs": [
     {
      "name": "source",
      "type": "*",
-     "link": 13
+     "link": 14
     }
    ],
    "outputs": [
@@ -653,14 +863,22 @@
   ],
   [
    4,
+   2,
+   1,
    4,
+   1,
+   "STRING"
+  ],
+  [
+   5,
+   17,
    0,
    5,
    0,
    "STRING"
   ],
   [
-   5,
+   6,
    4,
    1,
    6,
@@ -668,7 +886,7 @@
    "STRING"
   ],
   [
-   6,
+   7,
    4,
    2,
    7,
@@ -676,7 +894,7 @@
    "STRING"
   ],
   [
-   7,
+   8,
    4,
    3,
    8,
@@ -684,7 +902,7 @@
    "STRING"
   ],
   [
-   8,
+   9,
    4,
    4,
    9,
@@ -692,7 +910,7 @@
    "STRING"
   ],
   [
-   9,
+   10,
    4,
    5,
    10,
@@ -700,7 +918,7 @@
    "STRING"
   ],
   [
-   10,
+   11,
    4,
    6,
    11,
@@ -708,7 +926,7 @@
    "STRING"
   ],
   [
-   11,
+   12,
    4,
    7,
    12,
@@ -716,7 +934,7 @@
    "STRING"
   ],
   [
-   12,
+   13,
    4,
    8,
    13,
@@ -724,10 +942,42 @@
    "STRING"
   ],
   [
-   13,
+   14,
    4,
    9,
    14,
+   0,
+   "STRING"
+  ],
+  [
+   15,
+   3,
+   0,
+   15,
+   0,
+   "STRING"
+  ],
+  [
+   16,
+   1,
+   0,
+   16,
+   0,
+   "CLIP"
+  ],
+  [
+   17,
+   15,
+   0,
+   16,
+   1,
+   "STRING"
+  ],
+  [
+   18,
+   16,
+   0,
+   17,
    0,
    "STRING"
   ]
@@ -736,34 +986,22 @@
   {
    "title": "Open Cinema",
    "bounding": [
-    40,
+    470,
     100,
     340,
-    788
+    1454
    ],
    "color": "#b06634",
    "font_size": 22,
    "flags": {}
   },
   {
-   "title": "Models",
-   "bounding": [
-    450,
-    100,
-    340,
-    222
-   ],
-   "color": "#444444",
-   "font_size": 22,
-   "flags": {}
-  },
-  {
    "title": "Prompt",
    "bounding": [
-    860,
+    880,
     100,
     340,
-    630
+    1220
    ],
    "color": "#8a6d3b",
    "font_size": 22,
@@ -772,7 +1010,7 @@
   {
    "title": "Output",
    "bounding": [
-    1270,
+    1290,
     100,
     340,
     1380

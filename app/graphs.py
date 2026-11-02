@@ -1,6 +1,6 @@
 """ComfyUI API-format graphs for Open Cinema Studio.
 
-Every graph uses only core ComfyUI nodes and permissively licensed open-weights models:
+Graphs use core ComfyUI nodes, the shared Open Cinema nodes and open-weight models:
 HiDream-O1-Image (MIT) for keyframes and cast portraits, Qwen-Image-Edit-2511 (Apache-2.0)
 for multi-reference coverage that keeps the cast and set consistent, LTX 2.5 for
 image-to-video with native audio, and SeedVR2 (Apache-2.0) for the 1080p master.
@@ -9,6 +9,23 @@ image-to-video with native audio, and SeedVR2 (Apache-2.0) for the 1080p master.
 from __future__ import annotations
 
 from typing import Any
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+_writer_mode = ContextVar("writer_mode", default="normal")
+
+@contextmanager
+def using_writer(mode: str):
+    if mode not in ("normal", "fast"):
+        raise ValueError("Choose Normal or Fast AI mode")
+    token = _writer_mode.set(mode)
+    try:
+        yield
+    finally:
+        _writer_mode.reset(token)
+
+def writer_node():
+    return node("OpenCinemaWriter", mode=_writer_mode.get())
 
 MODELS = {
     "hidream": "hidream_o1_image_fp8_scaled.safetensors",
@@ -21,7 +38,7 @@ MODELS = {
     "ltx_vae": "ltx-2.5-video-vae-bf16.safetensors",
     "ltx_audio_vae": "ltx-2.5-audio-vae-bf16.safetensors",
     "ltx_upscaler": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
-    "writer": "gemma4_e4b_it_fp8_scaled.safetensors",  # Gemma 4 E4B-it (Apache-2.0), text + image understanding
+    "writer": "gemma4_12b_int8_convrot.safetensors",  # Gemma 4 12B-it (8-bit) (Apache-2.0), text + image understanding
 }
 
 # Distilled two-stage schedule: base pass at half resolution, x2 latent
@@ -68,7 +85,7 @@ def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
 
 def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: str,
                    second_reference: str | None = None, keep_layout: bool = False,
-                   third_reference: str | None = None, scale: float = 1.0) -> dict[str, Any]:
+                   third_reference: str | None = None, scale: float = 1.0, detailed: bool = False) -> dict[str, Any]:
     """New camera setup of the same film with Qwen-Image-Edit-2511 + 4-step Lightning.
 
     Picture 1 is the world, Picture 2 (optional) the cast, Picture 3 (optional) the storyboard drawing that
@@ -109,13 +126,50 @@ def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: 
         graph["19"] = node("FluxKontextImageScale", image=["18", 0])
         for encoder in ("8", "10"):
             graph[encoder]["inputs"]["image3"] = ["19", 0]
+    if detailed:
+        graph.pop("1l")
+        graph["2"]["inputs"]["model"] = ["1", 0]
+        graph["13"]["inputs"].update(steps=40, cfg=4.0)
     return graph
 
 
+def verify_cast(graph: dict[str, Any], save: str, expected: int | None) -> dict[str, Any]:
+    """Save inspectable candidates and report cast evidence; promotion belongs to the studio/director."""
+    if expected is None:
+        return graph
+    from director import CAST_COUNT_CHECK
+    image = graph[save]["inputs"]["images"]
+    graph["count_model"] = writer_node()
+    graph["count"] = node("TextGenerate", clip=["count_model", 0], image=image, prompt=CAST_COUNT_CHECK,
+                          max_length=8, sampling_mode="off")
+    graph["checked"] = node("OpenCinemaCastReview", observed=["count", 0], expected=expected)
+    graph["cast_review"] = node("PreviewAny", source=["checked", 0])
+    return graph
+
+
+def storyboard_graph(prompt: str, seed: int, aspect: str, prefix: str, expected_cast: int | None = None) -> dict[str, Any]:
+    """Independent composition, then deterministic grayscale in both the app and exported canvas."""
+    from director import SKETCH_NEGATIVE
+    size = {"16:9": (1280, 704), "2.39:1": (1536, 640), "9:16": (704, 1280), "1:1": (1024, 1024)}[aspect]
+    graph = keyframe_graph(prompt, seed, aspect, prefix, size=size, negative=SKETCH_NEGATIVE)
+    graph["mono"] = node("OpenCinemaMonochrome", images=["10", 0])
+    graph["11"]["inputs"]["images"] = ["mono", 0]
+    return verify_cast(graph, "11", expected_cast)
+
+
+def frame_storyboard_graph(image: str, seed: int, aspect: str, prefix: str,
+                           expected_cast: int | None = None) -> dict[str, Any]:
+    from director import sketch_from_frame_prompt
+    graph = coverage_graph(sketch_from_frame_prompt(), seed, image, prefix, aspect, keep_layout=True)
+    graph["mono"] = node("OpenCinemaMonochrome", images=["14", 0])
+    graph["15"]["inputs"]["images"] = ["mono", 0]
+    return verify_cast(graph, "15", expected_cast)
+
+
 def people_check_graph(image: str, question: str) -> dict[str, Any]:
-    """Gemma 4 E4B looks at an image and answers YES or NO (used to keep the world plate empty)."""
+    """Gemma 4 12B (8-bit) looks at an image and answers YES or NO (used to keep the world plate empty)."""
     return {
-        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "1": writer_node(),
         "2": node("LoadImage", image=image),
         "3": node("TextGenerate", clip=["1", 0], prompt=question, image=["2", 0], max_length=8, sampling_mode="off"),
         "answer": node("PreviewAny", source=["3", 0]),
@@ -127,10 +181,71 @@ def frames_for(seconds: float, fps: int) -> int:
     return max(9, round(seconds * fps / 8) * 8 + 1)
 
 
+def continuity_graph(context_json: str, shot_count: int) -> dict[str, Any]:
+    return {
+        "1": writer_node(),
+        "2": node("OpenCinemaContinuityBrief", context_json=context_json),
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=min(6000, 500 + 450 * shot_count), sampling_mode="off"),
+        "repair_brief": node("OpenCinemaContinuityRepairBrief", text=["3", 0], context_json=context_json, shot_count=shot_count),
+        "repair": node("TextGenerate", clip=["1", 0], prompt=["repair_brief", 0], max_length=min(8000, 800 + 500 * shot_count), sampling_mode="off"),
+        "4": node("OpenCinemaParseContinuity", text=["repair", 0], shot_count=shot_count),
+        "plan": node("PreviewAny", source=["4", 0]),
+        "ledger": node("OpenCinemaStateLedger", plan_json=["4", 0], shot_index=1),
+        "state_before": node("PreviewAny", source=["ledger", 0]),
+        "state_changes": node("PreviewAny", source=["ledger", 1]),
+    }
+
+
+def _review_nodes(graph: dict, prefix: str, image: list, expected_json: str, look: str, phase: str):
+    from director import CAST_COUNT_CHECK
+    graph[prefix + "requirements"] = node("OpenCinemaReviewRequirements", expected_json=expected_json)
+    expected_json = [prefix + "requirements", 0]
+    graph[prefix + "brief"] = node("OpenCinemaVisualReviewBrief", expected_json=expected_json, look=look, phase=phase, style_only=True)
+    graph[prefix + "vision"] = node("TextGenerate", clip=["review_model", 0], image=image,
+                                    prompt=[prefix + "brief", 0], max_length=1200, sampling_mode="off")
+    graph[prefix + "count"] = node("TextGenerate", clip=["review_model", 0], image=image,
+                                   prompt=CAST_COUNT_CHECK, max_length=8, sampling_mode="off")
+    graph[prefix + "fact_briefs"] = node("OpenCinemaFactBrief", expected_json=expected_json)
+    graph[prefix + "fact_observations"] = node("TextGenerate", clip=["review_model", 0], image=image,
+                                               prompt=[prefix + "fact_briefs", 1], max_length=140, sampling_mode="off")
+    graph[prefix + "observations"] = node("OpenCinemaAppendObservation", text=[prefix + "vision", 0],
+                                          key=[prefix + "fact_briefs", 0], observation=[prefix + "fact_observations", 0])
+    observations = [prefix + "observations", 0]
+    graph[prefix + "compare_brief"] = node("OpenCinemaStateEvidenceBrief", text=observations, expected_json=expected_json)
+    graph[prefix + "compare"] = node("TextGenerate", clip=["review_model", 0], prompt=[prefix + "compare_brief", 0],
+                                     max_length=1200, sampling_mode="off")
+    graph[prefix + "parsed"] = node("OpenCinemaParseVisualReview", text=observations, expected_json=expected_json,
+                                    observed_count=[prefix + "count", 0], state_audit=[prefix + "compare", 0])
+
+
+def visual_review_graph(image: str, expected_json: str, look: str) -> dict[str, Any]:
+    graph = {"review_model": writer_node(),
+             "image": node("LoadImage", image=image)}
+    _review_nodes(graph, "", ["image", 0], expected_json, look, "start")
+    graph["review"] = node("PreviewAny", source=["parsed", 0])
+    return graph
+
+
+def video_review_graph(video: str, start_json: str, middle_json: str, end_json: str, look: str) -> dict[str, Any]:
+    """Four independent visual inspections share one loaded vision model; no contact-sheet counting ambiguity."""
+    graph = {"review_model": writer_node(),
+             "video": node("LoadVideo", file=video), "components": node("GetVideoComponents", video=["video", 0]),
+             "samples": node("OpenCinemaReviewSamples", images=["components", 0])}
+    for i, (expected, phase) in enumerate(((start_json, "start"), (middle_json, "middle"),
+                                          (middle_json, "middle"), (end_json, "end"))):
+        _review_nodes(graph, str(i), ["samples", i], expected, look, phase)
+    graph["combined"] = node("OpenCinemaCombineReviews", **{f"review_{i + 1}": [str(i) + "parsed", 0] for i in range(4)})
+    graph["review"] = node("PreviewAny", source=["combined", 0])
+    return graph
+
+
 def shot_graph(start_image: str, prompt: str, seed: int, aspect: str, seconds: float, prefix: str,
                end_image: str | None = None, fps: int = 24, start_strength: float = 1.0,
-               end_strength: float = 1.0, size: tuple[int, int] | None = None) -> dict[str, Any]:
-    """Image-to-video shot with synchronized audio, two-stage distilled LTX 2.5."""
+               end_strength: float = 1.0, size: tuple[int, int] | None = None,
+               performance: str = "normal") -> dict[str, Any]:
+    """Image-to-video with synchronized audio; Fast decodes the single-stage draft."""
+    if performance not in ("normal", "fast"):
+        raise ValueError("Choose Normal or Fast performance")
     width, height = size or ASPECTS[aspect][2:]
     frames = frames_for(seconds, fps)
     graph: dict[str, Any] = {
@@ -181,6 +296,18 @@ def shot_graph(start_image: str, prompt: str, seed: int, aspect: str, seconds: f
         up_source, ref_pos, ref_neg = ["24", 2], ["24", 0], ["24", 1]
     else:
         up_source, ref_pos, ref_neg = ["22", 0], base_pos, base_neg
+    if performance == "fast":
+        graph["3"]["inputs"].update(width=width // 2, height=height // 2)
+        if end_image:
+            graph["2s"]["inputs"].update(width=width // 2, height=height // 2)
+        for key in ("23", "29", "30", "31"):
+            graph.pop(key)
+        graph["34"] = node("VAEDecodeTiled", samples=up_source, vae=["7", 0], tile_size=768, overlap=64,
+                           temporal_size=max(96, frames), temporal_overlap=8)
+        graph["35"] = node("LTXVAudioVAEDecode", samples=["22", 1], audio_vae=["8", 0])
+        graph["36"] = node("CreateVideo", images=["34", 0], fps=float(fps), audio=["35", 0])
+        graph["37"] = node("SaveVideo", video=["36", 0], filename_prefix=prefix, format="mp4", codec="h264")
+        return graph
     graph["24u"] = node("LTXVLatentUpsampler", samples=up_source, upscale_model=["23", 0], vae=["7", 0])
     graph["25"] = node("LTXVImgToVideoInplace", vae=["7", 0], image=["4", 0], latent=["24u", 0],
                        strength=start_strength, bypass=False)
@@ -297,9 +424,9 @@ def score_graph(start_image: str, prompt: str, seed: int, seconds: float, prefix
 
 def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str = "", photo: str | None = None,
                       seed: int = 1) -> dict[str, Any]:
-    """Gemma 4 E4B writes the lead (and continuity notes) through ComfyUI's native TextGenerate."""
+    """Gemma 4 12B (8-bit) writes the lead (and continuity notes) through ComfyUI's native TextGenerate."""
     graph = {
-        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "1": writer_node(),
         "2": node("OpenCinemaLeadBrief", mode=mode, title=title, world=world, look=look, draft=draft),
         "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=320, sampling_mode="on",
                   **{"sampling_mode.temperature": 0.65, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
@@ -318,39 +445,54 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
 def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str, lead: str, continuity: str,
                       shots: str, index: int = 1, count: int = 5, seed: int = 1, beats: str = "",
                       write_beats: str = "", characters: str = "") -> dict[str, Any]:
-    """Gemma 4 E4B writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
-    return {
-        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+    """Gemma 4 12B (8-bit) writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
+    graph = {
+        "1": writer_node(),
         "2": node("OpenCinemaShotsBrief", mode=mode, count=count, index=index, title=title, logline=logline,
                   world=world, look=look, lead=lead, continuity=continuity, beats=beats, shots=shots,
                   write_beats=write_beats, characters=characters),
-        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=120 * count if mode == "board" else 170,
+        "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=320 * count if mode == "board" else 400,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.75, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,
                      "sampling_mode.min_p": 0.05, "sampling_mode.repetition_penalty": 1.05,
                      "sampling_mode.seed": seed}),
-        "4": node("OpenCinemaParseShots", text=["3", 0]),
+        "4": node("OpenCinemaParseShots", text=["3", 0], lead_description=lead),
         "shots": node("PreviewAny", source=["4", 0]),
         "storyboard": node("PreviewAny", source=["4", 1]),
         "new_beats": node("PreviewAny", source=["4", 2]),
     }
+    if mode != "beat":
+        graph["review_brief"] = node("OpenCinemaReviewShotsBrief", brief=["2", 0], draft=["3", 0])
+        graph["review"] = node("TextGenerate", **{**graph["3"]["inputs"], "prompt": ["review_brief", 0],
+                                                  "sampling_mode.temperature": 0.35})
+        graph["4"]["inputs"]["text"] = ["review", 0]
+    return graph
 
 
 def story_writer_graph(target: str, idea: str, title: str, logline: str, world: str, look: str, lead: str,
-                       seed: int = 1, beats: str = "", count: int = 3, characters: str = "") -> dict[str, Any]:
-    """Gemma 4 E4B develops the story page (or one field of it) through ComfyUI's native TextGenerate."""
+                       seed: int = 1, beats: str = "", count: int = 3, characters: str = "",
+                       avoid_title_words: str = "") -> dict[str, Any]:
+    """Gemma 4 12B (8-bit) develops the story page (or one field of it) through ComfyUI's native TextGenerate."""
     graph = {
-        "1": node("CLIPLoader", clip_name=MODELS["writer"], type="stable_diffusion", device="default"),
+        "1": writer_node(),
         "2": node("OpenCinemaStoryBrief", target=target, idea=idea, title=title, logline=logline, world=world,
-                  look=look, lead=lead, beats=beats, count=count, characters=characters),
+                  look=look, lead=lead, beats=beats, count=count, characters=characters, creative_seed=seed,
+                  avoid_title_words=avoid_title_words),
         "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=1500 if target == "everything" else 360,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.8 if target == "everything" else 0.75, "sampling_mode.top_k": 64,
                      "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.05,
                      "sampling_mode.repetition_penalty": 1.05, "sampling_mode.seed": seed}),
-        "4": node("OpenCinemaParseStory", text=["3", 0], target=target),
+        "4": node("OpenCinemaParseStory", text=["3", 0], target=target, idea=["2", 1]),
     }
     for index, field in enumerate(("title", "logline", "world", "look", "palette", "lead", "continuity", "trailer",
                                    "beats", "characters")):
         graph[field] = node("PreviewAny", source=["4", index])
+    if target in ("everything", "title"):
+        graph["title_brief"] = node("OpenCinemaTitleBrief", idea=idea,
+                                    story=["3", 0] if target == "everything" else "\n".join((logline, world, beats)),
+                                    avoid_words=avoid_title_words)
+        graph["title_candidates"] = node("TextGenerate", **{**graph["3"]["inputs"], "prompt": ["title_brief", 0], "max_length": 300})
+        graph["title_selected"] = node("OpenCinemaSelectTitle", text=["title_candidates", 0], avoid_words=avoid_title_words, idea=idea)
+        graph["title"]["inputs"]["source"] = ["title_selected", 0]
     return graph

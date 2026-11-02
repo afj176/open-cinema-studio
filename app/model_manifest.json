@@ -1,0 +1,156 @@
+[
+  {
+    "id": "hidream",
+    "name": "hidream_o1_image_fp8_scaled.safetensors",
+    "folder": "checkpoints",
+    "group": "images",
+    "repo": "Comfy-Org/HiDream-O1-Image",
+    "path": "checkpoints/hidream_o1_image_fp8_scaled.safetensors",
+    "bytes": 8067535296,
+    "sha256": "05ad98bc4a94557697f31b839f6dbf6dba293a353d9e3c52eef7818b5802d206",
+    "gated": false
+  },
+  {
+    "id": "qwen_edit",
+    "name": "qwen_image_edit_2511_int8_convrot.safetensors",
+    "folder": "diffusion_models",
+    "group": "images",
+    "repo": "Comfy-Org/Qwen-Image-Edit",
+    "path": "split_files/diffusion_models/qwen_image_edit_2511_int8_convrot.safetensors",
+    "bytes": 20499083824,
+    "sha256": "11b5af5ac601821d73930c84846c9a158e67177356daf927ce1c8d10f3963829",
+    "gated": false
+  },
+  {
+    "id": "qwen_te",
+    "name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "folder": "text_encoders",
+    "group": "images",
+    "repo": "Comfy-Org/Qwen-Image",
+    "path": "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "bytes": 9384670680,
+    "sha256": "cb5636d852a0ea6a9075ab1bef496c0db7aef13c02350571e388aea959c5c0b4",
+    "gated": false
+  },
+  {
+    "id": "qwen_vae",
+    "name": "qwen_image_vae.safetensors",
+    "folder": "vae",
+    "group": "images",
+    "repo": "Comfy-Org/Qwen-Image",
+    "path": "split_files/vae/qwen_image_vae.safetensors",
+    "bytes": 253806246,
+    "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+    "gated": false
+  },
+  {
+    "id": "qwen_lightning",
+    "name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+    "folder": "loras",
+    "group": "images",
+    "repo": "lightx2v/Qwen-Image-Edit-2511-Lightning",
+    "path": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+    "bytes": 849608296,
+    "sha256": "22226e8d05d354bb356627d428809f5afd7819399b077238a2b70a82883a904f",
+    "gated": false
+  },
+  {
+    "id": "ltx",
+    "name": "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+    "folder": "diffusion_models",
+    "group": "video",
+    "repo": "Lightricks/LTX-2.5",
+    "path": "diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+    "bytes": 21504034224,
+    "sha256": "c4279eeff115cbeaca494bd2183e7d768c38fe85a184dc6afbb7159157c44334",
+    "gated": true
+  },
+  {
+    "id": "ltx_te",
+    "name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+    "folder": "text_encoders",
+    "group": "video",
+    "repo": "Lightricks/LTX-2.5",
+    "path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+    "bytes": 15372969374,
+    "sha256": "6ce688a0aa98a5fa36a9f1e6c3f42152a498cc2b53ee8c15674c64244f91487f",
+    "gated": true
+  },
+  {
+    "id": "ltx_vae",
+    "name": "ltx-2.5-video-vae-bf16.safetensors",
+    "folder": "vae",
+    "group": "video",
+    "repo": "Lightricks/LTX-2.5",
+    "path": "vae/ltx-2.5-video-vae-bf16.safetensors",
+    "bytes": 1472223346,
+    "sha256": "847e14ca7f3355debca0cea4eaa24ac0fbcdf0061da054ac89ca638a869ddba3",
+    "gated": true
+  },
+  {
+    "id": "ltx_audio_vae",
+    "name": "ltx-2.5-audio-vae-bf16.safetensors",
+    "folder": "vae",
+    "group": "video",
+    "repo": "Lightricks/LTX-2.5",
+    "path": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+    "bytes": 364866540,
+    "sha256": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5",
+    "gated": true
+  },
+  {
+    "id": "ltx_upscaler",
+    "name": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+    "folder": "latent_upscale_models",
+    "group": "video",
+    "repo": "Lightricks/LTX-2.5",
+    "path": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+    "bytes": 995778752,
+    "sha256": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8",
+    "gated": true
+  },
+  {
+    "id": "writer",
+    "name": "gemma4_12b_int8_convrot.safetensors",
+    "folder": "text_encoders",
+    "group": "writing",
+    "repo": "Comfy-Org/gemma-4",
+    "path": "text_encoders/gemma4_12b_int8_convrot.safetensors",
+    "bytes": 12055234634,
+    "sha256": "bf77dc0b435c487a638909d8f2ccf5a7e4c9838e7bc56545ea6e251a603c5793",
+    "gated": false
+  },
+  {
+    "id": "master_11",
+    "name": "seedvr2_3b_int8_convrot.safetensors",
+    "folder": "diffusion_models",
+    "group": "master",
+    "repo": "Comfy-Org/SeedVR2",
+    "path": "diffusion_models/seedvr2_3b_int8_convrot.safetensors",
+    "bytes": 3458259704,
+    "sha256": "c3dec8bcc5916843a8a858572970597462e1f2dc598d6dfd818f6cd40f53a157",
+    "gated": false
+  },
+  {
+    "id": "master_12",
+    "name": "seedvr2_ema_vae_fp16.safetensors",
+    "folder": "vae",
+    "group": "master",
+    "repo": "Comfy-Org/SeedVR2",
+    "path": "vae/seedvr2_ema_vae_fp16.safetensors",
+    "bytes": 501324814,
+    "sha256": "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1",
+    "gated": false
+  },
+  {
+    "id": "writer_fast",
+    "name": "gemma4_e4b_it_fp8_scaled.safetensors",
+    "folder": "text_encoders",
+    "group": "writing_fast",
+    "repo": "Comfy-Org/gemma-4",
+    "path": "text_encoders/gemma4_e4b_it_fp8_scaled.safetensors",
+    "bytes": 9057782194,
+    "sha256": "bf0b4fa2e41a25684dc9e9b256cd505564f02fed09be3da95ce024e653e2c52b",
+    "gated": false
+  }
+]

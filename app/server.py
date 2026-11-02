@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from studio import PROJECTS, Studio, default_credits, default_trailer, director, film_inputs, graphs  # noqa: E402
+from setup import Setup  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -50,23 +51,67 @@ class Handler(BaseHTTPRequestHandler):
     def _file(self, path: Path) -> None:
         if not path.is_file():
             return self._json({"error": "not found"}, 404)
-        data = path.read_bytes()
-        size, start, end = len(data), 0, len(data) - 1
-        match = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         if match and (match.group(1) or match.group(2)):  # video scrubbing
             if match.group(1):
                 start = int(match.group(1))
                 end = int(match.group(2)) if match.group(2) else size - 1
             else:
-                start = size - int(match.group(2))
-            return self._send(206, data[start:end + 1], content_type,
-                              {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes"})
-        self._send(200, data, content_type, {"Accept-Ranges": "bytes"})
+                start = max(0, size - int(match.group(2)))
+            end = min(end, size - 1)
+            if start > end or start >= size:
+                return self._send(416, b"", content_type, {"Content-Range": f"bytes */{size}"})
+        partial = bool(match and (match.group(1) or match.group(2)))
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(max(0, end - start + 1)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-cache")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        try:
+            with path.open("rb") as source:
+                source.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    block = source.read(min(256 * 1024, remaining))
+                    if not block:
+                        break
+                    self.wfile.write(block)
+                    remaining -= len(block)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # seeking or navigating away cancels the previous stream
 
     def do_GET(self):
         try:
             route = urlparse(self.path).path
+            if route == "/api/health":
+                return self._json({"service": "open-cinema", "comfy_url": self.studio.comfy.server})
+            if route == "/comfy":
+                self.send_response(302)
+                self.send_header("Location", self.studio.comfy.server + "/")
+                self.end_headers()
+                return
+            if route == "/api/events":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                revision = -1  # every connection reconciles a fresh snapshot
+                try:
+                    while True:
+                        current = self.studio.events.wait(revision)
+                        payload = f"id: {current}\ndata: {{}}\n\n" if current != revision else ": heartbeat\n\n"
+                        self.wfile.write(payload.encode())
+                        self.wfile.flush()
+                        revision = current
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    return
             if route == "/" or route == "/index.html":
                 return self._file(STATIC / "index.html")
             if route.startswith("/static/"):
@@ -88,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(target)
             if route == "/api/presets":
                 return self._json({"camera_moves": list(director.CAMERA_MOVES), "shot_sizes": list(director.SHOT_SIZES),
-                                   "looks": list(director.LOOKS), "aspects": list(graphs.ASPECTS),
+                                   "looks": list(director.LOOKS), "look_descriptions": director.LOOKS, "aspects": list(graphs.ASPECTS),
                                    "palettes": director.LOOK_PALETTES,
                                    "score_styles": director.SCORE_STYLES, "materials": director.TITLE_MATERIALS,
                                    "comfy": self.studio.comfy.alive()})
@@ -102,6 +147,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(project)
             if route == "/api/jobs":
                 return self._json(self.studio.list_jobs())
+            if route == "/api/setup":
+                return self._json(self.studio.setup.status(refresh="refresh=1" in self.path))
             return self._json({"error": "not found"}, 404)
         except FileNotFoundError:
             self._json({"error": "not found"}, 404)
@@ -112,6 +159,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = urlparse(self.path).path
             studio = self.studio
+            if route == "/api/setup/download":
+                return self._json(studio.setup.start(json.loads(self._body()).get("ids")))
             if route == "/api/projects":
                 return self._json(studio.create(json.loads(self._body() or b"{}")))
             if m := re.fullmatch(r"/api/projects/(\w+)", route):
@@ -119,9 +168,33 @@ class Handler(BaseHTTPRequestHandler):
             if m := re.fullmatch(r"/api/projects/(\w+)/reference", route):
                 name = unquote(self.headers.get("X-Filename", "reference.png"))
                 return self._json(studio.set_reference(m.group(1), name, self._body()))
+            if m := re.fullmatch(r"/api/jobs/(\w+)/retry", route):
+                return self._json(studio.retry_job(m.group(1)))
+            if m := re.fullmatch(r"/api/jobs/(\w+)/auto-fix", route):
+                data = json.loads(self._body() or b"{}")
+                if not isinstance(data.get("continuity_rev"), int):
+                    return self._json({"error": "Reload the continuity plan before fixing it"}, 400)
+                return self._json(studio.auto_fix_continuity(m.group(1), data["continuity_rev"]))
+            if m := re.fullmatch(r"/api/projects/(\w+)/plan-continuity", route):
+                return self._json(studio.enqueue("plan_continuity", m.group(1), label="Planning continuity"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/props/(\w+)/generate", route):
+                data = json.loads(self._body() or b"{}")
+                return self._json(studio.enqueue("prop", m.group(1), label="Drawing prop reference", prop=m.group(2), value=data.get("value", "")))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/review", route):
+                return self._json(studio.enqueue("review", m.group(1), m.group(2), "Reviewing video continuity"))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/repair-frame", route):
+                data = json.loads(self._body() or b"{}")
+                return self._json(studio.enqueue("repair_frame", m.group(1), m.group(2), "Repairing frame", candidate_kind=data.get("kind", "keyframe")))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/accept-review", route):
+                data = json.loads(self._body() or b"{}")
+                return self._json(studio.accept_review(m.group(1), m.group(2), data.get("kind", ""),
+                                                     data.get("name", ""), data.get("reason", "")))
             if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/keyframe-upload", route):
                 name = unquote(self.headers.get("X-Filename", "keyframe.png"))
                 return self._json(studio.set_keyframe(m.group(1), m.group(2), name, self._body()))
+            if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/endframe-upload", route):
+                name = unquote(self.headers.get("X-Filename", "ending.png"))
+                return self._json(studio.set_endframe(m.group(1), m.group(2), name, self._body()))
             if m := re.fullmatch(r"/api/projects/(\w+)/shots/(\w+)/take", route):
                 choice = json.loads(self._body() or b"{}")
                 return self._json(studio.choose_take(m.group(1), m.group(2), choice["kind"], choice["name"]))
@@ -210,7 +283,9 @@ class Handler(BaseHTTPRequestHandler):
                                 and j["state"] == "queued"), None)  # one cut in the queue is enough
                 return self._json(waiting or studio.enqueue("stitch", m.group(1), None, "Final cut"))
             if route == "/api/cancel":
-                studio.cancel()
+                data = json.loads(self._body() or b"{}")
+                studio.load(data["project"])
+                studio.cancel(data["project"])
                 return self._json({"ok": True})
             return self._json({"error": "not found"}, 404)
         except Exception as error:
@@ -223,9 +298,12 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8420)
     parser.add_argument("--open", action="store_true", help="open the studio in a browser")
+    parser.add_argument("--models-dir", help="Local ComfyUI models folder; enables explicit downloads from Setup")
     args = parser.parse_args()
-    Handler.studio = Studio(args.comfy)
+    # Reserve the port before creating workers or touching job history.
     server = ThreadingHTTPServer((args.host, args.port), Handler)
+    Handler.studio = Studio(args.comfy)
+    Handler.studio.setup = Setup(Handler.studio.comfy, args.models_dir)
     url = f"http://{args.host}:{args.port}"
     print(f"Open Cinema Studio on {url}  (ComfyUI: {args.comfy}, reachable={Handler.studio.comfy.alive()})", flush=True)
     if args.open:

@@ -1,0 +1,650 @@
+{
+  "review_model": {
+    "class_type": "OpenCinemaWriter",
+    "inputs": {
+      "mode": "normal"
+    }
+  },
+  "video": {
+    "class_type": "LoadVideo",
+    "inputs": {
+      "file": "oc_example_shot.mp4"
+    }
+  },
+  "components": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "video",
+        0
+      ]
+    }
+  },
+  "samples": {
+    "class_type": "OpenCinemaReviewSamples",
+    "inputs": {
+      "images": [
+        "components",
+        0
+      ]
+    }
+  },
+  "0requirements": {
+    "class_type": "OpenCinemaReviewRequirements",
+    "inputs": {
+      "expected_json": "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+    }
+  },
+  "0brief": {
+    "class_type": "OpenCinemaVisualReviewBrief",
+    "inputs": {
+      "expected_json": [
+        "0requirements",
+        0
+      ],
+      "look": "Golden hour",
+      "phase": "start",
+      "style_only": true
+    }
+  },
+  "0vision": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        0
+      ],
+      "prompt": [
+        "0brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "0count": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        0
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "0fact_briefs": {
+    "class_type": "OpenCinemaFactBrief",
+    "inputs": {
+      "expected_json": [
+        "0requirements",
+        0
+      ]
+    }
+  },
+  "0fact_observations": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        0
+      ],
+      "prompt": [
+        "0fact_briefs",
+        1
+      ],
+      "max_length": 140,
+      "sampling_mode": "off"
+    }
+  },
+  "0observations": {
+    "class_type": "OpenCinemaAppendObservation",
+    "inputs": {
+      "text": [
+        "0vision",
+        0
+      ],
+      "key": [
+        "0fact_briefs",
+        0
+      ],
+      "observation": [
+        "0fact_observations",
+        0
+      ]
+    }
+  },
+  "0compare_brief": {
+    "class_type": "OpenCinemaStateEvidenceBrief",
+    "inputs": {
+      "text": [
+        "0observations",
+        0
+      ],
+      "expected_json": [
+        "0requirements",
+        0
+      ]
+    }
+  },
+  "0compare": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "prompt": [
+        "0compare_brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "0parsed": {
+    "class_type": "OpenCinemaParseVisualReview",
+    "inputs": {
+      "text": [
+        "0observations",
+        0
+      ],
+      "expected_json": [
+        "0requirements",
+        0
+      ],
+      "observed_count": [
+        "0count",
+        0
+      ],
+      "state_audit": [
+        "0compare",
+        0
+      ]
+    }
+  },
+  "1requirements": {
+    "class_type": "OpenCinemaReviewRequirements",
+    "inputs": {
+      "expected_json": "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+    }
+  },
+  "1brief": {
+    "class_type": "OpenCinemaVisualReviewBrief",
+    "inputs": {
+      "expected_json": [
+        "1requirements",
+        0
+      ],
+      "look": "Golden hour",
+      "phase": "middle",
+      "style_only": true
+    }
+  },
+  "1vision": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        1
+      ],
+      "prompt": [
+        "1brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "1count": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        1
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "1fact_briefs": {
+    "class_type": "OpenCinemaFactBrief",
+    "inputs": {
+      "expected_json": [
+        "1requirements",
+        0
+      ]
+    }
+  },
+  "1fact_observations": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        1
+      ],
+      "prompt": [
+        "1fact_briefs",
+        1
+      ],
+      "max_length": 140,
+      "sampling_mode": "off"
+    }
+  },
+  "1observations": {
+    "class_type": "OpenCinemaAppendObservation",
+    "inputs": {
+      "text": [
+        "1vision",
+        0
+      ],
+      "key": [
+        "1fact_briefs",
+        0
+      ],
+      "observation": [
+        "1fact_observations",
+        0
+      ]
+    }
+  },
+  "1compare_brief": {
+    "class_type": "OpenCinemaStateEvidenceBrief",
+    "inputs": {
+      "text": [
+        "1observations",
+        0
+      ],
+      "expected_json": [
+        "1requirements",
+        0
+      ]
+    }
+  },
+  "1compare": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "prompt": [
+        "1compare_brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "1parsed": {
+    "class_type": "OpenCinemaParseVisualReview",
+    "inputs": {
+      "text": [
+        "1observations",
+        0
+      ],
+      "expected_json": [
+        "1requirements",
+        0
+      ],
+      "observed_count": [
+        "1count",
+        0
+      ],
+      "state_audit": [
+        "1compare",
+        0
+      ]
+    }
+  },
+  "2requirements": {
+    "class_type": "OpenCinemaReviewRequirements",
+    "inputs": {
+      "expected_json": "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+    }
+  },
+  "2brief": {
+    "class_type": "OpenCinemaVisualReviewBrief",
+    "inputs": {
+      "expected_json": [
+        "2requirements",
+        0
+      ],
+      "look": "Golden hour",
+      "phase": "middle",
+      "style_only": true
+    }
+  },
+  "2vision": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        2
+      ],
+      "prompt": [
+        "2brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "2count": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        2
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "2fact_briefs": {
+    "class_type": "OpenCinemaFactBrief",
+    "inputs": {
+      "expected_json": [
+        "2requirements",
+        0
+      ]
+    }
+  },
+  "2fact_observations": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        2
+      ],
+      "prompt": [
+        "2fact_briefs",
+        1
+      ],
+      "max_length": 140,
+      "sampling_mode": "off"
+    }
+  },
+  "2observations": {
+    "class_type": "OpenCinemaAppendObservation",
+    "inputs": {
+      "text": [
+        "2vision",
+        0
+      ],
+      "key": [
+        "2fact_briefs",
+        0
+      ],
+      "observation": [
+        "2fact_observations",
+        0
+      ]
+    }
+  },
+  "2compare_brief": {
+    "class_type": "OpenCinemaStateEvidenceBrief",
+    "inputs": {
+      "text": [
+        "2observations",
+        0
+      ],
+      "expected_json": [
+        "2requirements",
+        0
+      ]
+    }
+  },
+  "2compare": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "prompt": [
+        "2compare_brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "2parsed": {
+    "class_type": "OpenCinemaParseVisualReview",
+    "inputs": {
+      "text": [
+        "2observations",
+        0
+      ],
+      "expected_json": [
+        "2requirements",
+        0
+      ],
+      "observed_count": [
+        "2count",
+        0
+      ],
+      "state_audit": [
+        "2compare",
+        0
+      ]
+    }
+  },
+  "3requirements": {
+    "class_type": "OpenCinemaReviewRequirements",
+    "inputs": {
+      "expected_json": "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+    }
+  },
+  "3brief": {
+    "class_type": "OpenCinemaVisualReviewBrief",
+    "inputs": {
+      "expected_json": [
+        "3requirements",
+        0
+      ],
+      "look": "Golden hour",
+      "phase": "end",
+      "style_only": true
+    }
+  },
+  "3vision": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        3
+      ],
+      "prompt": [
+        "3brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "3count": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        3
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "3fact_briefs": {
+    "class_type": "OpenCinemaFactBrief",
+    "inputs": {
+      "expected_json": [
+        "3requirements",
+        0
+      ]
+    }
+  },
+  "3fact_observations": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "samples",
+        3
+      ],
+      "prompt": [
+        "3fact_briefs",
+        1
+      ],
+      "max_length": 140,
+      "sampling_mode": "off"
+    }
+  },
+  "3observations": {
+    "class_type": "OpenCinemaAppendObservation",
+    "inputs": {
+      "text": [
+        "3vision",
+        0
+      ],
+      "key": [
+        "3fact_briefs",
+        0
+      ],
+      "observation": [
+        "3fact_observations",
+        0
+      ]
+    }
+  },
+  "3compare_brief": {
+    "class_type": "OpenCinemaStateEvidenceBrief",
+    "inputs": {
+      "text": [
+        "3observations",
+        0
+      ],
+      "expected_json": [
+        "3requirements",
+        0
+      ]
+    }
+  },
+  "3compare": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "prompt": [
+        "3compare_brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "3parsed": {
+    "class_type": "OpenCinemaParseVisualReview",
+    "inputs": {
+      "text": [
+        "3observations",
+        0
+      ],
+      "expected_json": [
+        "3requirements",
+        0
+      ],
+      "observed_count": [
+        "3count",
+        0
+      ],
+      "state_audit": [
+        "3compare",
+        0
+      ]
+    }
+  },
+  "combined": {
+    "class_type": "OpenCinemaCombineReviews",
+    "inputs": {
+      "review_1": [
+        "0parsed",
+        0
+      ],
+      "review_2": [
+        "1parsed",
+        0
+      ],
+      "review_3": [
+        "2parsed",
+        0
+      ],
+      "review_4": [
+        "3parsed",
+        0
+      ]
+    }
+  },
+  "review": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "combined",
+        0
+      ]
+    }
+  }
+}

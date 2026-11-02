@@ -54,7 +54,7 @@
   "6": {
     "class_type": "LoadImage",
     "inputs": {
-      "image": "oc_world_plate.jpg"
+      "image": "oc_storyboard_sketch.jpg"
     }
   },
   "7": {
@@ -81,13 +81,9 @@
         "7",
         0
       ],
-      "prompt": "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Picture 3 is the storyboard drawing of this shot: use its composition, camera angle, framing, where the people are placed and how they pose, but render a real photographic film frame in full colour with the place and light of Picture 1; nothing pencil-drawn or sketched. The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio backdrop of Picture 2. The lead is the only person in the frame. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, no text, no borders.",
+      "prompt": "Transform the storyboard in Picture 1 into a finished film frame. Preserve its crop, subject scale, viewpoint, poses and the number and placement of characters and props. Create this shot in the specific location described below: medium close-up from the chest up. Visible first frame: Close on his hands turning the glowing lens; light fractures into rainbows across his face. Picture 1 is the storyboard drawing of this shot: use its composition, camera angle, framing, where the characters are placed and how they pose, but render a real photographic film frame in full colour using the specified film look and lighting; nothing pencil-drawn or sketched. Keep the storyboard's background and crop; do not add an establishing landscape. The lead is the character from Picture 2 with the same species, face, distinctive markings, colouring, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio backdrop of Picture 2. The lead is the only character in the frame. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, no text, no borders.",
       "image2": [
         "17",
-        0
-      ],
-      "image3": [
-        "19",
         0
       ]
     }
@@ -120,10 +116,6 @@
       "prompt": "",
       "image2": [
         "17",
-        0
-      ],
-      "image3": [
-        "19",
         0
       ]
     }
@@ -211,17 +203,43 @@
       ]
     }
   },
-  "18": {
-    "class_type": "LoadImage",
+  "count_model": {
+    "class_type": "OpenCinemaWriter",
     "inputs": {
-      "image": "oc_storyboard_sketch.jpg"
+      "mode": "normal"
     }
   },
-  "19": {
-    "class_type": "FluxKontextImageScale",
+  "count": {
+    "class_type": "TextGenerate",
     "inputs": {
+      "clip": [
+        "count_model",
+        0
+      ],
       "image": [
-        "18",
+        "14",
+        0
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "checked": {
+    "class_type": "OpenCinemaCastReview",
+    "inputs": {
+      "observed": [
+        "count",
+        0
+      ],
+      "expected": 1
+    }
+  },
+  "cast_review": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "checked",
         0
       ]
     }

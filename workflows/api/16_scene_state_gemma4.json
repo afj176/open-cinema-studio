@@ -1,0 +1,102 @@
+{
+  "1": {
+    "class_type": "OpenCinemaWriter",
+    "inputs": {
+      "mode": "normal"
+    }
+  },
+  "2": {
+    "class_type": "OpenCinemaContinuityBrief",
+    "inputs": {
+      "context_json": "{\"scene\": \"The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.\", \"look\": \"Golden hour\", \"cast\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\", \"continuity\": \"Thin build, indigo linen, dark braids, glowing crucible\", \"shots\": [{\"index\": 1, \"action\": \"Close on his hands turning the glowing lens; light fractures into rainbows across his face.\", \"start_frame\": \"The lead holds the lens at chest height\", \"end_state\": \"The lead raises the lens to eye level\"}]}"
+    }
+  },
+  "3": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "2",
+        0
+      ],
+      "max_length": 950,
+      "sampling_mode": "off"
+    }
+  },
+  "repair_brief": {
+    "class_type": "OpenCinemaContinuityRepairBrief",
+    "inputs": {
+      "text": [
+        "3",
+        0
+      ],
+      "context_json": "{\"scene\": \"The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Harsh, bleached sunlight refracts through crystalline spires and colossal, dormant steam vents.\", \"look\": \"Golden hour\", \"cast\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\", \"continuity\": \"Thin build, indigo linen, dark braids, glowing crucible\", \"shots\": [{\"index\": 1, \"action\": \"Close on his hands turning the glowing lens; light fractures into rainbows across his face.\", \"start_frame\": \"The lead holds the lens at chest height\", \"end_state\": \"The lead raises the lens to eye level\"}]}",
+      "shot_count": 1
+    }
+  },
+  "repair": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "1",
+        0
+      ],
+      "prompt": [
+        "repair_brief",
+        0
+      ],
+      "max_length": 1300,
+      "sampling_mode": "off"
+    }
+  },
+  "4": {
+    "class_type": "OpenCinemaParseContinuity",
+    "inputs": {
+      "text": [
+        "repair",
+        0
+      ],
+      "shot_count": 1
+    }
+  },
+  "plan": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "4",
+        0
+      ]
+    }
+  },
+  "ledger": {
+    "class_type": "OpenCinemaStateLedger",
+    "inputs": {
+      "plan_json": [
+        "4",
+        0
+      ],
+      "shot_index": 1
+    }
+  },
+  "state_before": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "ledger",
+        0
+      ]
+    }
+  },
+  "state_changes": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "ledger",
+        1
+      ]
+    }
+  }
+}

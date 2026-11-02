@@ -9,6 +9,7 @@ from the live ComfyUI's /object_info, so the canvas converts back to exactly the
 from __future__ import annotations
 
 import json
+import os
 import urllib.request
 from typing import Any
 
@@ -32,7 +33,8 @@ ROLE_TITLES = {"inputs": "Inputs", "models": "Models", "prompt": "Prompt", "samp
 ROLE_ORDER = ["inputs", "world", "lead", "sketch", "cinema", "models", "prompt", "sample", "output"]
 
 
-def object_info(base: str = "http://127.0.0.1:8288") -> dict[str, Any]:
+def object_info(base: str | None = None) -> dict[str, Any]:
+    base = (base or os.environ.get('COMFYUI_URL', 'http://127.0.0.1:8288')).rstrip('/')
     with urllib.request.urlopen(base + "/object_info", timeout=30) as r:
         return json.loads(r.read())
 

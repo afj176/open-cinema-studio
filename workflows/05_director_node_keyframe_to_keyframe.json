@@ -89,7 +89,7 @@
    ],
    "size": [
     300,
-    406
+    670
    ],
    "flags": {},
    "order": 2,
@@ -138,7 +138,18 @@
     true,
     "Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.",
     "",
-    ""
+    "",
+    "",
+    "",
+    "",
+    false,
+    true,
+    "{}",
+    "{}",
+    "null",
+    "null",
+    "null",
+    "null"
    ]
   },
   {
@@ -2452,7 +2463,7 @@
     450,
     100,
     340,
-    486
+    750
    ],
    "color": "#b06634",
    "font_size": 22,

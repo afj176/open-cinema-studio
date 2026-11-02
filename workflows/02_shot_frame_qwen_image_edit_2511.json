@@ -1,9 +1,9 @@
 {
- "last_node_id": 21,
- "last_link_id": 25,
+ "last_node_id": 23,
+ "last_link_id": 26,
  "nodes": [
   {
-   "id": 21,
+   "id": 23,
    "type": "MarkdownNote",
    "pos": [
     60,
@@ -21,7 +21,7 @@
    "title": "How this works",
    "properties": {},
    "widgets_values": [
-    "## 3 \u00b7 A shot\nEvery shot is made from the same pictures: **Picture 1** is the empty world plate (place, light, grade), **Picture 2** is the lead (face, hair, wardrobe) and **Picture 3** is the shot's storyboard drawing (composition and pose), plus the shot's action and camera.\n\nNo picture ever shows a second face, so the lead stays one person across the film."
+    "## 3 \u00b7 A shot\n**Picture 1** sets composition, blocking, subject scale and props. **Picture 2** supplies the lead's identity. Tighter shots omit the world image because its wide layout can overwhelm the storyboard. Wide shots may add it as Picture 3. Supporting cast are described in the prompt.\n\nAI mode: Normal uses Gemma 4 12B at 8-bit; Fast uses E4B. Change the Open Cinema Writer mode widget. Image and video models stay the same. Cast-review findings retain the saved candidate; inspect it before using it downstream."
    ],
    "color": "#432",
    "bgcolor": "#653"
@@ -57,14 +57,14 @@
      "slot_index": 1
     }
    ],
-   "title": "World plate",
+   "title": "Storyboard drawing",
    "properties": {
     "Node name for S&R": "LoadImage"
    },
    "widgets_values": [
-    "oc_world_plate.jpg"
+    "oc_storyboard_sketch.jpg"
    ],
-   "color": "#b58b2a"
+   "color": "#7a7a72"
   },
   {
    "id": 8,
@@ -93,7 +93,7 @@
      "type": "IMAGE",
      "links": [
       7,
-      13
+      12
      ],
      "slot_index": 0
     }
@@ -103,7 +103,7 @@
     "Node name for S&R": "FluxKontextImageScale"
    },
    "widgets_values": [],
-   "color": "#b58b2a"
+   "color": "#7a7a72"
   },
   {
    "id": 17,
@@ -125,7 +125,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      24
+      22
      ],
      "slot_index": 0
     },
@@ -163,7 +163,7 @@
     {
      "name": "image",
      "type": "IMAGE",
-     "link": 24
+     "link": 22
     }
    ],
    "outputs": [
@@ -172,7 +172,7 @@
      "type": "IMAGE",
      "links": [
       8,
-      14
+      13
      ],
      "slot_index": 0
     }
@@ -186,14 +186,14 @@
   },
   {
    "id": 19,
-   "type": "LoadImage",
+   "type": "OpenCinemaWriter",
    "pos": [
     1310,
     160
    ],
    "size": [
     300,
-    378
+    94
    ],
    "flags": {},
    "order": 5,
@@ -201,67 +201,64 @@
    "inputs": [],
    "outputs": [
     {
-     "name": "IMAGE",
-     "type": "IMAGE",
+     "name": "CLIP",
+     "type": "CLIP",
      "links": [
-      25
+      23
      ],
      "slot_index": 0
-    },
-    {
-     "name": "MASK",
-     "type": "MASK",
-     "links": [],
-     "slot_index": 1
     }
    ],
-   "title": "Storyboard drawing",
+   "title": "AI mode \u00b7 Normal 12B / Fast E4B",
    "properties": {
-    "Node name for S&R": "LoadImage"
+    "Node name for S&R": "OpenCinemaWriter"
    },
    "widgets_values": [
-    "oc_storyboard_sketch.jpg"
-   ],
-   "color": "#7a7a72"
+    "normal"
+   ]
   },
   {
-   "id": 20,
-   "type": "FluxKontextImageScale",
+   "id": 21,
+   "type": "OpenCinemaCastReview",
    "pos": [
     1310,
-    578
+    294
    ],
    "size": [
     300,
-    94
+    142
    ],
    "flags": {},
    "order": 6,
    "mode": 0,
    "inputs": [
     {
-     "name": "image",
-     "type": "IMAGE",
-     "link": 25
+     "name": "observed",
+     "type": "STRING",
+     "link": 25,
+     "widget": {
+      "name": "observed"
+     }
     }
    ],
    "outputs": [
     {
-     "name": "IMAGE",
-     "type": "IMAGE",
+     "name": "STRING",
+     "type": "STRING",
      "links": [
-      9,
-      15
+      26
      ],
      "slot_index": 0
     }
    ],
-   "title": "Scale storyboard",
+   "title": "OpenCinemaCastReview",
    "properties": {
-    "Node name for S&R": "FluxKontextImageScale"
+    "Node name for S&R": "OpenCinemaCastReview"
    },
-   "widgets_values": [],
-   "color": "#7a7a72"
+   "widgets_values": [
+    "",
+    1
+   ]
   },
   {
    "id": 1,
@@ -403,7 +400,7 @@
      "name": "patched_model",
      "type": "MODEL",
      "links": [
-      17
+      15
      ],
      "slot_index": 0
     }
@@ -438,7 +435,7 @@
      "type": "CLIP",
      "links": [
       5,
-      11
+      10
      ],
      "slot_index": 0
     }
@@ -474,8 +471,8 @@
      "type": "VAE",
      "links": [
       6,
-      12,
-      22
+      11,
+      20
      ],
      "slot_index": 0
     }
@@ -526,7 +523,7 @@
     {
      "name": "image3",
      "type": "IMAGE",
-     "link": 9
+     "link": null
     }
    ],
    "outputs": [
@@ -534,17 +531,17 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      10
+      9
      ],
      "slot_index": 0
     }
    ],
-   "title": "Instruction (sees Picture 1 + 2 + 3)",
+   "title": "Instruction (sees Picture 1 + 2)",
    "properties": {
     "Node name for S&R": "TextEncodeQwenImageEditPlus"
    },
    "widgets_values": [
-    "Picture 1 is an empty location from a film. Create a shot from that film in this exact place: medium close-up from the chest up. In this shot: Close on his hands turning the glowing lens; light fractures into rainbows across his face. The setting is the world of Picture 1: The city drifts above a sea of ochre sand, structures of blown, iridescent glass clinging to massive, slow-moving buoyancy platforms. Picture 3 is the storyboard drawing of this shot: use its composition, camera angle, framing, where the people are placed and how they pose, but render a real photographic film frame in full colour with the place and light of Picture 1; nothing pencil-drawn or sketched. The lead is the person from Picture 2 with exactly the same face, skin tone, hair, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio backdrop of Picture 2. The lead is the only person in the frame. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, no text, no borders."
+    "Transform the storyboard in Picture 1 into a finished film frame. Preserve its crop, subject scale, viewpoint, poses and the number and placement of characters and props. Create this shot in the specific location described below: medium close-up from the chest up. Visible first frame: Close on his hands turning the glowing lens; light fractures into rainbows across his face. Picture 1 is the storyboard drawing of this shot: use its composition, camera angle, framing, where the characters are placed and how they pose, but render a real photographic film frame in full colour using the specified film look and lighting; nothing pencil-drawn or sketched. Keep the storyboard's background and crop; do not add an establishing landscape. The lead is the character from Picture 2 with the same species, face, distinctive markings, colouring, build and wardrobe. Picture 2 is only an identity reference: take their pose, expression and body language from this shot's action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio backdrop of Picture 2. The lead is the only character in the frame. The lead: Medium brown skin, oval face with defined jawline, dark brown eyes, black braids, early 20s, slender build. Thin build, indigo linen, dark braids, glowing crucible. Same color grade: golden hour backlight, warm sun flare, long shadows, dreamy atmosphere. Cinematic still frame from a live-action feature film: realistic light, natural colour and texture, no text, no borders."
    ]
   },
   {
@@ -565,7 +562,7 @@
     {
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 10
+     "link": 9
     }
    ],
    "outputs": [
@@ -573,7 +570,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      18
+      16
      ],
      "slot_index": 0
     }
@@ -604,27 +601,27 @@
     {
      "name": "clip",
      "type": "CLIP",
-     "link": 11
+     "link": 10
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 12
+     "link": 11
     },
     {
      "name": "image1",
      "type": "IMAGE",
-     "link": 13
+     "link": 12
     },
     {
      "name": "image2",
      "type": "IMAGE",
-     "link": 14
+     "link": 13
     },
     {
      "name": "image3",
      "type": "IMAGE",
-     "link": 15
+     "link": null
     }
    ],
    "outputs": [
@@ -632,7 +629,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      16
+      14
      ],
      "slot_index": 0
     }
@@ -663,7 +660,7 @@
     {
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 16
+     "link": 14
     }
    ],
    "outputs": [
@@ -671,7 +668,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      19
+      17
      ],
      "slot_index": 0
     }
@@ -682,6 +679,72 @@
    },
    "widgets_values": [
     "index_timestep_zero"
+   ]
+  },
+  {
+   "id": 20,
+   "type": "TextGenerate",
+   "pos": [
+    2130,
+    984
+   ],
+   "size": [
+    300,
+    358
+   ],
+   "flags": {},
+   "order": 17,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 23
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 24
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      25
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+    8,
+    "off",
+    false,
+    true,
+    "auto",
+    ""
    ]
   },
   {
@@ -696,7 +759,7 @@
     142
    ],
    "flags": {},
-   "order": 17,
+   "order": 18,
    "mode": 0,
    "inputs": [],
    "outputs": [
@@ -704,7 +767,7 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      20
+      18
      ],
      "slot_index": 0
     }
@@ -731,28 +794,28 @@
     334
    ],
    "flags": {},
-   "order": 18,
+   "order": 19,
    "mode": 0,
    "inputs": [
     {
      "name": "model",
      "type": "MODEL",
-     "link": 17
+     "link": 15
     },
     {
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 18
+     "link": 16
     },
     {
      "name": "negative",
      "type": "CONDITIONING",
-     "link": 19
+     "link": 17
     },
     {
      "name": "latent_image",
      "type": "LATENT",
-     "link": 20
+     "link": 18
     }
    ],
    "outputs": [
@@ -760,7 +823,7 @@
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      21
+      19
      ],
      "slot_index": 0
     }
@@ -791,18 +854,18 @@
     118
    ],
    "flags": {},
-   "order": 19,
+   "order": 20,
    "mode": 0,
    "inputs": [
     {
      "name": "samples",
      "type": "LATENT",
-     "link": 21
+     "link": 19
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 22
+     "link": 20
     }
    ],
    "outputs": [
@@ -810,7 +873,8 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      23
+      21,
+      24
      ],
      "slot_index": 0
     }
@@ -833,13 +897,13 @@
     118
    ],
    "flags": {},
-   "order": 20,
+   "order": 21,
    "mode": 0,
    "inputs": [
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 23
+     "link": 21
     }
    ],
    "outputs": [
@@ -857,6 +921,41 @@
    "widgets_values": [
     "open-cinema/shot_frame"
    ]
+  },
+  {
+   "id": 22,
+   "type": "PreviewAny",
+   "pos": [
+    2950,
+    476
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 22,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 26
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Preview as Text",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
   }
  ],
  "links": [
@@ -926,14 +1025,6 @@
   ],
   [
    9,
-   20,
-   0,
-   9,
-   4,
-   "IMAGE"
-  ],
-  [
-   10,
    9,
    0,
    10,
@@ -941,7 +1032,7 @@
    "CONDITIONING"
   ],
   [
-   11,
+   10,
    5,
    0,
    11,
@@ -949,7 +1040,7 @@
    "CLIP"
   ],
   [
-   12,
+   11,
    6,
    0,
    11,
@@ -957,7 +1048,7 @@
    "VAE"
   ],
   [
-   13,
+   12,
    8,
    0,
    11,
@@ -965,7 +1056,7 @@
    "IMAGE"
   ],
   [
-   14,
+   13,
    18,
    0,
    11,
@@ -973,15 +1064,7 @@
    "IMAGE"
   ],
   [
-   15,
-   20,
-   0,
-   11,
-   4,
-   "IMAGE"
-  ],
-  [
-   16,
+   14,
    11,
    0,
    12,
@@ -989,7 +1072,7 @@
    "CONDITIONING"
   ],
   [
-   17,
+   15,
    4,
    0,
    14,
@@ -997,7 +1080,7 @@
    "MODEL"
   ],
   [
-   18,
+   16,
    10,
    0,
    14,
@@ -1005,7 +1088,7 @@
    "CONDITIONING"
   ],
   [
-   19,
+   17,
    12,
    0,
    14,
@@ -1013,7 +1096,7 @@
    "CONDITIONING"
   ],
   [
-   20,
+   18,
    13,
    0,
    14,
@@ -1021,7 +1104,7 @@
    "LATENT"
   ],
   [
-   21,
+   19,
    14,
    0,
    15,
@@ -1029,7 +1112,7 @@
    "LATENT"
   ],
   [
-   22,
+   20,
    6,
    0,
    15,
@@ -1037,7 +1120,7 @@
    "VAE"
   ],
   [
-   23,
+   21,
    15,
    0,
    16,
@@ -1045,7 +1128,7 @@
    "IMAGE"
   ],
   [
-   24,
+   22,
    17,
    0,
    18,
@@ -1053,24 +1136,48 @@
    "IMAGE"
   ],
   [
-   25,
+   23,
    19,
    0,
    20,
    0,
+   "CLIP"
+  ],
+  [
+   24,
+   15,
+   0,
+   20,
+   1,
    "IMAGE"
+  ],
+  [
+   25,
+   20,
+   0,
+   21,
+   0,
+   "STRING"
+  ],
+  [
+   26,
+   21,
+   0,
+   22,
+   0,
+   "STRING"
   ]
  ],
  "groups": [
   {
-   "title": "The world \u2192 Picture 1",
+   "title": "The storyboard \u2192 Picture 1",
    "bounding": [
     470,
     100,
     340,
     592
    ],
-   "color": "#b58b2a",
+   "color": "#7a7a72",
    "font_size": 22,
    "flags": {}
   },
@@ -1087,14 +1194,14 @@
    "flags": {}
   },
   {
-   "title": "The storyboard \u2192 Picture 3",
+   "title": "Open Cinema",
    "bounding": [
     1290,
     100,
     340,
-    592
+    356
    ],
-   "color": "#7a7a72",
+   "color": "#b06634",
    "font_size": 22,
    "flags": {}
   },
@@ -1116,7 +1223,7 @@
     2110,
     100,
     340,
-    864
+    1262
    ],
    "color": "#8a6d3b",
    "font_size": 22,
@@ -1140,7 +1247,7 @@
     2930,
     100,
     340,
-    356
+    490
    ],
    "color": "#2f6f3f",
    "font_size": 22,

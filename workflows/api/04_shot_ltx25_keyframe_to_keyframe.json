@@ -58,7 +58,7 @@
   "9": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "The camera glides along the glass terrace toward the lead. The camera tracks steadily sideways to the right, parallel to the subject, foreground objects sliding past. The lead is the only person in the frame. Natural, physically plausible motion, consistent faces, no cuts, no captions or on-screen text. Audio: wind, glass chiming.",
+      "text": "The camera glides along the glass terrace toward the lead. The camera tracks steadily sideways to the right, parallel to the subject, foreground objects sliding past. The lead is the only character in the frame. Natural, physically plausible motion, consistent faces, no cuts, no captions or on-screen text. Audio: wind, glass chiming.",
       "clip": [
         "6",
         0

@@ -1,0 +1,170 @@
+{
+  "review_model": {
+    "class_type": "OpenCinemaWriter",
+    "inputs": {
+      "mode": "normal"
+    }
+  },
+  "image": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "oc_shot_keyframe.jpg"
+    }
+  },
+  "requirements": {
+    "class_type": "OpenCinemaReviewRequirements",
+    "inputs": {
+      "expected_json": "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+    }
+  },
+  "brief": {
+    "class_type": "OpenCinemaVisualReviewBrief",
+    "inputs": {
+      "expected_json": [
+        "requirements",
+        0
+      ],
+      "look": "Golden hour",
+      "phase": "start",
+      "style_only": true
+    }
+  },
+  "vision": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "image",
+        0
+      ],
+      "prompt": [
+        "brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "count": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "image",
+        0
+      ],
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "max_length": 8,
+      "sampling_mode": "off"
+    }
+  },
+  "fact_briefs": {
+    "class_type": "OpenCinemaFactBrief",
+    "inputs": {
+      "expected_json": [
+        "requirements",
+        0
+      ]
+    }
+  },
+  "fact_observations": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "image": [
+        "image",
+        0
+      ],
+      "prompt": [
+        "fact_briefs",
+        1
+      ],
+      "max_length": 140,
+      "sampling_mode": "off"
+    }
+  },
+  "observations": {
+    "class_type": "OpenCinemaAppendObservation",
+    "inputs": {
+      "text": [
+        "vision",
+        0
+      ],
+      "key": [
+        "fact_briefs",
+        0
+      ],
+      "observation": [
+        "fact_observations",
+        0
+      ]
+    }
+  },
+  "compare_brief": {
+    "class_type": "OpenCinemaStateEvidenceBrief",
+    "inputs": {
+      "text": [
+        "observations",
+        0
+      ],
+      "expected_json": [
+        "requirements",
+        0
+      ]
+    }
+  },
+  "compare": {
+    "class_type": "TextGenerate",
+    "inputs": {
+      "clip": [
+        "review_model",
+        0
+      ],
+      "prompt": [
+        "compare_brief",
+        0
+      ],
+      "max_length": 1200,
+      "sampling_mode": "off"
+    }
+  },
+  "parsed": {
+    "class_type": "OpenCinemaParseVisualReview",
+    "inputs": {
+      "text": [
+        "observations",
+        0
+      ],
+      "expected_json": [
+        "requirements",
+        0
+      ],
+      "observed_count": [
+        "count",
+        0
+      ],
+      "state_audit": [
+        "compare",
+        0
+      ]
+    }
+  },
+  "review": {
+    "class_type": "PreviewAny",
+    "inputs": {
+      "source": [
+        "parsed",
+        0
+      ]
+    }
+  }
+}

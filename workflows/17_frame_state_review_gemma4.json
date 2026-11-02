@@ -1,0 +1,987 @@
+{
+ "last_node_id": 14,
+ "last_link_id": 22,
+ "nodes": [
+  {
+   "id": 14,
+   "type": "MarkdownNote",
+   "pos": [
+    60,
+    120
+   ],
+   "size": [
+    360,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "title": "How this works",
+   "properties": {},
+   "widgets_values": [
+    "## Frame review\nInspect cast, style and expected visible facts before animation. Edit expected_json.state with the selected shot's visibly testable starting facts. Every requested fact needs evidence. Uncertain or malformed replies do not pass. This workflow reports evidence; the studio preserves rejected candidates without promoting them.\n\nAI mode: Normal uses Gemma 4 12B at 8-bit; Fast uses E4B. Change the Open Cinema Writer mode widget. Image and video models stay the same. Cast-review findings retain the saved candidate; inspect it before using it downstream."
+   ],
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "LoadImage",
+   "pos": [
+    490,
+    160
+   ],
+   "size": [
+    300,
+    378
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4,
+      6,
+      10
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Load Image",
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "oc_shot_keyframe.jpg"
+   ]
+  },
+  {
+   "id": 1,
+   "type": "OpenCinemaWriter",
+   "pos": [
+    900,
+    160
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      2,
+      5,
+      8,
+      16
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "AI mode \u00b7 Normal 12B / Fast E4B",
+   "properties": {
+    "Node name for S&R": "OpenCinemaWriter"
+   },
+   "widgets_values": [
+    "normal"
+   ]
+  },
+  {
+   "id": 3,
+   "type": "OpenCinemaReviewRequirements",
+   "pos": [
+    900,
+    294
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      1,
+      7,
+      15,
+      19
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "OpenCinemaReviewRequirements",
+   "properties": {
+    "Node name for S&R": "OpenCinemaReviewRequirements"
+   },
+   "widgets_values": [
+    "{\"state\": {}, \"count\": 1, \"allowed_counts\": [1], \"people\": {\"lead\": \"Slender build, early twenties, sharp cheekbones framed by dark, tightly braided hair. He wears a tunic of deep indigo linen cinched with a leather sash. He clutches a delicate, glowing crucible.\"}}"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "OpenCinemaVisualReviewBrief",
+   "pos": [
+    900,
+    428
+   ],
+   "size": [
+    300,
+    190
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "expected_json",
+     "type": "STRING",
+     "link": 1,
+     "widget": {
+      "name": "expected_json"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "OpenCinemaVisualReviewBrief",
+   "properties": {
+    "Node name for S&R": "OpenCinemaVisualReviewBrief"
+   },
+   "widgets_values": [
+    "",
+    "Golden hour",
+    "start",
+    true
+   ]
+  },
+  {
+   "id": 7,
+   "type": "OpenCinemaFactBrief",
+   "pos": [
+    900,
+    658
+   ],
+   "size": [
+    300,
+    142
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "expected_json",
+     "type": "STRING",
+     "link": 7,
+     "widget": {
+      "name": "expected_json"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "keys",
+     "type": "STRING",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "prompts",
+     "type": "STRING",
+     "links": [
+      9
+     ],
+     "slot_index": 1
+    }
+   ],
+   "title": "OpenCinemaFactBrief",
+   "properties": {
+    "Node name for S&R": "OpenCinemaFactBrief"
+   },
+   "widgets_values": [
+    ""
+   ]
+  },
+  {
+   "id": 9,
+   "type": "OpenCinemaAppendObservation",
+   "pos": [
+    900,
+    840
+   ],
+   "size": [
+    300,
+    214
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 11,
+     "widget": {
+      "name": "text"
+     }
+    },
+    {
+     "name": "key",
+     "type": "STRING",
+     "link": 12,
+     "widget": {
+      "name": "key"
+     }
+    },
+    {
+     "name": "observation",
+     "type": "STRING",
+     "link": 13,
+     "widget": {
+      "name": "observation"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      14,
+      18
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "OpenCinemaAppendObservation",
+   "properties": {
+    "Node name for S&R": "OpenCinemaAppendObservation"
+   },
+   "widgets_values": [
+    "",
+    "",
+    ""
+   ]
+  },
+  {
+   "id": 10,
+   "type": "OpenCinemaStateEvidenceBrief",
+   "pos": [
+    900,
+    1094
+   ],
+   "size": [
+    300,
+    166
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 14,
+     "widget": {
+      "name": "text"
+     }
+    },
+    {
+     "name": "expected_json",
+     "type": "STRING",
+     "link": 15,
+     "widget": {
+      "name": "expected_json"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [
+      17
+     ],
+     "slot_index": 0
+    }
+   ],
+   "title": "OpenCinemaStateEvidenceBrief",
+   "properties": {
+    "Node name for S&R": "OpenCinemaStateEvidenceBrief"
+   },
+   "widgets_values": [
+    "",
+    ""
+   ]
+  },
+  {
+   "id": 12,
+   "type": "OpenCinemaParseVisualReview",
+   "pos": [
+    900,
+    1300
+   ],
+   "size": [
+    300,
+    286
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "text",
+     "type": "STRING",
+     "link": 18,
+     "widget": {
+      "name": "text"
+     }
+    },
+    {
+     "name": "expected_json",
+     "type": "STRING",
+     "link": 19,
+     "widget": {
+      "name": "expected_json"
+     }
+    },
+    {
+     "name": "observed_count",
+     "type": "STRING",
+     "link": 20,
+     "widget": {
+      "name": "observed_count"
+     }
+    },
+    {
+     "name": "state_audit",
+     "type": "STRING",
+     "link": 21,
+     "widget": {
+      "name": "state_audit"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "review",
+     "type": "STRING",
+     "links": [
+      22
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "passed",
+     "type": "BOOLEAN",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "OpenCinemaParseVisualReview",
+   "properties": {
+    "Node name for S&R": "OpenCinemaParseVisualReview"
+   },
+   "widgets_values": [
+    "",
+    "",
+    "",
+    ""
+   ]
+  },
+  {
+   "id": 5,
+   "type": "TextGenerate",
+   "pos": [
+    1310,
+    160
+   ],
+   "size": [
+    300,
+    382
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 2
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 3,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      11
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    1200,
+    "off",
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
+   "id": 6,
+   "type": "TextGenerate",
+   "pos": [
+    1310,
+    582
+   ],
+   "size": [
+    300,
+    358
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 5
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 6
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+    8,
+    "off",
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
+   "id": 8,
+   "type": "TextGenerate",
+   "pos": [
+    1310,
+    980
+   ],
+   "size": [
+    300,
+    382
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 8
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 9,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": 10
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      13
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    140,
+    "off",
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
+   "id": 11,
+   "type": "TextGenerate",
+   "pos": [
+    1310,
+    1402
+   ],
+   "size": [
+    300,
+    382
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 16
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 17,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "image",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "video",
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "generated_text",
+     "type": "STRING",
+     "links": [
+      21
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "thinking",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "title": "Generate Text",
+   "properties": {
+    "Node name for S&R": "TextGenerate"
+   },
+   "widgets_values": [
+    "",
+    1200,
+    "off",
+    false,
+    true,
+    "auto",
+    ""
+   ]
+  },
+  {
+   "id": 13,
+   "type": "PreviewAny",
+   "pos": [
+    1720,
+    160
+   ],
+   "size": [
+    300,
+    94
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 22
+    }
+   ],
+   "outputs": [
+    {
+     "name": "STRING",
+     "type": "STRING",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "title": "Preview as Text",
+   "properties": {
+    "Node name for S&R": "PreviewAny"
+   },
+   "widgets_values": []
+  }
+ ],
+ "links": [
+  [
+   1,
+   3,
+   0,
+   4,
+   0,
+   "STRING"
+  ],
+  [
+   2,
+   1,
+   0,
+   5,
+   0,
+   "CLIP"
+  ],
+  [
+   3,
+   4,
+   0,
+   5,
+   1,
+   "STRING"
+  ],
+  [
+   4,
+   2,
+   0,
+   5,
+   2,
+   "IMAGE"
+  ],
+  [
+   5,
+   1,
+   0,
+   6,
+   0,
+   "CLIP"
+  ],
+  [
+   6,
+   2,
+   0,
+   6,
+   1,
+   "IMAGE"
+  ],
+  [
+   7,
+   3,
+   0,
+   7,
+   0,
+   "STRING"
+  ],
+  [
+   8,
+   1,
+   0,
+   8,
+   0,
+   "CLIP"
+  ],
+  [
+   9,
+   7,
+   1,
+   8,
+   1,
+   "STRING"
+  ],
+  [
+   10,
+   2,
+   0,
+   8,
+   2,
+   "IMAGE"
+  ],
+  [
+   11,
+   5,
+   0,
+   9,
+   0,
+   "STRING"
+  ],
+  [
+   12,
+   7,
+   0,
+   9,
+   1,
+   "STRING"
+  ],
+  [
+   13,
+   8,
+   0,
+   9,
+   2,
+   "STRING"
+  ],
+  [
+   14,
+   9,
+   0,
+   10,
+   0,
+   "STRING"
+  ],
+  [
+   15,
+   3,
+   0,
+   10,
+   1,
+   "STRING"
+  ],
+  [
+   16,
+   1,
+   0,
+   11,
+   0,
+   "CLIP"
+  ],
+  [
+   17,
+   10,
+   0,
+   11,
+   1,
+   "STRING"
+  ],
+  [
+   18,
+   9,
+   0,
+   12,
+   0,
+   "STRING"
+  ],
+  [
+   19,
+   3,
+   0,
+   12,
+   1,
+   "STRING"
+  ],
+  [
+   20,
+   6,
+   0,
+   12,
+   2,
+   "STRING"
+  ],
+  [
+   21,
+   11,
+   0,
+   12,
+   3,
+   "STRING"
+  ],
+  [
+   22,
+   12,
+   0,
+   13,
+   0,
+   "STRING"
+  ]
+ ],
+ "groups": [
+  {
+   "title": "Inputs",
+   "bounding": [
+    470,
+    100,
+    340,
+    458
+   ],
+   "color": "#3f789e",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Open Cinema",
+   "bounding": [
+    880,
+    100,
+    340,
+    1506
+   ],
+   "color": "#b06634",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Prompt",
+   "bounding": [
+    1290,
+    100,
+    340,
+    1704
+   ],
+   "color": "#8a6d3b",
+   "font_size": 22,
+   "flags": {}
+  },
+  {
+   "title": "Output",
+   "bounding": [
+    1700,
+    100,
+    340,
+    174
+   ],
+   "color": "#2f6f3f",
+   "font_size": 22,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    0,
+    0
+   ]
+  }
+ },
+ "version": 0.4
+}

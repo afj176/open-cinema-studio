@@ -51,13 +51,20 @@ const plateStale = () => !!plateTake() && JSON.stringify(plateTake().of) !== JSO
 function plannedRecipe(shot, i) {  // what the next New frame will be made from (mirrors studio._run_keyframe)
   if (i > 0 && shot.transition === "continue") return { kind: "continue", from: project.shots[i - 1].id, steps: [`Last frame of shot ${i}`] };
   const drawn = shot.sketch && !sketchStale(shot);
+  const worldReference = ["Wide", "Extreme wide"].includes(shot.shot_size);
   return { kind: "shot", world: plateOf(), lead: leadIn(shot) ? project.reference : null, sketch: drawn ? shot.sketch : null,
+    world_reference: worldReference,
     steps: [...(plateOf() && !plateStale() ? [] : [`HiDream-O1 · paints ${plateOf() ? "a new" : "the"} world plate first`]),
-      ...(drawn ? [] : [`Qwen-Image-Edit 2511 · ${shot.sketch ? "redraws" : "draws"} the storyboard first`]),
-      "Qwen-Image-Edit 2511 · the world + the lead + the storyboard · 4 steps"] };
+      ...(drawn ? [] : [`HiDream-O1 · ${shot.sketch ? "redraws" : "draws"} the pencil storyboard first`]),
+      `Qwen-Image-Edit 2511 · the storyboard${leadIn(shot) ? " + the lead" : ""}${worldReference ? " + the world" : ""} · 4 steps`] };
 }
 
 function staleness(shot) {  // why the current frame no longer matches the film ("" when it does)
+  if (storyStale(shot)) return "Beat changed · review shot";
+  if (project.asset_status?.[shot.id]?.frame) return "Frame needs updating";
+  if (project.asset_status?.[shot.id]?.video) return "Video needs updating";
+  if (project.asset_status?.[shot.id]?.review) return "Video needs review";
+  if (Object.values(shot.quality || {}).some(q=>q.status === "needs_review")) return "Candidate needs review";
   const r = recipeOf(shot);
   if (!shot.keyframe || !r || r.kind !== "shot") return "";
   if (leadIn(shot) && r.lead !== project.reference) return r.lead ? "Lead changed" : "Made before the lead";
@@ -66,20 +73,84 @@ function staleness(shot) {  // why the current frame no longer matches the film 
   if (r.shot_size !== undefined && (r.shot_size !== shot.shot_size || r.camera_move !== shot.camera_move)) return "Framing changed";
   return "";
 }
+const storyStale = s => s.beat_source !== undefined && s.beat_source !== (project.beats?.[s.beat - 1] || "");
+const needsRender = s => !s.video || storyStale(s) || project.asset_status?.[s.id]?.frame || project.asset_status?.[s.id]?.video;
+
+async function acceptBeat(shot) {
+  shot.accept_beat = true;
+  await flush();
+  delete shot.accept_beat;
+  shot.beat_source = project.beats?.[shot.beat - 1] || "";
+  paintScript(); renderInspector(); paintBoard();
+}
 const active = j => j.state === "queued" || j.state === "running";
 const busyFor = test => jobs.find(j => j.project === project.id && active(j) && test(j));
 
 // ---------------------------------------------------------------- boot
 async function init() {
-  presets = await api("/api/presets");
-  projects = await api("/api/projects");
+  [presets, projects, jobs] = await Promise.all([api("/api/presets"), api("/api/projects"), api("/api/jobs")]);
   const remembered = store.get("project");
   const first = projects.find(p => p.id === remembered) || projects[0];
   if (first) await openProject(first.id); else await createProject();
   setStage(stage);
-  setInterval(poll, 1500);
+  await checkSetup();
+  startJobEvents();
   poll();
 }
+
+let setupState, lastSetupCheck=0;
+const selectedSetupReady = () => setupState?.modes?.[project?.ai_mode || 'normal']?.film_ready ?? setupState?.ready;
+const gigabytes = n => `${(n / 1e9).toFixed(1)} GB`;
+async function checkSetup(refresh=false) {
+  try {
+    const wasReady=selectedSetupReady();
+    setupState = await api('/api/setup' + (refresh ? '?refresh=1' : ''));
+    lastSetupCheck=Date.now();
+    presets.comfy=setupState.connected;
+    $('#setupBtn').textContent = selectedSetupReady() ? 'Setup ✓' : 'Setup needed';
+    if (!selectedSetupReady() && (wasReady===undefined || wasReady)) $('#setupPanel').hidden = false;
+    renderSetup();
+    renderStatus();
+  } catch (e) { toast('Setup check failed: ' + e.message); }
+}
+function setupGroup(group, expanded, running) {
+  const names={writing:'Standard · 12B at 8-bit',writing_fast:'Fast · E4B (optional)',images:'Stills and storyboards',video:'Video and sound',master:'Optional 1080p mastering'};
+  const list=setupState.models.filter(m=>m.group===group), pending=list.filter(m=>!m.installed);
+  const size=gigabytes(pending.reduce((n,m)=>n+m.bytes,0));
+  const open=expanded.has(group)?expanded.get(group):pending.length>0 && !['master',project.ai_mode==='fast'?'writing':'writing_fast'].includes(group);
+  return `<details data-setup-group="${group}" ${open?'open':''}><summary>${names[group]} · ${pending.length?size+' missing':'installed'}</summary>
+    <ul>${list.map(m=>{
+      const job=setupState.downloads.find(j=>j.id===m.id);
+      return `<li><span>${m.installed?'✓':'○'} ${escapeHtml(m.name)} <small>${escapeHtml(m.folder)}/ · ${gigabytes(m.bytes)}</small></span>
+        <a href="${m.source}" target="_blank" rel="noopener">Publisher${m.gated?' · access required':''}</a>
+        ${job?`<p>${escapeHtml(job.state)} · ${gigabytes(job.done)} / ${gigabytes(job.total)} ${escapeHtml(job.error||'')}</p>`:''}</li>`;
+    }).join('')}</ul>
+    ${pending.length&&setupState.model_dir?`<button class="ghost small" data-download-group="${group}" ${running?'disabled':''}>Install ${size}</button>`:''}</details>`;
+}
+
+function renderSetup() {
+  const box=$('#setupPanel'), s=setupState;
+  if(!s || box.hidden) return;
+  const missing=s.models.filter(m=>!m.installed), total=missing.filter(m=>!['master',project.ai_mode==='fast'?'writing':'writing_fast'].includes(m.group)).reduce((n,m)=>n+m.bytes,0);
+  const running=s.downloads.some(j=>['queued','downloading','verifying'].includes(j.state));
+  const expanded=new Map($$('details[data-setup-group]',box).map(el=>[el.dataset.setupGroup,el.open]));
+  box.innerHTML=`<div class="card-head"><div><h2 class="serif">Set up your local studio</h2><p class="hint">Your films stay on your computer. Models download only when you choose to install them.</p></div><button class="ghost small" data-close-setup>Close</button></div>
+    <p>${selectedSetupReady()?'Ready to write and render in '+(project.ai_mode==='fast'?'Fast':'Standard')+' mode.':s.connected?`Missing models for this mode: ${gigabytes(total)}. Install the required groups below, then check again.`:'ComfyUI is not connected. Start it first, then check again.'}</p>
+    <p class="hint">ComfyUI: ${escapeHtml(s.comfy_url)} · FFmpeg and FFprobe: ${s.ffmpeg?'ready':'missing — install FFmpeg and add it to PATH'} · Free disk: ${gigabytes(s.free_bytes)}</p>
+    ${s.missing_nodes.length?`<p class="quality-findings">Missing nodes: ${s.missing_nodes.map(escapeHtml).join(', ')}. Install the Open Cinema node pack and update ComfyUI, then restart ComfyUI.</p>`:''}
+    <p class="hint">${s.model_dir?`Install folder: ${escapeHtml(s.model_dir)}`:'To enable downloads, start the studio with --models-dir pointing to your ComfyUI models folder. You can also use the publisher links and place files in the listed folders.'}</p>
+    <p class="hint">LTX downloads require you to review the publisher’s access conditions. If access is denied, approve access on Hugging Face yourself, set HF_TOKEN in the server environment and retry. The studio does not accept terms or collect tokens in this page.</p>
+    ${s.connected?['writing','writing_fast','images','video','master'].map(group=>setupGroup(group,expanded,running)).join(''):'<p>Connect ComfyUI first so the studio can check which models are already installed.</p>'}
+    <p class="hint">Downloads resume from partial files and are checked against the publisher’s SHA-256 before installation. Existing files are never silently replaced. A supported GPU with about 24 GB VRAM is recommended for the supplied full pipeline.</p>
+    <button class="primary" data-check-setup>Check again</button>`;
+  $('[data-close-setup]',box).onclick=()=>box.hidden=true;
+  $('[data-check-setup]',box).onclick=()=>checkSetup(true);
+  $$('[data-download-group]',box).forEach(b=>b.onclick=async()=>{try{
+    setupState=await post('/api/setup/download',{ids:s.models.filter(m=>!m.installed&&m.group===b.dataset.downloadGroup).map(m=>m.id)});renderSetup();
+  }catch(e){toast(e.message)}});
+}
+$('#setupBtn').onclick=()=>{ $('#setupPanel').hidden=!$('#setupPanel').hidden; if(!$('#setupPanel').hidden)checkSetup(true); };
+setInterval(()=>{if(setupState && (!$('#setupPanel').hidden || Date.now()-lastSetupCheck>15000))checkSetup();},5000);
 
 async function openProject(id) {
   project = await api(`/api/projects/${id}`);
@@ -118,6 +189,7 @@ function renderAll() {
   renderInspector();
   renderEdit();
   renderScreen();
+  renderStatus();
 }
 
 // ---------------------------------------------------------------- theme & header
@@ -128,7 +200,7 @@ function luminance(hex) {
 
 function effectivePalette() {
   // [ink, accent, glow, bg, face] — the look's, with the film's custom colours on top
-  const base = presets.palettes?.[project.look] || ["#f4f4f2", "#e2a43a", "#ffd27a", "#0a0a0b", "fraunces"];
+  const base = presets.palettes?.[project.look] || presets.palettes?.None || ["#f4f4f2", "#ff4a1c", "#ff7a45", "#0c0c0d", "barlow"];
   const c = project.palette;
   return c && c.accent ? [c.ink, c.accent, c.glow, c.bg, base[4]] : base;
 }
@@ -158,8 +230,16 @@ function paintPalette() {
   sample.setProperty("--ps-face", FACE[face] || "Manrope");
   $("#psTitle").textContent = project.title || "Untitled film";
   const custom = !!(project.palette && project.palette.accent);
-  $("#paletteSource").textContent = custom ? "Custom colours for this film" : `From the ${project.look} look`;
+  $("#paletteSource").textContent = custom ? "Independent colours for this film" : (presets.palettes?.[project.look] ? "Preset colours" : "Default colours");
   $("#paletteReset").hidden = !custom;
+  $("#paletteReset").textContent = presets.palettes?.[project.look] ? "Use preset colours" : "Use default colours";
+}
+
+function preservePalette() {
+  if (!project.palette?.accent) {
+    const [ink, accent, glow, bg] = effectivePalette();
+    project.palette = { bg, ink, accent, glow };
+  }
 }
 
 function renderHeader() {
@@ -206,21 +286,78 @@ async function deleteFilm(film) {
   toast(`“${film.title}” deleted`);
 }
 
+let queueSignature = '';
+function latestJobs() {
+  const latest = new Map();
+  jobs.filter(j=>j.project===project.id).forEach(j=>{
+    const key=[j.kind,j.shot,j.target,j.mode,j.prop,j.value].join('|'), previous=latest.get(key);
+    if(['cancelled','blocked'].includes(j.state) && previous && ['failed','needs_review','interrupted'].includes(previous.state)) return;
+    latest.set(key,j);
+  });
+  return [...latest.values()];
+}
+function unresolvedJob(j) {
+  if (!['failed','needs_review','interrupted'].includes(j.state)) return false;
+  if (j.kind==='plan_continuity' && project.continuity_status==='ready') return false;
+  const shot=project.shots.find(s=>s.id===j.shot);
+  const kind={sketch:'sketch',keyframe:'keyframe',video:'video',review:'video'}[j.kind];
+  const review=shot?.quality?.[kind];
+  if(shot && kind && review?.status==='passed' && shot[kind] && !/\bprovisional\b/i.test(review.director_review?.reason||'')) return false;
+  return true;
+}
+function setQueueOpen(open) {
+  $('#queue').hidden=!open;
+  ['#statusPill','#productionDetails'].forEach(id=>$(id).setAttribute('aria-expanded',String(open)));
+}
+function jobError(j) {
+  const message=(j.error||'').replace('ComfyUI execution failed: ','');
+  return message==='unknown'?'Generation stopped without a diagnostic. Your saved work is kept; retry this step.':message;
+}
 function renderStatus() {
-  const mine = jobs.filter(active);
-  const running = mine.find(j => j.state === "running");
-  $("#comfyDot").className = "dot " + (presets.comfy === false ? "" : running ? "busy" : "ok");
-  $("#statusText").textContent = running ? `${running.label} · ${Math.round(running.elapsed)}s${mine.length > 1 ? ` · +${mine.length - 1}` : ""}`
-    : presets.comfy === false ? "ComfyUI offline" : "Ready";
-  const filmBusy = jobs.some(j => j.project === project.id && active(j));
-  $("#renderFilm").disabled = filmBusy;
-  $("#jobs").innerHTML = jobs.filter(j => j.project === project.id).slice().reverse().slice(0, 40).map(j => `<li class="${j.state}">
-    <span>${escapeHtml(j.label)}</span><small>${j.state === "running" || j.state === "done" ? Math.round(j.elapsed) + "s · " : ""}${j.state}</small>
-    ${j.error ? `<span class="err">${escapeHtml(j.error)}</span>` : ""}</li>`).join("") || `<li><span class="hint">Nothing rendered yet</span></li>`;
+  if(!project) return;
+  const current=jobs.filter(j=>j.project===project.id), latest=latestJobs(), pending=current.filter(active);
+  const running=pending.find(j=>j.state==='running'), attention=latest.filter(unresolvedJob);
+  const blocked=latest.filter(j=>j.state==='blocked' || j.state==='cancelled' && j.error==='an earlier step failed');
+  const offline=presets.comfy===false, missing=selectedSetupReady()===false;
+  $('#comfyDot').className='dot '+(offline||missing?'':running?'busy':attention.length?'warn':'ok');
+  $('#statusText').textContent=offline?'Offline':missing?'Setup needed':pending.length?`Working · ${pending.length} left`:attention.length?`${attention.length} need attention`:blocked.length?'Waiting':'Ready';
+  $('#renderFilm').disabled=!!pending.length||offline||missing;
+  $('#renderFilm').firstChild.textContent=attention.length||blocked.length?'Resume film ':'Render film ';
+  $('#resumeWork').hidden=!(attention.length||blocked.length);
+  $('#resumeWork').disabled=!!pending.length||offline||missing;
+  $('#cancelAll').disabled=!pending.length;
+  const fast=project.ai_mode==='fast';
+  $$('[data-ai-mode]').forEach(input=>{input.checked=input.value===(project.ai_mode||'normal');});
+  const dimensions={'16:9':[1280,704],'2.39:1':[1536,640],'9:16':[704,1280],'1:1':[960,960]}[project.aspect]||[1280,704];
+  $('#aiModeHelp').textContent=fast?'Faster writing and lower-resolution video previews.':'Full-resolution video and more detailed writing.';
+  $('#performanceWriting').textContent=fast?'Gemma 4 E4B for quicker writing and review.':'Gemma 4 12B at 8-bit for writing and review.';
+  $('#performanceVideo').textContent=fast?`${dimensions[0]/2} × ${dimensions[1]/2} single-stage preview; upscaled only in the cut.`:`${dimensions[0]} × ${dimensions[1]} two-stage video.`;
+  $('#aiStoryStatus').textContent=`Title, logline, world, look and cast, written locally in ${fast?'Fast mode · Gemma 4 E4B':'Standard mode · Gemma 4 12B (8-bit)'}. Every field also has its own ✨.`;
+  const summary=offline?'Connect ComfyUI in Setup to resume. Your work is saved.':missing?'Install the missing models for this AI mode in Setup.':running?`${running.label}${running.detail?' — '+running.detail:''}`:attention.length?`${attention.length} step${attention.length===1?' needs':'s need'} attention. Finished work is saved; inspect or retry the affected step.`:blocked.length?`${blocked.length} step${blocked.length===1?'':'s'} waiting. Resume to generate only missing or outdated work.`:project.shots.some(s=>s.video)?'Saved work is ready. Render film fills in missing or outdated shots.':'Ready when you are. Storyboards are planning drafts; finished frames and motion follow.';
+  if($('#productionSummary').textContent!==summary) $('#productionSummary').textContent=summary;
+  $('#productionSummary').className=attention.length?'attention-text':'';
+  $('#queueSummary').textContent=`${pending.length} active · ${attention.length} need attention · ${blocked.length} waiting`;
+  const ordered=[...pending.sort((a,b)=>(a.state==='running'?-1:1)-(b.state==='running'?-1:1)),...attention];
+  const history=current.filter(j=>!ordered.includes(j)).slice().reverse().slice(0,50);
+  const signature=JSON.stringify([project.id,project.continuity_fixes,project.continuity_status,ordered.map(j=>[j.id,j.state,j.label,j.detail,j.error]),history.map(j=>[j.id,j.state])]);
+  const row=(j,actionable)=>`<li class="${j.state}"><span>${escapeHtml(j.label)}</span><small>${escapeHtml(j.state.replaceAll('_',' '))}</small>
+    <span class="job-meta">${j.ai_mode==='fast'?'Fast':'Standard'}${j.elapsed?` · <span data-job-time="${j.id}">${Math.round(j.elapsed)}s</span>`:''}</span>
+    ${j.detail?`<p class="job-detail">${escapeHtml(j.detail)}</p>`:''}${j.error?`<p class="err">${escapeHtml(jobError(j))}</p>`:''}
+    ${actionable&&!active(j)&&j.kind==='plan_continuity'&&j.state==='needs_review'&&project.continuity_fixes?.length?`<p class="job-detail">${escapeHtml(project.continuity_fixes.map(f=>f.description).join(' '))}${j.render_after||j.draw_after?' Generation resumes if the plan is ready.':''}</p>`:''}
+    ${actionable&&!active(j)?`<div class="job-actions">${j.kind==='plan_continuity'&&j.state==='needs_review'&&project.continuity_fixes?.length?`<button class="ghost small" data-fix-continuity="${j.id}" title="${escapeHtml(project.continuity_fixes.map(f=>f.description).join(' '))}">Auto fix</button>`:''}${j.kind==='plan_continuity'?'<button class="ghost small" data-review-continuity>Review continuity</button>':''}${j.shot?`<button class="ghost small" data-inspect-job="${j.shot}">Inspect shot</button>`:''}<button class="ghost small" data-retry-job="${j.id}">Retry step</button></div>`:''}</li>`;
+  if(signature!==queueSignature) {
+    queueSignature=signature;
+    $('#jobs').innerHTML=ordered.map(j=>row(j,true)).join('')||'<li><span>No steps need attention.</span></li>';
+    $('#earlierJobs').innerHTML=history.map(j=>row(j,false)).join('');
+    $('#jobHistory').hidden=!history.length;
+    $('#jobHistory summary').textContent=`Earlier activity · ${history.length} steps`;
+  }
+  $$('[data-job-time]',$('#queue')).forEach(el=>{const j=current.find(j=>j.id===el.dataset.jobTime);if(j)el.textContent=Math.round(j.elapsed)+'s';});
 }
 
 // ---------------------------------------------------------------- story
 function renderStory() {
+  renderContinuity();
   $("#title").value = project.title;
   $("#idea").value = project.idea || "";
   $("#logline").value = project.logline || "";
@@ -228,25 +365,23 @@ function renderStory() {
   $("#cast").value = project.cast || "";
   $("#continuity").value = project.continuity || "";
   $("#characters").value = project.characters || "";
+  $("#filmLook").value = project.look || "";
+  $("#imageQuality").value = project.image_quality || "fast";
   renderBeats();
   paintPortrait();
   requestAnimationFrame(() => growAll($("#story")));
   const grid = $("#looks");
   grid.innerHTML = "";
   for (const look of presets.looks) {
-    const [ink, accent, glow, bg, face] = presets.palettes[look];
-    const score = (presets.score_styles?.[look] || "").split(" with ")[0].replace(/^(an?|the) /, "");
+    const description = presets.look_descriptions?.[look] || "No prescribed film look";
     const b = document.createElement("button");
     b.type = "button"; b.className = "look" + (look === project.look ? " on" : "");
-    b.style.setProperty("--look", accent); b.style.setProperty("--ink", ink);
-    b.innerHTML = `<div class="look-top"><span class="look-sample" style="font-family:${FACE[face] || "Manrope"};font-weight:${face === "manrope" ? 800 : 900}">Aa</span>
-      <span class="look-swatches">${[bg, ink, accent, glow].map(c => `<i style="background:${c}"></i>`).join("")}</span></div>
-      <span class="look-name">${escapeHtml(look)}</span><span class="look-score">${escapeHtml(score)}</span>`;
-    b.onclick = () => {  // picking a look brings its colours; tune them afterwards in Colours
-      project.look = look; project.palette = null;
+    b.innerHTML = `<span class="look-name">${escapeHtml(look)}</span><span class="look-score">${escapeHtml(description)}</span>`;
+    b.onclick = () => {
+      preservePalette(); project.look = look; $("#filmLook").value = look;
       $$(".look", grid).forEach(x => x.classList.toggle("on", x === b)); applyTheme(); renderEditPanel(); save();
     };
-    b.title = presets.score_styles?.[look] || look;
+    b.title = description;
     grid.appendChild(b);
   }
   const aspects = $("#aspects");
@@ -361,30 +496,167 @@ function setBeatView(view) {
   paintStrip(); paintScript();
 }
 
+function renderContinuity() {
+  const box = $("#continuityPanel");
+  if (!box || box.contains(document.activeElement) && document.activeElement.matches("input,textarea")) return;
+  const plan = project.continuity_plan, state = project.scene_state || {}, status = project.continuity_status || "missing";
+  const sig = JSON.stringify([plan, state, status, project.continuity_error, project.props]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.innerHTML = `<div class="card-head"><div><h2 class="serif">Scene continuity</h2><p class="hint">Design stays fixed. State changes as the story unfolds.</p></div>
+    <button type="button" class="ghost small" data-plan>${plan ? "Replan from script" : "Plan continuity"}</button></div>
+    <p class="hint">${{missing:"A state plan is created before rendering. You can plan it now and review it first.", stale:"The script changed. Replan, or review these states and confirm them below.", issues:"The plan found story contradictions. Resolve them before rendering.", ready:"Each shot inherits the preceding result. Edit changes in Script → Scene state."}[status]}</p>
+    ${project.continuity_error ? `<p class="quality-findings">Planning stopped: ${escapeHtml(project.continuity_error)}. Your story and shots are saved. Plan again to retry.</p>` : ""}
+    ${plan ? `<details><summary>Permanent design</summary><label>Objects, materials and wardrobe<textarea data-state-design rows="4">${escapeHtml(plan.design || "")}</textarea></label></details>` : ""}
+    ${plan?.issues?.length ? `<ul class="quality-findings">${plan.issues.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}
+    ${plan ? `<h4>Before the first shot</h4><div class="state-grid">${Object.entries(state).map(([k,v])=>
+      `<label>${escapeHtml(k)}<input data-initial="${escapeHtml(k)}" value="${escapeHtml(v)}"></label>`).join("")}</div>
+      <div class="state-add"><input aria-label="New state fact" placeholder="Fact, e.g. Parcel · seal" data-fact-name><input aria-label="Initial fact value" placeholder="Initial value" data-fact-value><button type="button" class="ghost small" data-add-fact>Add fact</button></div>
+      ${status !== "ready" ? `<button type="button" class="ghost small" data-accept-plan>Use reviewed states</button>` : ""}` : ""}`;
+  if (plan) {
+    box.insertAdjacentHTML("beforeend", `<details class="prop-panel"><summary>Prop references · keep recurring objects consistent</summary><p class="hint">Bind a prop to a scene fact, draw its required states, then choose it in each shot’s Scene state. Inspect these references before rendering.</p>
+      ${(project.props||[]).map(p=>`<article data-prop="${escapeHtml(p.id)}"><label>Name<input data-prop-field="name" value="${escapeHtml(p.name)}"></label><label>Permanent design<textarea data-prop-field="description" rows="3">${escapeHtml(p.description)}</textarea></label><label>Changing fact<select data-prop-field="state_key">${Object.keys(state).map(k=>`<option ${p.state_key===k?"selected":""}>${escapeHtml(k)}</option>`).join("")}</select></label><div class="prop-variants">${[...new Set([state[p.state_key], ...project.shots.map(s=>s.state_changes?.[p.state_key])].filter(Boolean))].map(v=>`<div>${p.variants?.[v]?.name?`<img src="/media/${project.id}/${p.variants[v].name}" alt="${escapeHtml(p.name+': '+v)}">`:""}<p>${escapeHtml(v)}</p><button type="button" class="ghost small" data-prop-state="${escapeHtml(v)}">${p.variants?.[v]?"Redraw":"Draw reference"}</button></div>`).join("")}</div></article>`).join("")}
+      <button type="button" class="ghost small" data-add-prop>Add prop</button></details>`);
+    $("[data-add-prop]",box).onclick=async()=>{ project.props ||= []; project.props.push({name:"New prop",description:"",state_key:Object.keys(state)[0],variants:{}}); await flush(); box.dataset.sig=""; renderContinuity(); };
+    $$("[data-prop]",box).forEach(card=>{
+      const p=project.props.find(p=>p.id===card.dataset.prop);
+      $$("[data-prop-field]",card).forEach(el=>el.onchange=()=>{p[el.dataset.propField]=el.value; save();});
+      $$("[data-prop-state]",card).forEach(el=>el.onclick=async()=>{try{await flush();await post(`/api/projects/${project.id}/props/${p.id}/generate`,{value:el.dataset.propState});poll();}catch(e){toast(e.message);}});
+    });
+  }
+  $("[data-plan]", box).onclick = async () => { try { await flush(); await post(`/api/projects/${project.id}/plan-continuity`); poll(); } catch(e) { toast(e.message); } };
+  $("[data-state-design]", box)?.addEventListener("input", e => {
+    project.state_design = e.target.value; project.continuity_plan.design = e.target.value; save();
+  });
+  $$("[data-initial]", box).forEach(el => el.oninput = () => {
+    if (!el.value.trim()) return;
+    project.scene_state[el.dataset.initial] = el.value.trim(); save();
+  });
+  $("[data-add-fact]", box)?.addEventListener("click", () => {
+    const key = $("[data-fact-name]", box).value.trim(), value = $("[data-fact-value]", box).value.trim();
+    if (!key || !value) return toast("Enter a fact and its starting value");
+    if (Object.hasOwn(project.scene_state, key)) return toast("That fact already exists");
+    project.scene_state[key] = value; box.dataset.sig = ""; save(); renderContinuity();
+  });
+  $("[data-accept-plan]", box)?.addEventListener("click", async () => {
+    try { project.accept_continuity = true; await flush(); } catch(e) { toast(e.message); }
+    finally { delete project.accept_continuity; renderContinuity(); }
+  });
+}
+
+function stateFields(shot) {
+  if (!project.continuity_plan) return "";
+  const before = project.asset_status?.[shot.id]?.state_before || {}, after = {...before, ...(shot.state_changes || {})};
+  return `<details class="state-fields"><summary>Scene state · inherited → result</summary>
+    <label>Starting reference<select data-frame-source><option value="storyboard">Storyboard composition</option><option value="previous_end" ${shot.frame_source==="previous_end"?"selected":""}>Preceding shot’s final frame</option></select></label>
+    <label>Prop reference<select data-shot-prop><option value="">None</option>${(project.props||[]).map(p=>`<option value="${escapeHtml(p.id)}" ${shot.prop_id===p.id?"selected":""}>${escapeHtml(p.name)}</option>`).join("")}</select></label>
+    <label class="state-check"><input type="checkbox" data-guide-end ${shot.guide_end?"checked":""}>Guide motion with a reviewed end frame</label>
+    ${shot.keyframe?`<label>Bring an ending frame<input type="file" data-end-upload accept="image/png,image/jpeg,image/webp"></label>`:""}
+    <p class="hint">Only change what this action changes. Checked facts must be visible for review.</p>
+    ${Object.entries(before).map(([key,value])=>`<div class="state-row"><label>${escapeHtml(key)}<small>Before: ${escapeHtml(value)}</small>
+      <input data-state-key="${escapeHtml(key)}" value="${escapeHtml(after[key])}" aria-label="${escapeHtml(key)} after shot"></label>
+      <label class="state-check"><input type="checkbox" data-check="start_checks" data-fact="${escapeHtml(key)}" ${(shot.start_checks||[]).includes(key)?"checked":""}>Check start</label>
+      <label class="state-check"><input type="checkbox" data-check="end_checks" data-fact="${escapeHtml(key)}" ${(shot.end_checks||[]).includes(key)?"checked":""}>Check end</label></div>`).join("")}
+    <div class="state-grid">${["start","end"].map(phase=>`<label>People at ${phase}<input data-roster="${phase}_cast" value="${escapeHtml(shot[phase+"_cast"] === null ? "?" : (shot[phase+"_cast"] || []).join(", "))}"></label>`).join("")}</div>
+    <p class="hint">Use character names separated by commas; ? for an uncountable group. An empty field means nobody is visible.</p></details>`;
+}
+
+function bindStateFields(box, shot) {
+  $("[data-frame-source]",box)?.addEventListener("change",e=>{shot.frame_source=e.target.value;save();});
+  $("[data-shot-prop]",box)?.addEventListener("change",e=>{shot.prop_id=e.target.value;save();});
+  $("[data-guide-end]",box)?.addEventListener("change",e=>{shot.guide_end=e.target.checked;save();});
+  $("[data-end-upload]",box)?.addEventListener("change",async e=>{
+    const file=e.target.files[0];if(!file)return;
+    try{await flush();const response=await fetch(`/api/projects/${project.id}/shots/${shot.id}/endframe-upload`,{method:'POST',headers:{'X-Filename':encodeURIComponent(file.name)},body:file});const fresh=await response.json();if(!response.ok)throw new Error(fresh.error);mergeServer(fresh,true);toast('Ending frame added. Inspect and accept it in Visual review.');}catch(error){toast(error.message);}
+  });
+  $$("[data-state-key]", box).forEach(el=>el.oninput=()=>{
+    const value=el.value.trim(), key=el.dataset.stateKey;
+    if (!value) return;
+    shot.state_changes ||= {};
+    if (value === project.asset_status?.[shot.id]?.state_before?.[key]) delete shot.state_changes[key];
+    else shot.state_changes[key]=value;
+    save();
+  });
+  $$("[data-check]", box).forEach(el=>el.onchange=()=>{
+    const keys=new Set(shot[el.dataset.check] || []);
+    if(el.checked) keys.add(el.dataset.fact); else keys.delete(el.dataset.fact);
+    shot[el.dataset.check]=[...keys]; save();
+  });
+  $$("[data-roster]", box).forEach(el=>el.oninput=()=>{
+    shot[el.dataset.roster]=el.value.trim()==="?" ? null : [...new Set(el.value.split(",").map(x=>x.trim()).filter(Boolean))]; save();
+  });
+}
+
+function qualityFields(shot) {
+  return `<section class="quality-panel"><h4>Visual review</h4>${["sketch","keyframe","endframe","video"].map(kind=>{
+    const q=shot.quality?.[kind];
+    const label=kind==="sketch"?"Storyboard":kind==="video"?"Video":kind==="endframe"?"Ending frame":"Opening frame";
+    if(!q) return kind==='sketch'||kind==="endframe"&&!shot.guide_end?"":`<p class="hint">${label}: not reviewed</p>`;
+    const failed=q.status!=="passed", provisional=/\bprovisional\b/i.test(q.director_review?.reason||'');
+    return `<details ${failed||provisional?"open":""}><summary>${label} · ${provisional?"provisional — needs further review":q.director_review?"accepted by director":failed?"needs review":"checks passed"}</summary>
+      ${q.findings?.length?`<ul class="quality-findings">${q.findings.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>`:""}
+      ${q.director_review?`<p>${escapeHtml(q.director_review.reason)}</p>`:""}
+      ${failed?`<div class="quality-candidate">${kind==="video"?`<video src="${media(q.name)}" controls preload="metadata"></video>`:`<img src="${media(q.name)}" alt="Candidate that needs review">`}</div>
+        ${kind==='keyframe'?(shot.frame_repairs||[]).filter(r=>r.phase==='start'&&r.name!==q.name).map(r=>`<div class="quality-candidate"><p class="hint">Earlier candidate from this repair</p><img src="${media(r.name)}" alt="Earlier opening frame candidate"><button type="button" class="ghost small" data-accept-review="keyframe" data-candidate="${escapeHtml(r.name)}">Accept this earlier candidate after inspection</button></div>`).join(''):''}
+        ${kind==='sketch'?'<button type="button" class="ghost small" data-redraw-candidate>Redraw this shot</button>':kind!=="video"?`<button type="button" class="ghost small" data-repair-frame="${kind}">Repair these findings</button>`:""}
+        <label>Director's reason for accepting this candidate<input data-reason="${kind}" placeholder="Record what you inspected and why it is acceptable"></label>
+        <button type="button" class="ghost small" data-accept-review="${kind}" data-candidate="${escapeHtml(q.name)}">Accept after inspection</button>`:""}</details>`;
+    }).join("")} ${shot.video?`<button type="button" class="ghost small" data-review-video>Review current video</button>`:""}
+    <p class="hint">Video checks sample four moments. They can miss events between samples; review the full clip before delivery.</p></section>`;
+}
+
+function bindQuality(box, shot) {
+  $('[data-redraw-candidate]',box)?.addEventListener('click',async()=>{try{await flush();await post(`/api/projects/${project.id}/shots/${shot.id}/sketch`);poll();}catch(e){toast(e.message)}});
+  $$("[data-repair-frame]",box).forEach(b=>b.onclick=async()=>{try{await flush();await post(`/api/projects/${project.id}/shots/${shot.id}/repair-frame`,{kind:b.dataset.repairFrame});poll();}catch(e){toast(e.message);}});
+  $("[data-review-video]",box)?.addEventListener("click",()=>queueShot(shot,"review"));
+  $$("[data-accept-review]",box).forEach(button=>button.onclick=async()=>{
+    const kind=button.dataset.acceptReview, reason=$(`[data-reason="${kind}"]`,box).value.trim();
+    if(!reason) return toast("Inspect the candidate and record a reason first");
+    try { await flush(); mergeServer(await post(`/api/projects/${project.id}/shots/${shot.id}/accept-review`,{kind,name:button.dataset.candidate,reason}),true); }
+    catch(e) { toast(e.message); }
+  });
+}
+
 function paintScript() {  // the film as a screenplay: each beat a scene, each shot its action, then what is said
   const box = $("#script");
-  if (box.hidden) return;
-  const sig = JSON.stringify([beatsOf(), project.shots.map(s => [s.id, s.beat, s.action, s.line, s.others, s.lead])]);
+  if (box.hidden || box.contains(document.activeElement) && document.activeElement.matches("input,textarea")) return;
+  const sig = JSON.stringify([beatsOf(), project.asset_status, project.shots.map(s => [s.id, s.beat, s.action, s.line, s.others, s.lead, s.start_frame, s.end_state, s.beat_source])]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const shots = project.shots.filter(s => s.action?.trim());
   if (!shots.length) { box.innerHTML = `<p class="hint">No shots yet. Write shots and the script appears here.</p>`; return; }
-  let html = "", lastBeat = -1;
+  let html = `<p class="sc-help">Edit action, dialogue and staging here. Edits save automatically; Render film rebuilds affected frames and videos. Changed beats need a shot review first.</p>`, lastBeat = -1;
   for (const s of shots) {
     const beat = s.beat && s.beat <= beatsOf().length ? s.beat : 0;
     if (beat !== lastBeat) {
       html += `<h4 class="sc-head">${beat ? `${beat}. ${escapeHtml(beatsOf()[beat - 1])}` : "Not in the story yet"}</h4>`;
       lastBeat = beat;
     }
-    const [who, ...words] = (s.line || "").split(":");
-    const speaker = who.trim().toLowerCase() === "lead" ? "THE LEAD" : who.trim().toUpperCase();
-    html += `<button type="button" class="sc-shot" data-id="${s.id}" title="Open shot ${shotIndex(s.id) + 1}">
+    html += `<article class="sc-shot" data-id="${s.id}">
       <span class="sc-num">${String(shotIndex(s.id) + 1).padStart(2, "0")}</span>
-      <p class="sc-action">${escapeHtml(s.action)}</p>
-      ${s.line?.trim() && words.length ? `<p class="sc-speaker">${escapeHtml(speaker)}</p><p class="sc-line">${escapeHtml(words.join(":").trim())}</p>` : ""}</button>`;
+      <label class="sc-field">Action<textarea class="grow sc-action" rows="2" data-script="action" aria-label="Shot ${shotIndex(s.id) + 1} action">${escapeHtml(s.action)}</textarea></label>
+      <label class="sc-field sc-dialogue">Dialogue<textarea class="grow" rows="1" data-script="line" placeholder='Lead: "Words spoken aloud"' aria-label="Shot ${shotIndex(s.id) + 1} dialogue">${escapeHtml(s.line || "")}</textarea></label>
+      <details><summary>Staging · ${escapeHtml(s.shot_size)}</summary>
+        <label class="sc-field">First frame<textarea class="grow" rows="2" data-script="start_frame">${escapeHtml(s.start_frame || "")}</textarea></label>
+        <label class="sc-field">End state<textarea class="grow" rows="2" data-script="end_state">${escapeHtml(s.end_state || "")}</textarea></label></details>
+      ${stateFields(s)}
+      <div class="sc-tools"><span>${escapeHtml(staleness(s))}</span><button type="button" data-open>Shot settings</button>
+      ${storyStale(s) ? `<button type="button" data-rewrite>Rewrite for changed beat</button><button type="button" data-accept>Still tells this beat</button>` : ""}</div></article>`;
   }
   box.innerHTML = html;
-  $$(".sc-shot", box).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
+  $$(".sc-shot", box).forEach(row => {
+    const shot = project.shots.find(s => s.id === row.dataset.id);
+    bindStateFields(row, shot);
+    $("[data-open]", row).onclick = () => { setStage("shots"); select(shot.id); };
+    $("[data-rewrite]", row)?.addEventListener("click", () => writeShots("rewrite", shot));
+    $("[data-accept]", row)?.addEventListener("click", () => acceptBeat(shot));
+    $$("[data-script]", row).forEach(field => {
+      field.oninput = () => { shot[field.dataset.script] = field.value; shot.ai = false; save(); };
+      field.onblur = () => { box.dataset.sig = ""; };
+    });
+    $("details", row).ontoggle = () => growAll(row);
+  });
+  requestAnimationFrame(() => growAll(box));
 }
 
 function paintStrip() {
@@ -429,6 +701,7 @@ function adoptStory(fresh) {
   const lookChanged = project.look !== fresh.look || JSON.stringify(project.palette || null) !== JSON.stringify(fresh.palette || null);
   project.look = fresh.look; project.palette = fresh.palette;
   if (lookChanged) {
+    $("#filmLook").value = project.look || "";
     $$(".look").forEach(b => b.classList.toggle("on", $(".look-name", b).textContent === project.look));
     flash("lookField"); renderEditPanel();
   }
@@ -524,13 +797,14 @@ function writePlan() {  // what ✨ Write shots will do on this board
 
 let seenFailures = null;
 function noticeFailures() {  // the writer and the storyboard fail quietly in the queue otherwise
-  const failed = jobs.filter(j => j.project === project.id && j.state === "failed" && ["write_shots", "sketch"].includes(j.kind));
+  const failed = jobs.filter(j => j.project === project.id && j.state === "failed" && ["write_story", "write_shots", "sketch"].includes(j.kind));
   if (seenFailures === null) { seenFailures = new Set(failed.map(j => j.id)); return; }
   const fresh = failed.filter(j => !seenFailures.has(j.id));
   fresh.forEach(j => seenFailures.add(j.id));
   const j = fresh.at(-1);
   if (!j) return;
-  if (j.kind === "write_shots") toast(`Gemma couldn't write the shots: ${j.error}`, "Try again", () => writeShots(j.mode, project.shots.find(s => s.id === j.shot)));
+  if (j.kind === "write_story") toast(`Gemma couldn't finish the story: ${j.error}`, "Try again", () => writeStory(j.target, j.count));
+  else if (j.kind === "write_shots") toast(`Gemma couldn't write the shots: ${j.error}`, "Try again", () => writeShots(j.mode, project.shots.find(s => s.id === j.shot)));
   else toast(`Couldn't draw the storyboard: ${j.error}`);
 }
 
@@ -642,6 +916,9 @@ function renderInspector() {
     <div class="ai-field ins-action"><div class="field-head"><span>What happens</span>
       <button type="button" class="ai small" data-act="rewrite" title="Gemma rewrites this shot to flow from the one before into the one after">✨ ${shot.action?.trim() ? "Rewrite" : "Write"}</button></div>
       <textarea class="grow" data-k="action" rows="3" placeholder="Describe the action, as you'd see it" aria-label="What happens">${escapeHtml(shot.action)}</textarea></div>
+    <label>First frame · before the action<textarea class="grow" data-k="start_frame" rows="2" placeholder="Viewpoint, people, hands and prop positions">${escapeHtml(shot.start_frame || "")}</textarea></label>
+    <label>End state · what changes<textarea class="grow" data-k="end_state" rows="2" placeholder="The visible result the next shot picks up">${escapeHtml(shot.end_state || "")}</textarea></label>
+    ${storyStale(shot) ? `<p class="hint">The story beat changed. Rewrite this shot, or <button type="button" data-act="accept-beat">Still tells this beat</button>.</p>` : ""}
     ${beatsOf().length ? `<div class="beat-pick"><label>Story beat<select data-beat>${[`<option value="">Not in the story yet</option>`, ...beatsOf().map((b, n) =>
       `<option value="${n + 1}"${shot.beat === n + 1 ? " selected" : ""}>${n + 1} · ${escapeHtml(b.length > 70 ? b.slice(0, 68) + "…" : b)}</option>`)].join("")}</select></label>
       ${shot.beat ? "" : `<button type="button" class="ai small" data-act="place" title="Gemma writes the beat this shot tells and adds it to the story">✨ Add to story</button>`}</div>` : ""}
@@ -669,14 +946,15 @@ function renderInspector() {
       <div class="recipe-head"><span class="strip-label">How it was made</span></div>
       <div class="recipe-body"></div>
       <details class="prompts"><summary>Prompts the models receive</summary><div class="prompt-body"></div></details>
-    </section>`;
+    </section><div class="state-host">${stateFields(shot)}</div><div class="quality-host">${qualityFields(shot)}</div>`;
+  bindStateFields(ins, shot); bindQuality(ins, shot);
   $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || "";
   requestAnimationFrame(() => growAll(ins));
   for (const field of $$("[data-k]", ins)) {
     const key = field.dataset.k;
     field.addEventListener(field.tagName === "SELECT" || field.type === "checkbox" ? "change" : "input", () => {
       shot[key] = field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value;
-      if (key === "action") shot.ai = false;  // edited by you: a new Write shots keeps it
+      shot.ai = false;  // any direction edited by you is kept by Write shots
       paintScript();
       if (key === "seconds" && !(shot.seconds >= 2 && shot.seconds <= 10)) return;  // wait for a valid length; blur clamps it
       if (key === "camera_move") { $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || ""; $(".ins-head .serif", ins).textContent = shot.camera_move; }
@@ -700,6 +978,7 @@ function renderInspector() {
     save(true).then(() => select(project.shots[i + 1].id));
   };
   $('[data-act="rewrite"]', ins).onclick = () => writeShots("rewrite", shot);
+  $('[data-act="accept-beat"]', ins)?.addEventListener("click", () => acceptBeat(shot));
   $('[data-act="sketch"]', ins).onclick = async () => { await flush(); await post(`/api/projects/${project.id}/shots/${shot.id}/sketch`); poll(); };
   $('[data-act="place"]', ins)?.addEventListener("click", () => writeShots("beat", shot));
   const beatSel = $("[data-beat]", ins);
@@ -727,7 +1006,7 @@ function paintSketch(shot) {
   const img = $(".ins-sketch-img", box), want = shot.sketch || "";
   if (img.dataset.src !== want) { img.dataset.src = want; img.innerHTML = want ? `<img src="${media(want)}" alt="Storyboard drawing">` : "✎"; }
   $(".hint", box).textContent = job ? (job.state === "running" ? `Drawing · ${Math.round(job.elapsed)}s` : "Drawing · queued")
-    : !shot.sketch ? "Drawn from the world and the lead before the first frame, which then follows its composition."
+    : !shot.sketch ? "A monochrome staging drawing sets the first frame's composition, poses and props."
     : stale ? "The shot changed since this was drawn. It's redrawn before the next frame."
     : "The next frame follows this composition and pose.";
   const b = $('[data-act="sketch"]', box);
@@ -740,6 +1019,17 @@ function paintInspector() {
   const ins = $("#inspector"), i = shotIndex(selected);
   if (i < 0 || !$(".ins-media", ins)) return;
   const shot = project.shots[i], box = $(".ins-media", ins);
+  const state = $(".state-host", ins), ssig = stateFields(shot);
+  if (state && state.dataset.sig !== ssig && !state.contains(document.activeElement)) {
+    const open = $("details", state)?.open;
+    state.dataset.sig = ssig; state.innerHTML = ssig;
+    if (open && $("details", state)) $("details", state).open = true;
+    bindStateFields(state, shot);
+  }
+  const quality = $(".quality-host", ins), qsig = JSON.stringify([shot.quality, shot.video]);
+  if (quality && quality.dataset.sig !== qsig && !quality.contains(document.activeElement)) {
+    quality.dataset.sig = qsig; quality.innerHTML = qualityFields(shot); bindQuality(quality, shot);
+  }
   paintSketch(shot);
   const working = busyFor(j => j.shot === shot.id);
   $('[data-act="pause"]', ins).hidden = !working || !!shot.paused;
@@ -803,7 +1093,7 @@ function paintRecipe(shot, i) {
     ${src ? `<img src="${src}" alt="">` : `<span class="ing-text">${title === "The world" ? "¶" : title === "The storyboard" ? "✎" : "↺"}</span>`}
     <b>${escapeHtml(title)}</b><small>${escapeHtml(sub)}</small></button>`;
   const inputs = [];
-  if (r.kind === "shot") inputs.push(ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
+  if (r.kind === "shot" && r.world_reference !== false) inputs.push(ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
   if (r.lead) inputs.push(ing(media(r.lead), "The lead", "Face and wardrobe", "story"));
   if (r.kind === "shot") inputs.push(ing(r.sketch ? media(r.sketch) : "", "The storyboard",
     r.sketch ? "Composition and pose" : made ? "Not used" : "Drawn first", "sketch"));
@@ -814,7 +1104,8 @@ function paintRecipe(shot, i) {
   if (drawing) {  // the storyboard is the first step: what it was drawn from
     const from = [drawing.plain ? "the world in words" : "the world", drawing.of?.reference ? "the lead" : "",
       drawing.before ? `the panel before${drawing.before === project.shots[i - 1]?.sketch ? ` (${shotLabel(project.shots[i - 1].id)})` : ""}` : ""];
-    steps.unshift(`Qwen-Image-Edit 2511 · draws the storyboard from ${from.filter(Boolean).join(" + ")} · half size`);
+    steps.unshift(drawing.of?.visual ? "HiDream-O1 · independent staging drawing · grayscale and cast check" :
+      `Qwen-Image-Edit 2511 · draws the storyboard from ${from.filter(Boolean).join(" + ")} · half size`);
   }
   const video = `LTX 2.5 · ${shot.seconds}s · ${shot.camera_move.toLowerCase()}${shot.sound ? " · with sound" : ""}`;
   body.innerHTML = `
@@ -869,7 +1160,7 @@ function removeBeat(n) {  // shots keep telling the same moment: later beats mov
   renderBeats(); save(true);
 }
 
-function picture(shot) { return shot.keyframe ? media(shot.keyframe) : shot.sketch ? media(shot.sketch) : ""; }
+function picture(shot) { const candidate=shot.quality?.keyframe?.name||shot.quality?.sketch?.name; return shot.keyframe ? media(shot.keyframe) : shot.sketch ? media(shot.sketch) : candidate?media(candidate):""; }
 
 function paintBeatShots() {  // under each beat, the shots that tell it: frame if there is one, else the drawing
   const sig = JSON.stringify([beatsOf().length, project.shots.map(s => [s.id, s.beat, s.keyframe, s.sketch, !!s.video, !!s.action?.trim()])]);
@@ -913,17 +1204,18 @@ function paintBeatShots() {  // under each beat, the shots that tell it: frame i
     $$("[data-place]", list).forEach(b => b.onclick = () => writeShots("beat", project.shots[shotIndex(b.dataset.place)]));
   }
   $$(".beat-shot", list).forEach(b => b.onclick = () => { setStage("shots"); select(b.dataset.id); });
-  $("#drawBoard").hidden = !project.shots.some(s => s.action?.trim() && !s.sketch) || !!busyFor(j => j.kind === "sketch");
+  $("#drawBoard").hidden = !project.shots.some(s => s.action?.trim() && (!s.sketch || sketchStale(s))) || !!busyFor(j => j.kind === "sketch");
   paintStrip(); paintScript();
 }
 
 function sketchStale(shot) {  // mirrors studio._current_sketch: is the drawing from today's shot, world and lead?
+  if (project.asset_status?.[shot.id]?.sketch) return true;
   const take = (shot.sketches || []).find(t => t.name === shot.sketch);
   if (!take) return !!shot.sketch;
   const of = take.of || {};
   return of.action !== (shot.action || "") || of.shot_size !== shot.shot_size || of.camera_move !== shot.camera_move
-    || of.lead !== (shot.lead !== false) || of.world !== plateOf() || plateStale()
-    || of.reference !== (shot.lead !== false ? project.reference || null : null);
+    || of.lead !== (shot.lead !== false) || of.others !== (shot.others || "")
+    || of.visual?.start_frame !== (shot.start_frame || "");
 }
 
 function paintWorld() {  // the Story page shows the world plate every shot is made in
@@ -996,6 +1288,8 @@ function filmChanges() {  // what changed since the cut was made ([] when it's u
   const was = project.film_of, now = project.film_now;
   if (!project.film || !was || !now) return [];
   const changes = [], before = new Map(was.shots.map(([id, video, tr], i) => [id, { video, tr, i }]));
+  if (project.shots.some(s => storyStale(s) || project.asset_status?.[s.id]?.frame || project.asset_status?.[s.id]?.video))
+    changes.push("script or staging changed · render affected shots");
   const ids = now.shots.map(s => s[0]);
   const added = ids.filter(id => !before.has(id)).length, removed = was.shots.filter(s => !ids.includes(s[0])).length;
   if (added) changes.push(`${added} shot${added > 1 ? "s" : ""} added`);
@@ -1014,6 +1308,7 @@ function filmChanges() {  // what changed since the cut was made ([] when it's u
 let autoCutFor = null, autoCutTimer = null;
 function autoRecut(changes) {  // with auto-render on, an out-of-date cut re-cuts itself once there's nothing to wait for
   const ready = changes.length && project.auto_render !== false && project.shots.every(s => s.video && !s.paused)
+    && !project.shots.some(s => storyStale(s) || project.asset_status?.[s.id]?.frame || project.asset_status?.[s.id]?.video)
     && !busyFor(() => true);
   const sig = JSON.stringify(project.film_now);
   if (!ready || autoCutFor === sig) { clearTimeout(autoCutTimer); autoCutTimer = null; return; }
@@ -1053,7 +1348,7 @@ function renderViewer() {
   const paused = pausedNote(), stale = $("#filmStale");
   stale.hidden = !(changes.length || paused) || !!cutting;
   stale.textContent = paused ? `${paused}, so the film can't be cut` : `Out of date: ${changes.join(", ")}`;
-  const missing = done < project.shots.length;
+  const missing = project.shots.some(needsRender);
   const known = !!project.film_of;  // a cut from before cuts remembered their inputs: we can't tell, so offer it
   $("#stitch").disabled = !!cutting || (!!project.film && known && !changes.length && !missing && !paused);
   $("#stitch").textContent = cutting ? (cutting.state === "running" ? "Cutting…" : "Queued…")
@@ -1239,6 +1534,8 @@ function renderScreen() {
   const n = project.shots.length;
   $("#screenInfo").textContent = [{ master: "1080p master · SeedVR2", film: `${n} shot${n === 1 ? "" : "s"}`,
     trailer: "Trailer · score composed by LTX" }[screen], ...facts].join(" · ") + (project.finish && screen !== "trailer" ? " · film finish" : "");
+  if (project.film && project.shots.some(needsRender)) $("#screenInfo").textContent += " · Older cut — render script changes";
+  if (project.film && project.shots.some(s=>project.asset_status?.[s.id]?.review)) $("#screenInfo").textContent += " · Continuity review required";
   const dl = $("#download"), safe = (project.title || "Untitled film").replace(/[\\/:*?"<>|]+/g, " ").trim();
   dl.hidden = !src; dl.href = media(src); dl.download = `${safe}${screen === "film" ? "" : " " + screen}.mp4`;
   const masterJob = busyFor(j => j.kind === "master");
@@ -1266,6 +1563,21 @@ function save(rerender) {
 async function flush() { clearTimeout(saveTimer); mergeServer(await post(`/api/projects/${project.id}`, project)); }
 
 function mergeServer(fresh, rerender) {
+  if ((fresh.continuity_rev || 0) !== (project.continuity_rev || 0)) {
+    project.scene_state = fresh.scene_state;
+    fresh.shots.forEach(s=>{
+      const current=project.shots.find(x=>x.id===s.id);
+      if(current) for(const key of ["state_changes","start_checks","end_checks","start_cast","end_cast"]) current[key]=s[key];
+    });
+  }
+  project.continuity_rev=fresh.continuity_rev;
+  project.continuity_plan=fresh.continuity_plan;
+  project.continuity_status=fresh.continuity_status;
+  project.continuity_fixes=fresh.continuity_fixes;
+  project.continuity_error=fresh.continuity_error;
+  if (!$(".prop-panel")?.contains(document.activeElement)) project.props=fresh.props;
+  else (project.props||[]).forEach((p,i)=>{const f=(fresh.props||[]).find(x=>x.id===p.id)||(!p.id?fresh.props?.[i]:null);if(f){p.id=f.id;p.variants=f.variants;}});
+  delete project.state_design;
   const sameShots = fresh.shots.length === project.shots.length && fresh.shots.every((s, i) => !project.shots[i].id || s.id === project.shots[i].id);
   const revised = (fresh.shots_rev || 0) !== (project.shots_rev || 0);
   const wrote = revised && (fresh.shots_history || []).length >= (project.shots_history || []).length;
@@ -1281,21 +1593,27 @@ function mergeServer(fresh, rerender) {
     project = fresh;
     if (shotIndex(selected) < 0) selected = project.shots[0]?.id || null;
     renderBoard(); renderInspector(); renderTimeline(); renderViewer(); renderEditPanel(); renderScreen(); renderHeader(); applyTheme();
-    renderBeats();
+    renderBeats(); renderContinuity();
     return;
   }
   // keep what the user is typing; take generated media from the server
   fresh.shots.forEach((s, i) => Object.assign(project.shots[i], { id: s.id, keyframe: s.keyframe, video: s.video, takes: s.takes, seed: s.seed,
-    sketch: s.sketch, sketches: s.sketches, paused: s.paused }));
+    sketch: s.sketch, sketches: s.sketches, endframe:s.endframe, endframes:s.endframes, paused: s.paused, beat_source: s.beat_source, quality: s.quality }));
+  project.asset_status = fresh.asset_status;
   for (const k of ["film", "film_of", "film_now", "film_wave", "master", "master_of", "trailer", "motion_preview", "motion_defaults", "title_shot", "trailer_score", "reference",
     "lead_identity", "lead_identity_of", "world"]) project[k] = fresh[k];
   if ((fresh.story_history || []).length !== (project.story_history || []).length) adoptStory(fresh);  // the AI (or undo) changed the page
   project.story_history = fresh.story_history;
   paintBoard(); paintInspector(); paintPortrait(); renderViewer(); renderEditPanel(); renderTimeline(); renderScreen(); renderHeader(); applyTheme();
   paintBeatShots();
+  paintScript();
+  renderContinuity();
 }
 
-async function queueShot(shot, kind) { await flush(); await post(`/api/projects/${project.id}/shots/${shot.id}/${kind}`); toast(kind === "video" ? "Shot queued" : "New frame queued"); poll(); }
+async function queueShot(shot, kind) {
+  try { await flush(); await post(`/api/projects/${project.id}/shots/${shot.id}/${kind}`); toast(kind === "video" ? "Shot queued" : "New frame queued"); poll(); }
+  catch (error) { toast(error.message); }
+}
 
 async function uploadKeyframe(shot, file) {
   if (!file) return;
@@ -1327,23 +1645,44 @@ function toast(text, actionLabel, action) {
 }
 
 let lastSignature = "";
+let pollInFlight = false;
+let pollPending = false;
+let jobEvents;
+function startJobEvents() {
+  if (typeof EventSource !== 'undefined') {
+    jobEvents = new EventSource('/api/events');
+    jobEvents.onmessage = () => poll();
+    jobEvents.onopen = () => poll();
+  }
+  setInterval(() => {
+    if (!jobEvents || jobEvents.readyState !== EventSource.OPEN) poll();
+  }, 5000);
+  // Reconcile even if an intermediary silently drops notifications.
+  setInterval(poll, 30000);
+}
 async function poll() {
+  if (pollInFlight) { pollPending = true; return; }
+  pollInFlight = true;
   try {
     jobs = await api("/api/jobs");
-    presets.comfy = true;
     const sig = jobs.filter(j => j.project === project.id).map(j => j.id + j.state).join();
     if (sig !== lastSignature) {
       lastSignature = sig;
       mergeServer(await api(`/api/projects/${project.id}`));
       projects = await api("/api/projects");
-    } else {
+    } else if (jobs.some(j => j.project === project.id && active(j))) {
       paintBoard(); paintInspector(); paintPortrait();
+      if (stage === "story") { paintScript(); renderContinuity(); }
       if (stage === "edit") { renderViewer(); paintTitleShot(); }
       if (stage === "screen") renderScreen();
     }
     renderStatus();
     noticeFailures();
   } catch { presets.comfy = false; renderStatus(); }
+  finally {
+    pollInFlight = false;
+    if (pollPending) { pollPending = false; setTimeout(poll, 100); }
+  }
 }
 
 // ---------------------------------------------------------------- wiring
@@ -1351,15 +1690,38 @@ $$(".stages button").forEach(b => b.onclick = () => setStage(b.dataset.stage));
 $$("[data-goto]").forEach(b => b.onclick = () => setStage(b.dataset.goto));
 $("#projectBtn").onclick = e => { e.stopPropagation(); renderProjectMenu(); $("#projectMenu").hidden = !$("#projectMenu").hidden; };
 $("#newProject").onclick = async () => { $("#projectMenu").hidden = true; await flush(); createProject(); };
-$("#statusPill").onclick = e => { e.stopPropagation(); $("#queue").hidden = !$("#queue").hidden; };
+let performanceSaving=false;
+$$('[data-ai-mode]').forEach(input=>input.onchange=async e=>{
+  if(!e.target.checked || e.target.value===(project.ai_mode||'normal')) return;
+  if(performanceSaving){renderStatus();return;}
+  const previous=project.ai_mode||'normal';
+  project.ai_mode=e.target.value;
+  performanceSaving=true;
+  try{await flush();renderStatus();renderSetup();if(selectedSetupReady()===false){$('#setupPanel').hidden=false;renderSetup();}toast(`${project.ai_mode==='fast'?'Fast':'Standard'} applies to new jobs. Existing work is kept.`);}
+  catch(error){project.ai_mode=previous;renderStatus();toast(error.message);}
+  finally{performanceSaving=false;}
+});
+['#statusPill','#productionDetails'].forEach(id=>$(id).onclick=e=>{e.stopPropagation();setQueueOpen($('#queue').hidden)});
+$('#closeQueue').onclick=()=>{setQueueOpen(false);$('#statusPill').focus()};
+$('#resumeWork').onclick=()=>$('#renderFilm').click();
+$('#queue').addEventListener('click',async e=>{
+  const inspect=e.target.closest('[data-inspect-job]'),retry=e.target.closest('[data-retry-job]'),fix=e.target.closest('[data-fix-continuity]'),review=e.target.closest('[data-review-continuity]');
+  if(inspect){selected=inspect.dataset.inspectJob;setQueueOpen(false);setStage('shots');renderInspector();paintBoard();$('#inspector').scrollIntoView({block:'start',behavior:'smooth'});}
+  if(retry){retry.disabled=true;try{await flush();await post(`/api/jobs/${retry.dataset.retryJob}/retry`);await poll();}catch(error){toast(error.message);retry.disabled=false;}}
+  if(review){setQueueOpen(false);setStage('story');renderContinuity();$('#continuityPanel').scrollIntoView({block:'start',behavior:'smooth'});}
+  if(fix){fix.disabled=true;try{await flush();const result=await post(`/api/jobs/${fix.dataset.fixContinuity}/auto-fix`,{continuity_rev:project.continuity_rev||0});mergeServer(result.project,true);renderContinuity();await poll();toast(result.warning?'Fixed the stale warning, but could not resume: '+result.warning:result.remaining.length?'Fixed the stale warning. Other continuity issues still need your review.':result.resumed?'Fixed the stale warning and resumed generation.':'Fixed the stale warning. Scene continuity is ready.');}catch(error){toast(error.message);fix.disabled=false;}}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#queue').hidden){setQueueOpen(false);$('#statusPill').focus()}});
 document.addEventListener("click", e => {
   if (!e.target.closest("#projectMenu, #projectBtn")) $("#projectMenu").hidden = true;
-  if (!e.target.closest("#queue, #statusPill")) $("#queue").hidden = true;
+  if (!e.target.closest("#queue, #statusPill, #productionDetails")) setQueueOpen(false);
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#projectMenu").hidden = true; $("#queue").hidden = true; } });
-$("#cancelAll").onclick = () => post("/api/cancel").then(poll);
+$("#cancelAll").onclick = () => post("/api/cancel", {project:project.id}).then(poll).catch(error=>toast(error.message));
 $("#renderFilm").onclick = async () => {
-  await flush(); await post(`/api/projects/${project.id}/render`);
+  if(setupState && !setupState.ready){$('#setupPanel').hidden=false;await checkSetup(true);return;}
+  try { await flush(); await post(`/api/projects/${project.id}/render`); }
+  catch (error) { toast(error.message); return; }
   const paused = pausedNote();  // paused shots are skipped, and the film can't be cut without them
   if (paused) toast(`Rendering the rest. ${paused}, so the film won't be cut until you resume`, "Resume", resumeAll);
   else toast("Rendering everything that's missing");
@@ -1407,6 +1769,12 @@ $$("#beatView button").forEach(b => b.onclick = () => setBeatView(b.dataset.view
 document.addEventListener("click", e => { if (!e.target.closest("#beatMenu")) $("#beatMenu").hidden = true; });
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#beatMenu").hidden = true; });
 $("#idea").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); writeStory("everything"); } };
+$("#filmLook").oninput = e => {
+  preservePalette(); project.look = e.target.value;
+  $$("#looks .look").forEach(b => b.classList.toggle("on", $(".look-name", b).textContent === project.look));
+  applyTheme(); renderEditPanel(); save();
+};
+$("#imageQuality").onchange=e=>{project.image_quality=e.target.value;save();};
 $$("[data-pal]").forEach(input => input.oninput = () => {
   const [ink, accent, glow, bg] = effectivePalette();
   project.palette = { bg, ink, accent, glow, ...(project.palette || {}), [input.dataset.pal]: input.value.toUpperCase() };
@@ -1421,8 +1789,9 @@ $("#screenVideo").onloadedmetadata = () => renderScreen();
 $("#stitch").onclick = async () => {
   await flush();
   if (pausedNote()) { resumeAll(); toast("Resuming the paused shots; the film is cut when they're done"); return; }
-  const complete = project.shots.every(s => s.video);  // missing shots render first, then the cut
-  await post(`/api/projects/${project.id}/${complete ? "stitch" : "render"}`);
+  const complete = !project.shots.some(s=>needsRender(s) || project.asset_status?.[s.id]?.review) && project.continuity_status === "ready";
+  try { await post(`/api/projects/${project.id}/${complete ? "stitch" : "render"}`); }
+  catch (error) { toast(error.message); return; }
   if (!complete) toast("Rendering the missing shots, then cutting");
   view = "film"; poll();
 };
