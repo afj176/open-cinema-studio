@@ -53,9 +53,11 @@ def recorded_inputs(project_dir: Path, take: dict) -> tuple[list[Path], str]:
             raise ValueError('The selected frame has incomplete character references')
         names.append(entry['image'])
     if recipe['world_reference']:
-        if not recipe['world']:
-            raise ValueError('The selected frame has no recorded world reference')
-        names.append(recipe['world'])
+        memory = recipe.get('visual_memory')
+        location_image = (memory.get('plate') or memory.get('image')) if isinstance(memory, dict) else recipe['world']
+        if not location_image:
+            raise ValueError('The selected frame has no recorded location reference')
+        names.append(location_image)
     if len(names) > 3 or any(not isinstance(name, str) or not name for name in names):
         raise ValueError('The selected frame has invalid reference provenance')
     referenced_numbers = [int(number) for number in re.findall(r'\bPicture\s+(\d+)\b', take.get('prompt', ''), re.I)]

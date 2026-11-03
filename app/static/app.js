@@ -70,7 +70,8 @@ function staleness(shot) {  // why the current frame no longer matches the film 
   if (Object.entries(shot.quality || {}).some(([kind,q])=>q.status === "needs_review" && !(kind==='sketch' && storyboardSuperseded(shot)))) return draftFirst()?"Polish suggested":"Candidate needs review";
   const r = recipeOf(shot);
   if (!shot.keyframe || !r || r.kind !== "shot" || r.frame_source === "previous_end") return "";
-  if (leadIn(shot) && r.lead !== project.reference) return r.lead ? "Lead changed" : "Made before the lead";
+  if (leadIn(shot) && (r.lead || r.lead_description_source) !== project.reference)
+    return (r.lead || r.lead_description_source) ? "Lead changed" : "Made before the lead";
   if (!(r.world_optional === true && r.world == null) && r.world !== plateOf()) return "World changed";
   if (r.action !== undefined && r.action !== (shot.action || "")) return "Action changed";
   if (r.shot_size !== undefined && (r.shot_size !== shot.shot_size || r.camera_move !== shot.camera_move)) return "Framing changed";
@@ -1061,6 +1062,8 @@ function renderInspector() {
       <option value="previous_end" ${shot.transition !== "continue" && shot.frame_source === "previous_end" ? "selected" : ""}>New angle from previous shot</option>
       <option value="continue" ${shot.transition === "continue" ? "selected" : ""}>Continue previous shot</option>
     </select></label><p class="hint" id="shotStartHelp">${i === 0 ? "The first shot starts with a new composition." : shot.transition === "continue" ? "Continue the action and camera movement from the preceding shot." : shot.frame_source === "previous_end" ? "In First frame, describe the camera position, whose face or back is visible, and who is offscreen. Shot size controls the crop." : "Build this shot from its own storyboard composition."}</p></div>
+    ${i > 0 && shot.transition !== "continue" && shot.frame_source !== "previous_end" ? `<label>Remember a location from<select data-k="memory_shot"><option value="">Use the world plate</option>${project.shots.slice(0, i).map((s, n) => `<option value="${escapeHtml(s.id)}" ${shot.memory_shot === s.id ? "selected" : ""}>Shot ${n + 1}${(shot.memory_options || [])[n]?.error ? " · " + escapeHtml((shot.memory_options || [])[n].error) : " · ready"}</option>`).join("")}</select></label><p class="hint">Experimental: the model may copy people, defects or camera framing from the source. Inspect every result. The source needs a current review and matching scene state, plus a free reference slot.</p>` : ""}
+    ${(project.memory_plates || []).length ? `<details><summary>Location memory library · ${(project.memory_plates || []).length} prepared</summary><p class="hint">Prepared from earlier frames. Empty checks can miss defects; inspect the plate and its source.</p><div class="ingredients">${project.memory_plates.map(m => `<div class="ingredient"><img src="${media(m.image)}" alt="Prepared location memory"><b>${escapeHtml(shotLabel(m.source_shot))}</b><small>${m.approved_hash ? "Accepted by director" : (m.plate_review_outcome || m.review_outcome) === "passed" ? "Plate checks passed" : m.empty === true ? "Review suggested" : m.empty === false ? "People detected" : "Check inconclusive"}</small>${m.review?.findings?.length ? `<small>${escapeHtml(m.review.findings.join("; "))}</small>` : ""}${!m.approved_hash && m.empty === true ? `<button type="button" class="ghost small" data-approve-memory="${escapeHtml(m.image)}">Approve after inspection</button>` : ""}</div>`).join("")}</div></details>` : ""}
     <div class="field-row" style="align-items:center">
       <label class="switch"><input type="checkbox" data-k="lead" ${shot.lead !== false ? "checked" : ""}><span></span>Lead in shot</label>
       <div class="seg" role="group" aria-label="Transition in">${TRANSITIONS.map(t =>
@@ -1078,6 +1081,10 @@ function renderInspector() {
       <details class="prompts"><summary>Prompts the models receive</summary><div class="prompt-body"></div></details>
     </section><div class="state-host">${stateFields(shot)}</div><div class="quality-host">${qualityFields(shot)}</div>`;
   bindStateFields(ins, shot); bindQuality(ins, shot);
+  $$("[data-approve-memory]", ins).forEach(button => button.onclick = async () => {
+    try { await flush(); mergeServer(await post(`/api/projects/${project.id}/memory/approve`, {name: button.dataset.approveMemory}), true); toast("Location approved. Retry the shot."); }
+    catch (error) { toast(error.message); }
+  });
   $(".cam-scene", ins).style.animation = CAMERA_ANIM[shot.camera_move] || "";
   requestAnimationFrame(() => growAll(ins));
   for (const field of $$("[data-k]", ins)) {
@@ -1238,8 +1245,12 @@ function paintRecipe(shot, i) {
   const inputs = [];
   const reframed = r.kind === "shot" && r.frame_source === "previous_end";
   if (reframed && i > 0) inputs.push(ing(r.source_frame ? media(r.source_frame) : "", shotLabel(project.shots[i - 1].id), "Previous performance", "shot:" + project.shots[i - 1].id));
-  if (r.kind === "shot" && !reframed && r.world_reference !== false) inputs.push(ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
+  if (r.kind === "shot" && !reframed && r.world_reference !== false) {
+    const memory = r.visual_memory;
+    inputs.push(memory ? ing(media(memory.plate || memory.image), "Remembered location", `${shotLabel(memory.shot)} · earlier opening frame`, "shot:" + memory.shot) : ing(r.world ? media(r.world) : "", "The world", r.world ? "Place, light and grade" : "Painted first", "world"));
+  }
   if (r.lead && !reframed) inputs.push(ing(media(r.lead), "The lead", "Face and wardrobe", "story"));
+  if (r.lead_description_source && !reframed) inputs.push(ing("", "The lead", "Visible description from portrait; photo not used", "story"));
   if (r.kind === "shot" && !reframed && r.composition_source !== "cast_portraits") inputs.push(ing(r.sketch ? media(r.sketch) : "", "The storyboard",
     r.sketch ? "Composition and pose" : made ? "Not used" : "Drawn first", "sketch"));
   for (const character of r.character_references || []) {
@@ -1256,10 +1267,12 @@ function paintRecipe(shot, i) {
       `Qwen-Image-Edit 2511 · draws the storyboard from ${from.filter(Boolean).join(" + ")} · half size`);
   }
   const video = `LTX 2.5 · ${shot.seconds}s · ${shot.camera_move.toLowerCase()}${shot.sound ? " · with sound" : ""}`;
+  const memoryFindings = (project.film_review?.findings || []).filter(f => f.shot === shot.id && f.kind === "memory");
   body.innerHTML = `
     <p class="recipe-when">${made ? "Made from" : "The next frame will be made from"}</p>
     ${stale ? `<div class="recipe-stale"><span>${stale}: this frame no longer matches the film.</span><button type="button" class="ghost small" data-refresh>New frame</button></div>` : ""}
     <div class="ingredients">${inputs.join("")}</div>
+    ${memoryFindings.map(f => `<p class="hint">Memory check: ${escapeHtml(f.outcome || "unreviewed")} · ${escapeHtml((f.findings || []).join("; "))}</p>`).join("")}
     ${r.identity ? `<p class="recipe-told"><b>Told about the lead:</b> ${escapeHtml(r.identity)}</p>` : ""}
     <ol class="recipe-steps">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}
       <li class="${shot.video ? "" : "next"}">${escapeHtml(video)}${shot.video ? "" : " · press Render shot"}</li></ol>

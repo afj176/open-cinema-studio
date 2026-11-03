@@ -5,6 +5,7 @@ Qwen-Image (keyframes), Qwen-Image-Edit (coverage) and LTX 2.5 (motion) follow.
 """
 
 from __future__ import annotations
+import re
 
 CAMERA_MOVES: dict[str, str] = {
     "Static": "The camera is locked off on a tripod and does not move.",
@@ -1007,7 +1008,7 @@ def parse_new_beats(text: str) -> list[str]:
 def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: bool = False, lead: bool = True,
                   world: str = "", previous: bool = False, scene: str = "", others: str = "",
                   cast: str = "", continuity: str = "", start_frame: str = "", expected_cast: int | None = None,
-                  cast_uncertain: bool = False) -> str:
+                  cast_uncertain: bool = False, solo_rear_view: bool = False) -> str:
     """Plan composition from text, without a location photograph biasing every panel toward the same view.
 
     Legacy reference arguments remain accepted by saved integrations; no image references are used.
@@ -1029,7 +1030,13 @@ def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: 
     cast_limit = (f"Exactly {count} visible characters, each appearing once. Empty background with no other figures or bystanders"
                   if count is not None else "Show the participants specified in the staging")
     staging = start_frame or action
-    rear_view = bool(re.search(r"\b(?:walking|walks|moving|moves|running|runs) away\b|\b(?:rear view|from behind|back to camera)\b", staging, re.I))
+    named_lead = lead_name(cast)
+    solo_shoulder = (solo_rear_view and count == 1 and lead and named_lead and bool(re.search(
+        rf"\bover\s+{re.escape(named_lead)}['’]s\s+shoulder\b", staging, re.I))
+        and not re.search(r"\b(?:not|never|avoid|instead of|rather than|don't|do not)\b", staging, re.I))
+    if solo_shoulder:
+        framing = staged_framing(shot_size, start_frame)
+    rear_view = bool(solo_shoulder or re.search(r"\b(?:walking|walks|moving|moves|running|runs) away\b|\b(?:rear view|from behind|back to camera)\b", staging, re.I))
     appearance = design(cast)
     if rear_view:
         # Face descriptions can pull a rear-view composition back into a portrait.
@@ -1041,7 +1048,8 @@ def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: 
     return _join("One uninterrupted monochrome pencil storyboard image, a single camera view", cast_limit, shared_space,
                  "Stage this exact opening moment: " + staging,
                  "The scene action for context, not its later outcome: " + action,
-                 "Rear view: backs toward camera, faces hidden, moving deeper into the scene" if rear_view else
+                 ("Rear view: the back of the head and shoulder face the camera; the face is hidden" if solo_shoulder else
+                  "Rear view: backs toward camera, faces hidden, moving deeper into the scene") if rear_view else
                  "Preserve the specified viewing angle and eyelines. Show the participants engaged in the action, not lined up for a portrait",
                  "Camera framing: " + framing, MOVE_VIEWPOINT.get(camera_move, ""),
                  "Readable acting poses and separated silhouettes; the characters interact with the scene, not the viewer",
@@ -1228,13 +1236,21 @@ PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure
                 "anywhere in it, even small or far away? Answer with exactly one word: YES or NO.")
 
 
+def staged_framing(shot_size: str, start_frame: str) -> str:
+    """Do not turn a foreground shoulder into a demand to show that person's face."""
+    if shot_size in ('Close-up', 'Extreme close-up') and re.search(
+            r"\bover\s+[^\n,.]{1,80}['’]s\s+shoulder\b", start_frame or '', re.I):
+        return 'tight over-the-shoulder framing' if shot_size == 'Close-up' else 'very tight over-the-shoulder framing'
+    return SHOT_SIZES.get(shot_size, shot_size)
+
+
 def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
                 camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "",
                 storyboard: bool = False, others: str = "", line: str = "", start_frame: str = "",
                 world_reference: bool = True, world_picture_index: int | None = None,
                 cast_uncertain: bool = False) -> str:
     """Storyboard = Picture 1, lead = Picture 2, optional world = last. Without a board the world is first."""
-    framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
+    framing = ", ".join(x for x in (staged_framing(shot_size, start_frame), MOVE_VIEWPOINT.get(camera_move, "")) if x)
     who = ("The lead is the character from Picture 2 with the same species, face, distinctive markings, colouring, build and wardrobe. "
            "Picture 2 is only an identity reference: take their pose, expression and body language from this shot's "
            "action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio "
@@ -1275,7 +1291,7 @@ def motion_prompt(action: str, camera_move: str, sound: str = "", look: str = ""
     spoken = words.strip().strip('"').strip() if words else ""
     lead_speaking = speaker.strip().lower() == "lead"
     speaker = (cast or "The lead") if lead_speaking else speaker.strip()
-    return _join(action, move, shot_size and "Framing: " + SHOT_SIZES.get(shot_size, shot_size),
+    return _join(action, move, shot_size and "Framing: " + staged_framing(shot_size, start_frame),
                  start_frame and "At the beginning: " + start_frame,
                  end_state and "By the end of this single shot: " + end_state,
                  lead and cast and "The character: " + cast,
@@ -1720,7 +1736,13 @@ def parse_visual_review(text: str, expected_json: str, observed_count: str | Non
             elif type(count) is not int or count < 0:
                 raise ValueError("Invalid visible cast count")
             elif count not in allowed:
-                add("content_issue", "cast_count_mismatch", f"Visible cast count: expected {allowed}, observed {count}", "blocking")
+                reported = report.get('reported_count')
+                if type(reported) is int and reported in allowed:
+                    add('uncertain', 'cast_count_disagreement',
+                        f'Visible cast count: expected {allowed}, independent check observed {count}, '
+                        f'visual review observed {reported}')
+                else:
+                    add("content_issue", "cast_count_mismatch", f"Visible cast count: expected {allowed}, observed {count}", "blocking")
         for field in ("style", "cast"):
             evidence = report.get(field)
             if not isinstance(evidence, dict) or not isinstance(evidence.get("observed"), str) or not evidence["observed"].strip():
@@ -1735,6 +1757,11 @@ def parse_visual_review(text: str, expected_json: str, observed_count: str | Non
             report["state"] = state
         if not isinstance(state, list) or any(not isinstance(row, dict) for row in state):
             raise ValueError("Missing state evidence")
+        if not keys and state:
+            # Some vision models restate cast in the state array even when no
+            # state facts were requested. Keep it as raw evidence, not a fact.
+            report['unsolicited_state'] = state
+            state = report['state'] = []
         names = [row.get("key") for row in state]
         if len(names) != len(keys) or set(names) != keys:
             raise ValueError("State evidence does not cover the requested facts exactly once")

@@ -33,6 +33,7 @@ from comfy import Comfy, ComfyError  # noqa: E402
 from events import Events  # noqa: E402
 
 PROJECTS = ROOT / "projects"
+MEMORY_COMPARISON_VERSION = 5
 _active_review_policy = ContextVar('review_policy', default=None)
 
 
@@ -418,6 +419,31 @@ def film_review(project: dict) -> dict:
                                  "outcome": review_outcome(review),
                                  "findings": review.get("findings") or ["This take has not been checked with the current reviewer."]})
     plan_issues = (project.get("continuity_plan") or {}).get("issues", [])
+    for index, shot in enumerate(project.get('shots', [])):
+        memory = (current_take(shot, 'keyframe').get('recipe') or {}).get('visual_memory') or {}
+        if memory:
+            source = next((s for s in project.get('shots', []) if s.get('id') == memory.get('shot')), None)
+            source_take = current_take(source, 'keyframe') if source else None
+            if source_take and source_take.get('name') == memory.get('image') and not review_passed(source_take):
+                source_review = source_take.get('review') or {}
+                findings.append({'shot':shot['id'], 'shot_number':index + 1, 'kind':'memory',
+                                 'name':memory.get('plate'), 'outcome':review_outcome(source_review),
+                                 'findings':source_review.get('findings') or ['The source frame needs review.']})
+        if not memory:
+            continue
+        plate = next((m for m in project.get('memory_plates', [])
+                      if m.get('image') == memory.get('plate') and m.get('image_hash') == memory.get('plate_hash')), None)
+        plate_outcome = (plate.get('plate_review_outcome') if plate else None) or memory.get('review_outcome')
+        if plate_outcome == 'passed':
+            continue
+        approved = next((m for m in project.get('memory_plates', [])
+                         if m.get('image') == memory.get('plate') and m.get('approved_hash') == memory.get('plate_hash')
+                         and m.get('approved_hash')), None)
+        if not approved:
+            findings.append({'shot':shot['id'], 'shot_number':index + 1, 'kind':'memory',
+                             'name':memory.get('plate'), 'outcome':plate_outcome or 'uncertain',
+                             'findings':(plate.get('review', {}).get('findings') if plate else memory.get('findings'))
+                                        or ['Remembered location needs inspection.']})
     if plan_status(project) == "issues":
         findings.insert(0, {"shot": None, "shot_number": None, "kind": "continuity", "outcome": "uncertain", "findings": plan_issues})
     complete = bool(project.get('shots')) and all(s.get('video') for s in project['shots'])
@@ -505,7 +531,8 @@ def review_requirements(project: dict, shot: dict, phase: str) -> dict:
     if prop and (prop.get("state_key") in keys or phase == "middle" and
                  prop.get("state_key") in shot.get("start_checks", []) and prop.get("state_key") in shot.get("end_checks", [])):
         facts["Design of " + prop["name"]] = prop["description"]
-    facts.update(staging.visual_facts(shot.get('start_frame', ''), project.get('look', ''), people, phase))
+    facts.update(staging.visual_facts(shot.get('start_frame', ''), project.get('look', ''), people, phase,
+                                      shot.get('end_state', '')))
     return {"state": facts, "count": count, "phase": phase, 'unresolved_facts': unresolved, 'unresolved_cast': unresolved_cast,
             'advisory_facts': list(staging.material_facts(project.get('look', ''), people)),
             'uncertain_cast_presence': list(unresolved_opening) if phase in ('start', 'middle') else [],
@@ -723,6 +750,31 @@ def prop_design(project: dict, prop: dict) -> dict:
     return {"description": prop["description"], "look": project["look"]}
 
 
+def visual_memory(project: dict, shot: dict) -> dict | None:
+    """Resolve an explicitly selected earlier opening frame, retaining its state and provenance."""
+    source_id = shot.get('memory_shot')
+    if not source_id:
+        return None
+    shots = project.get('shots', [])
+    index = next((i for i, item in enumerate(shots) if item.get('id') == shot.get('id')), -1)
+    source_index = next((i for i, item in enumerate(shots) if item.get('id') == source_id), -1)
+    if source_index < 0 or source_index >= index:
+        return {'shot': source_id, 'error': 'Choose an earlier shot for visual memory'}
+    source = shots[source_index]
+    take = current_take(source, 'keyframe')
+    state = shot_states(project, source)[0]
+    current_state = shot_states(project, shot)[0]
+    result = {'shot': source_id, 'image': source.get('keyframe'), 'state': state}
+    source_review = (take.get('review') or {})
+    if not take or not take_usable(project, take) or frame_stale(project, source) or not visual_inputs_match(source_review.get('of'), visual_inputs(project, source)):
+        result['error'] = 'The memory frame needs a current review'
+    elif state != current_state:
+        result['error'] = 'The remembered scene state differs from this shot; choose a frame with matching state'
+    elif not review_passed(take):
+        result['source_findings'] = source_review.get('findings') or ['The source frame needs inspection']
+    return result
+
+
 def visual_inputs(project: dict[str, Any], shot: dict[str, Any]) -> dict[str, Any]:
     anchor = {}
     if shot.get("frame_source") == "previous_end":
@@ -735,6 +787,8 @@ def visual_inputs(project: dict[str, Any], shot: dict[str, Any]) -> dict[str, An
     character_refs = selected_character_references(project, shot)
     return {"version": 4, "action": shot.get("action", ""), "start_frame": shot.get("start_frame", ""),
             **anchor,
+            **({'visual_memory': {key:value for key,value in visual_memory(project, shot).items() if key != 'source_findings'}}
+               if shot.get('memory_shot') and shot.get('frame_source') != 'previous_end' and shot.get('transition') != 'continue' else {}),
             **({'character_references': character_refs} if character_refs else {}),
             **({'cast_roster_unresolved': list(shot['cast_roster_unresolved'])}
                if shot.get('cast_roster_unresolved') else {}),
@@ -745,6 +799,19 @@ def visual_inputs(project: dict[str, Any], shot: dict[str, Any]) -> dict[str, An
             "prop": prop_input(project, shot), "image_quality": project.get("image_quality", "fast"),
             "state_before": visible_state, "start_cast": shot.get("start_cast"),
             "start_checks": shot.get("start_checks", []), **world_of(project)}
+
+
+def normalize_memory_snapshots(value: Any) -> None:
+    """Migrate old dependency receipts while retaining findings on memory takes."""
+    if isinstance(value, dict):
+        memory = value.get('visual_memory')
+        if isinstance(memory, dict) and 'plate' not in memory:
+            memory.pop('source_findings', None)
+        for item in value.values():
+            normalize_memory_snapshots(item)
+    elif isinstance(value, list):
+        for item in value:
+            normalize_memory_snapshots(item)
 
 
 def visual_inputs_match(recorded: dict | None, current: dict) -> bool:
@@ -841,7 +908,7 @@ def frame_stale(project: dict[str, Any], shot: dict[str, Any]) -> bool:
     world_changed = (r.get('composition_source') != 'cast_portraits'
                      and not (r.get('world_optional') is True and r.get('world') is None)
                      and r.get("world") != current_plate(project))
-    return bool((lead and r.get("lead") != project.get("reference")) or world_changed
+    return bool((lead and (r.get("lead") or r.get('lead_description_source')) != project.get("reference")) or world_changed
                 or ("action" in r and r["action"] != shot.get("action", ""))
                 or ("shot_size" in r and (r["shot_size"] != shot.get("shot_size")
                                           or r.get("camera_move") != shot.get("camera_move"))))
@@ -999,6 +1066,7 @@ class Studio:
 
     def load(self, project_id: str) -> dict[str, Any]:
         project = json.loads((self.path(project_id) / "project.json").read_text(encoding="utf-8"))
+        normalize_memory_snapshots(project)
         project.setdefault("review_policy", "draft")
         project.setdefault("dialogue_mode", "auto")
         project.setdefault("image_backend", "hidream")
@@ -1009,6 +1077,13 @@ class Studio:
                 shot["takes"] = {"keyframe": [{"name": shot["keyframe"]}] if shot.get("keyframe") else [],
                                  "video": [{"name": shot["video"], "keyframe": shot.get("keyframe")}]
                                  if shot.get("video") else []}
+        for index, shot in enumerate(project['shots']):
+            options = []
+            for source in project['shots'][:index]:
+                resolved = visual_memory(project, {**shot, 'memory_shot': source['id']})
+                options.append({'shot': source['id'], 'image': resolved.get('image'),
+                                'error': resolved.get('error')})
+            shot['memory_options'] = options
         project["asset_status"] = asset_status(project)
         project["continuity_status"] = plan_status(project)
         project["continuity_fixes"] = continuity_auto_fixes(project)
@@ -1033,7 +1108,10 @@ class Studio:
             project.pop("continuity_fixes", None)
             project.pop("film_review", None)
             project.pop("world_plate_current", None)
-            temporary.write_text(json.dumps(project, indent=2), encoding="utf-8")
+            stored = copy.deepcopy(project)
+            for shot in stored.get("shots", []):
+                shot.pop("memory_options", None)
+            temporary.write_text(json.dumps(stored, indent=2), encoding="utf-8")
             temporary.replace(folder / "project.json")
         return {**project, "film_now": film_inputs(project), "asset_status": asset_status(project), "continuity_status": plan_status(project),
                 "continuity_fixes": continuity_auto_fixes(project), "film_review": film_review(project),
@@ -1138,7 +1216,7 @@ class Studio:
                 for incoming in data["shots"]:
                     shot = existing.get(incoming.get("id")) or new_shot(takes={"keyframe": [], "video": []})
                     for key in ("action", "shot_size", "camera_move", "seconds", "sound", "transition", "seed",
-                                "lead", "beat", "ai", "others", "line", "start_frame", "end_state", "prop_id", "guide_end", "frame_source"):
+                                "lead", "beat", "ai", "others", "line", "start_frame", "end_state", "prop_id", "guide_end", "frame_source", "memory_shot"):
                         if key in incoming:
                             shot[key] = incoming[key]
                     if incoming.get("accept_beat"):
@@ -1378,6 +1456,7 @@ class Studio:
         if kind == 'review_frame' and failed.get('review_policy') == 'draft':
             return  # a failed deferred check must not stop a playable draft
         affected = {shot_id} if shot_id else set()
+        frame_affected = {shot_id} if shot_id and kind in ('sketch', 'keyframe', 'repair_frame', 'review_frame') else set()
         if shot_id:
             previous_affected = False
             try:
@@ -1385,7 +1464,12 @@ class Studio:
             except FileNotFoundError:
                 shots = []  # deleting a film must not terminate the worker
             for shot in shots:
-                if shot["id"] in affected or previous_affected and (shot.get("transition") == "continue" or shot.get("frame_source") == "previous_end"):
+                uses_memory = (shot.get('transition') != 'continue' and shot.get('frame_source') != 'previous_end'
+                               and shot.get('memory_shot') in frame_affected)
+                linked = previous_affected and (shot.get("transition") == "continue" or shot.get("frame_source") == "previous_end")
+                if uses_memory or (linked and shot.get('frame_source') == 'previous_end'):
+                    frame_affected.add(shot['id'])
+                if shot["id"] in affected or uses_memory or linked:
                     affected.add(shot["id"])
                     previous_affected = True
                 else:
@@ -1419,6 +1503,7 @@ class Studio:
             existing = next((j for j in self.jobs if j["project"] == project_id and j.get("shot") == shot_id and
                              j["kind"] == kind and j["state"] in ("queued", "running") and
                              (kind != 'review_frame' or j.get('review_policy') == job['review_policy']) and
+                             (kind != 'review_frame' or j.get('candidate_name') == job.get('candidate_name')) and
                              all(j.get(k) == extra.get(k) for k in ("mode", "target", "prop", "value", "character", "candidate_name"))), None)
             if existing:
                 return existing
@@ -1506,12 +1591,14 @@ class Studio:
                 self._save_jobs()
             waiting = {(j["kind"], j["shot"]) for j in self.jobs if j["project"] == project_id
                        and j["state"] in ("queued", "running")}
-            waiting_frames = {(j['shot'], j.get('review_policy', 'draft')) for j in self.jobs
+            waiting_frames = {(j['shot'], j.get('review_policy', 'draft'), j.get('candidate_name')) for j in self.jobs
                               if j['project'] == project_id and j['kind'] == 'review_frame'
                               and j['state'] in ('queued', 'running')}
         held = set()  # paused shots, and one-take shots that start from one
         for index, shot in enumerate(project["shots"]):
-            if shot.get("paused") or ((shot.get("transition") == "continue" or shot.get("frame_source") == "previous_end") and index > 0
+            uses_memory = (shot.get('transition') != 'continue' and shot.get('frame_source') != 'previous_end'
+                           and shot.get('memory_shot') in held)
+            if shot.get("paused") or uses_memory or ((shot.get("transition") == "continue" or shot.get("frame_source") == "previous_end") and index > 0
                                       and project["shots"][index - 1]["id"] in held):
                 held.add(shot["id"])
         wanted = lambda shot: shot["id"] not in held and (only is None or shot["id"] in only)  # noqa: E731
@@ -1552,7 +1639,7 @@ class Studio:
         frame_review_policy = 'draft' if draft_mode(project) else 'strict'
         for index, shot in enumerate(project["shots"]):
             take = current_take(shot, "keyframe")
-            if wanted(shot) and take and review_pending(take) and (shot['id'], frame_review_policy) not in waiting_frames:
+            if wanted(shot) and take and review_pending(take) and (shot['id'], frame_review_policy, take['name']) not in waiting_frames:
                 jobs.append(self.enqueue("review_frame", project_id, shot["id"], f"Checking frame {index + 1}",
                                          candidate_name=take["name"], review_policy=frame_review_policy))
         if any(s.get("frame_source") == "previous_end" for s in project["shots"]):
@@ -1619,24 +1706,33 @@ class Studio:
             shot = self._shot(project, shot_id)
             shot["paused"] = paused
             saved = self.save(project)
+            dependents = {shot_id}
+            previous_dependent = False
+            for item in project['shots']:
+                linked = previous_dependent and (item.get('transition') == 'continue' or item.get('frame_source') == 'previous_end')
+                uses_memory = (item.get('transition') != 'continue' and item.get('frame_source') != 'previous_end'
+                               and item.get('memory_shot') in dependents)
+                previous_dependent = item['id'] in dependents or linked or uses_memory
+                if previous_dependent:
+                    dependents.add(item['id'])
             running = None
             if paused:
                 for job in self.jobs:
-                    if job["project"] == project_id and job["shot"] == shot_id and job["state"] == "queued":
+                    if job["project"] == project_id and job.get("shot") in dependents and job["state"] == "queued":
                         job["state"], job["error"] = "cancelled", "paused"
-                    elif job["project"] == project_id and job["shot"] == shot_id and job["state"] == "running":
+                    elif job["project"] == project_id and job.get("shot") in dependents and job["state"] == "running":
                         running = job
                         job["stopped"] = True
                     elif job["project"] == project_id and job["kind"] == "stitch" and job["state"] == "queued":
                         job["state"], job["error"] = "cancelled", "a shot is paused"  # resuming cuts it again
+                self._save_jobs()
         if running:
             try:
                 self.comfy.interrupt()
             except Exception:
                 pass
         if not paused:
-            self.queue_sketches(project_id, [shot_id])
-            self.queue_film(project_id, only={shot_id})
+            self.queue_film(project_id, only=dependents)
         return saved
 
     def cancel(self, project_id: str) -> None:
@@ -1992,6 +2088,8 @@ class Studio:
         candidate = next((take for take in shot.get('takes', {}).get('video', []) if take['name'] == name), None)
         if not candidate or candidate.get('of') != video_inputs(project, shot):
             raise RuntimeError('This clip is out of date. Render the updated shot before reviewing it.')
+        current_cut = copy.deepcopy(project.get('film_of')) if project.get('film') and project.get('film_of') == film_inputs(project) else None
+        cut_name = project.get('film')
         review = self._review_video(project, shot, name, tick)
         dialogue = speech.check(self.path(project['id']) / name, shot.get('line', ''), candidate.get('dialogue_review')) if shot.get('line', '').strip() else None
         with self.lock:
@@ -2019,8 +2117,172 @@ class Studio:
                 select_take(current, 'video', name)
             sync_dialogue_review(current)
             self.save(fresh)
+        if (current.get('video') == name and
+                self._retry_viewpoint(project, shot, candidate, review, job, tick)):
+            # A deferred draft review can improve a take after the cut exists.
+            # Recut only an otherwise current, unpaused film; linked shots that
+            # became stale still need their own render before assembly.
+            if current_cut:
+                refreshed = self.load(project['id'])
+                expected_cut = copy.deepcopy(current_cut)
+                for entry in expected_cut['shots']:
+                    if entry[0] == shot['id']:
+                        entry[1] = self._shot(refreshed, shot['id']).get('video')
+                if (refreshed.get('film') == cut_name and refreshed.get('film_of') == current_cut
+                        and film_inputs(refreshed) == expected_cut
+                        and all(s.get('video') and not s.get('paused') for s in refreshed['shots'])
+                        and not any(story_stale(refreshed, s) or frame_stale(refreshed, s)
+                                    or video_stale(refreshed, s) for s in refreshed['shots'])):
+                    self._queue_followup('stitch', project['id'], None, 'Final cut')
+            return
         if review["status"] != "passed" and not draft_mode(fresh):
             raise RuntimeError("Video needs review: " + "; ".join(review["findings"][:4]))
+
+    def _retry_viewpoint(self, project: dict, shot: dict, candidate: dict, review: dict, job: dict, tick) -> bool:
+        """Try one alternate for repeated held-view drift or corroborated extra people."""
+        if not valid_review_result(review) or review_outcome(review) != 'content_issue':
+            return False
+        required = {
+            sample: {key for key in review_requirements(project, shot, phase)['state']
+                     if key.endswith(' · camera orientation')}
+            for sample, phase in ((2, 'middle'), (3, 'middle'), (4, 'end'))
+        }
+        failures = {}
+        counts = set()
+        start = review_requirements(project, shot, 'start')
+        middle = review_requirements(project, shot, 'middle')
+        end = review_requirements(project, shot, 'end')
+        subject = staging.shoulder_subject(shot.get('start_frame', ''), start['people'])
+        held = staging.shoulder_continuity(shot.get('start_frame', ''), shot.get('end_state', ''), start['people'])
+        solo_held = (subject and len(start['people']) == 1 and start.get('count') == 1
+                     and middle.get('allowed_counts') == [1] and end.get('allowed_counts') == [1]
+                     and not any(r.get('unresolved_cast') for r in (start, middle, end))
+                     and {name.casefold() for name in end['people']} == {subject.casefold()}
+                     and {'middle', 'end'} <= held)
+        samples = review.get('samples')
+        if not isinstance(samples, list):
+            samples = []
+        for issue in review['issues']:
+            sample = issue.get('sample')
+            if issue['category'] != 'content_issue' or sample not in required:
+                return False
+            if issue['code'] == 'cast_count_mismatch' and solo_held and len(samples) == 4:
+                if not valid_review_result(samples[sample - 1]):
+                    return False
+                evidence = samples[sample - 1].get('evidence') or {}
+                if (type(evidence.get('count')) is not int or evidence['count'] <= 1
+                        or evidence.get('reported_count') != evidence['count'] or not any(
+                            item.get('code') == 'cast_count_mismatch' and item.get('category') == 'content_issue'
+                            for item in samples[sample - 1]['issues'])):
+                    return False
+                counts.add(sample)
+                continue
+            if issue['code'] != 'state_mismatch':
+                return False
+            matched = False
+            for key in required[sample]:
+                if issue['message'].startswith(f'Sample {sample}: {key}:'):
+                    failures.setdefault(key, set()).add(sample)
+                    matched = True
+            if not matched:
+                return False
+        count_retry = (len(counts) >= 2 and len(samples) == 4 and valid_review_result(samples[0])
+                       and review_outcome(samples[0]) == 'passed')
+        if counts and not count_retry:
+            return False
+        if not count_retry and not any(len(positions) >= 2 for positions in failures.values()):
+            return False
+        render = candidate.get('video_render')
+        if (not render or not candidate.get('prompt') or not candidate.get('keyframe')
+                or type(candidate.get('seed')) is not int):
+            return False
+        project_id, shot_id = project['id'], shot['id']
+        name, snapshot = candidate['name'], candidate['of']
+        start = candidate['keyframe']
+        end = render['end']
+        folder = self.path(project_id)
+        if not (folder / start).is_file() or end and not (folder / end).is_file():
+            return False
+
+        def selection(current):
+            return (current.get('video'), current.get('keyframe'),
+                    (current_take(current, 'video').get('review') or {}).get('director_review'),
+                    (current_take(current, 'keyframe').get('review') or {}).get('director_review'))
+
+        with self.lock:
+            fresh = self.load(project_id)
+            current = self._shot(fresh, shot_id)
+            if job.get('stopped') or not plan_usable(fresh) or video_inputs(fresh, current) != snapshot:
+                return False
+            if current.get('video') not in (name, shot.get('video')):
+                return False
+            selected = current_take(current, 'video')
+            if (selected.get('review') or {}).get('director_review') or (
+                    selected.get('name') != name and review_passed(selected)):
+                return False
+            takes = current.setdefault('takes', {}).setdefault('video', [])
+            original = next((take for take in takes if take['name'] == name), None)
+            if original is not None:
+                if original.get('retry_of') or original.get('viewpoint_retry_started') or (original.get('review') or {}).get('director_review'):
+                    return False
+            else:
+                original = dict(candidate)
+                takes.append(original)
+            original.update(review=review, viewpoint_retry_started=True)
+            guard = copy.deepcopy(selection(current))
+            self.save(fresh)
+
+        job['label'] = 'Trying one alternate for viewpoint drift'
+        seed = (candidate['seed'] + 1_000_003) % (2**31)
+        prompt = ('Keep the foreground character seen from behind throughout the shot, with their face out of view. '
+                  + candidate['prompt'])
+        if count_retry:
+            prompt = (f'{subject} is alone throughout the shot. Only one person is visible; nobody else enters. '
+                      f'The camera remains directly behind {subject}; the back of their head and shoulder stay in the foreground. '
+                      + candidate['prompt'])
+        graph = graphs.shot_graph(self._upload(project_id, start), prompt, seed, project['aspect'],
+                                  float(shot['seconds']), f'open-cinema/{project_id}/shot_{shot_id}',
+                                  end_image=end and self._upload(project_id, end), end_strength=render['end_strength'],
+                                  performance=candidate['performance_mode'])
+        files = self._run_for_job(graph, tick, job)
+        alternate = f'shot_{shot_id}_{uuid.uuid4().hex[:6]}.mp4'
+        self.comfy.download(files[0], folder / alternate)
+        if duration(folder / alternate) <= 0:
+            raise RuntimeError('The viewpoint alternate has no playable duration')
+        pending = director.review_result([{'category':'uncertain', 'code':'pending_review', 'severity':'warning',
+                                          'message':'The viewpoint alternate has not been reviewed.'}], of=snapshot)
+        take = {**candidate, 'name':alternate, 'prompt':prompt, 'seed':seed,
+                'review':pending, 'retry_of':name, 'dialogue_review':None}
+        take.pop('viewpoint_retry_started', None)
+        with self.lock:
+            fresh = self.load(project_id)
+            current = self._shot(fresh, shot_id)
+            current.setdefault('takes', {}).setdefault('video', []).append(take)
+            self.save(fresh)
+        if job.get('stopped'):
+            raise ComfyError('interrupted')
+        job['label'] = 'Checking the viewpoint alternate'
+        result = self._review_video(project, shot, alternate, tick, job=job)
+        dialogue = speech.check(folder / alternate, shot['line']) if shot.get('line', '').strip() else None
+        with self.lock:
+            fresh = self.load(project_id)
+            current = self._shot(fresh, shot_id)
+            stored = next(take for take in current['takes']['video'] if take['name'] == alternate)
+            if not (stored.get('review') or {}).get('director_review'):
+                stored.update(review=result, dialogue_review=dialogue)
+            promoted = (not job.get('stopped') and valid_review_result(result) and review_outcome(result) == 'passed'
+                        and result.get('of') == snapshot
+                        and (dialogue is None or dialogue.get('status') == 'possible_match')
+                        and selection(current) == guard and plan_usable(fresh)
+                        and video_inputs(fresh, current) == snapshot)
+            if promoted:
+                select_take(current, 'video', alternate)
+                current.setdefault('quality', {})['video'] = {'name':alternate, **stored['review']}
+            self.save(fresh)
+        if job.get('stopped'):
+            raise ComfyError('interrupted')
+        job['label'] = 'Viewpoint alternate selected' if promoted else 'Viewpoint alternate saved for inspection'
+        return promoted
 
     def accept_review(self, project_id: str, shot_id: str, kind: str, name: str, reason: str) -> dict:
         """An explicit director decision, kept alongside the model's original evidence."""
@@ -2194,6 +2456,120 @@ class Studio:
             unit["plate"] = name
             return self.save(project)
 
+    def _memory_plate(self, project: dict, memory: dict, tick, job: dict) -> str:
+        """Prepare a location-only reference; retain every candidate with its source."""
+        source_path = self.path(project['id']) / memory['image']
+        digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        existing = next((m for m in project.get('memory_plates', [])
+                         if m.get('source_hash') == digest and m.get('aspect') == project['aspect']
+                         and m.get('state') == memory['state'] and (m.get('approved_hash') or m.get('comparison_version') == MEMORY_COMPARISON_VERSION and (draft_mode(project) or (m.get('plate_review_outcome') or m.get('review_outcome')) == 'passed'))
+                         and (self.path(project['id']) / m['image']).is_file()
+                         and hashlib.sha256((self.path(project['id']) / m['image']).read_bytes()).hexdigest() == (m.get('approved_hash') or m.get('image_hash'))), None)
+        if existing:
+            return existing['image']
+        pending = next ( (m for m in project.get('memory_plates', []) if m.get('source_hash') == digest
+                         and m.get('state') == memory['state'] and m.get('aspect') == project['aspect']
+                         and m.get('comparison_version') == MEMORY_COMPARISON_VERSION and not m.get('approved_hash') and (self.path(project['id']) / m['image']).is_file()), None)
+        if pending:
+            raise RuntimeError('Memory review needs attention. Inspect the location in the memory library, then retry')
+        prompt = ('Remove all people, animals and handheld objects. Show the empty location. '
+                  'Keep the room architecture, camera viewpoint, lighting and materials unchanged. '
+                  'Reconstruct hidden areas naturally. No people, body parts or figures.')
+        seed = random.randrange(1, 2**31)
+        graph = graphs.coverage_graph(prompt, seed, self._upload(project['id'], memory['image']),
+                                      f"open-cinema/{project['id']}/memory", project['aspect'], keep_layout=True)
+        job['label'] = 'Preparing remembered location'
+        files, _, _ = self._render_checked(graph, seed, tick, job=job)
+        name = f"memory_{uuid.uuid4().hex[:10]}.png"
+        self.comfy.download(files[0], self.path(project['id']) / name)
+        job['label'] = 'Checking remembered location for people'
+        record = self.comfy.wait(self._submit_for_job(graphs.people_check_graph(
+            self._upload(project['id'], name), director.PEOPLE_CHECK), job), on_tick=tick, timeout=600)
+        answer = ''.join(record.get('outputs', {}).get('answer', {}).get('text', [])).strip().upper().rstrip('.!')
+        empty = {'NO': True, 'YES': False}.get(answer)
+        requirements = {'state': {}, 'count': 0, 'phase': 'start', 'allowed_counts': [0],
+                        'people': {}, 'objects': {}, 'visible_names': [], 'unresolved_facts': [],
+                        'unresolved_cast': [], 'advisory_facts': [], 'uncertain_cast_presence': []}
+        job['label'] = 'Reviewing remembered scene state'
+        try:
+            review = self._checked_review(project, name, {'phase':'memory', 'requirements':requirements},
+                lambda uploaded: graphs.visual_review_graph(uploaded, json.dumps(requirements), project['look']), tick, job=job)
+            outcome = review_outcome(review)
+        except (ValueError, TypeError, ComfyError) as error:
+            if isinstance(error, ComfyError) and 'interrupt' in str(error).lower():
+                raise
+            review, outcome = {'findings':['Memory review was unavailable']}, 'reviewer_error'
+        job['label'] = 'Comparing location with its source'
+        try:
+            comparison_graph = graphs.memory_comparison_graph(
+                self._upload(project['id'], memory['image']), self._upload(project['id'], name), memory['state'])
+            record = self.comfy.wait(self._submit_for_job(comparison_graph, job), on_tick=tick, timeout=900)
+            outputs = record.get('outputs', {})
+            def verdict(key):
+                answer = ''.join(outputs.get(key, {}).get('text', [])).strip().upper().rstrip('.!')
+                return {'YES':'fail', 'NO':'pass', 'UNKNOWN':'uncertain'}.get(answer, 'uncertain')
+            location_verdict = verdict('location_result')
+            state_verdict = verdict('state_result') if memory['state'] else 'pass'
+            comparison = {'verdict': location_verdict, 'state_verdict': state_verdict,
+                'observed': {'pass':'No visible location mismatch found', 'fail':'Visible location mismatch',
+                             'uncertain':'Location comparison was inconclusive'}[location_verdict],
+                'state_observed': {'pass':'No visible state conflict found', 'fail':'Visible state conflict',
+                                   'uncertain':'State comparison was inconclusive'}[state_verdict]}
+        except (ValueError, TypeError, ComfyError) as error:
+            if isinstance(error, ComfyError) and 'interrupt' in str(error).lower():
+                raise
+            comparison = {'verdict':'uncertain', 'observed':'Location comparison was unavailable',
+                          'state_verdict':'uncertain', 'state_observed':'State comparison was unavailable'}
+        issues = list(review.get('issues', []))
+        if not valid_review_result(review):
+            issues = [{'category':'reviewer_error', 'code':'memory_review_unavailable', 'severity':'warning',
+                       'message':'Memory review was unavailable'}]
+        if comparison['verdict'] != 'pass':
+            issues.append({'category':'content_issue' if comparison['verdict'] == 'fail' else 'uncertain',
+                           'code':'memory_location_comparison', 'severity':'warning',
+                           'message':'Location comparison: ' + comparison['observed']})
+        if comparison['state_verdict'] != 'pass':
+            issues.append({'category':'content_issue' if comparison['state_verdict'] == 'fail' else 'uncertain',
+                           'code':'memory_state_comparison', 'severity':'warning',
+                           'message':'Memory state: ' + comparison['state_observed']})
+        elif memory['state']:
+            issues.append({'category':'uncertain', 'code':'memory_state_unverified', 'severity':'warning',
+                           'message':'Memory state: no conflict found; tracked facts remain unverified'})
+        if empty is not True:
+            issues.append({'category':'content_issue' if empty is False else 'uncertain',
+                           'code':'memory_people_check', 'severity':'warning',
+                           'message':'People detected in the remembered location' if empty is False else 'People check was inconclusive'})
+        extra = {key:value for key,value in review.items() if key not in ('version','status','outcome','issues','findings')}
+        review = director.review_result(issues, **{**extra, 'comparison':comparison})
+        plate_outcome = review_outcome(review)
+        outcome = 'uncertain' if memory.get('source_findings') and plate_outcome == 'passed' else plate_outcome
+        image_hash = hashlib.sha256((self.path(project['id']) / name).read_bytes()).hexdigest()
+        with self.lock:
+            fresh = self.load(project['id'])
+            fresh.setdefault('memory_plates', []).append({'image': name, 'source': memory['image'],
+                'source_shot': memory['shot'], 'source_hash': digest, 'state': memory['state'], 'source_findings': memory.get('source_findings', []),
+                'aspect': project['aspect'], 'empty': empty, 'prompt': prompt, 'seed': seed,
+                'image_hash': image_hash, 'review': review, 'review_outcome': outcome,
+                'plate_review_outcome': plate_outcome, 'comparison_version': MEMORY_COMPARISON_VERSION})
+            self.save(fresh)
+        if outcome != 'passed' and not draft_mode(project):
+            raise RuntimeError('Memory review needs attention. Inspect the location in the memory library, then retry')
+        return name
+
+    def approve_memory_plate(self, project_id: str, name: str) -> dict:
+        with self.lock:
+            project = self.load(project_id)
+            candidate = next((m for m in project.get('memory_plates', []) if m.get('image') == name), None)
+            if not candidate or candidate.get('empty') is not True:
+                raise ValueError('Only a prepared location with a passing people check can be approved')
+            source = self.path(project_id) / candidate['source']
+            image = self.path(project_id) / candidate['image']
+            if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != candidate['source_hash']:
+                raise ValueError('The source image changed; prepare a new memory')
+            candidate['approved_hash'] = hashlib.sha256(image.read_bytes()).hexdigest()
+            candidate['approved_at'] = time.time()
+            return self.save(project)
+
     def _run_keyframe(self, job: dict[str, Any], tick) -> None:
         """Finish independent storyboard staging with identity and, for wide shots, world references."""
         project = self._require_plan(job["project"], tick)
@@ -2217,12 +2593,15 @@ class Studio:
             order = {'passed':0, 'uncertain':1, 'reviewer_error':2, 'content_issue':3}
             candidate = min(reversed(candidates), key=lambda item: order.get(review_outcome(item.get('review', {})), 4))
             review = candidate['review']
-            if review.get('version') != director.REVIEW_VERSION:
+            if review.get('version') != director.REVIEW_VERSION or (review_pending(candidate) and not draft_mode(project)):
                 review = self._review_image(project, shot, candidate['name'], tick)
             if review_outcome(review) != 'content_issue' or draft_mode(project):
                 self._metric('candidate_reuse')
                 self._record_candidate(project['id'], shot['id'], 'keyframe', candidate['name'], review,
                                        recipe=candidate.get('recipe', {'kind':'shot','visual':planned_visual}), seed=shot['seed'])
+                if draft_mode(project) and review_pending({'review':review}):
+                    self._queue_followup('review_frame', project['id'], shot['id'], f'Checking frame {index + 1}',
+                                         candidate_name=candidate['name'], review_policy='draft')
                 return
         look, scene, aspect = project["look"], project["scene"], project["aspect"]
         look = director.look_for_state(look, review_requirements(project, shot, "start")["state"])
@@ -2268,7 +2647,15 @@ class Studio:
         # Lead, explicit prop, then named people take precedence over a wide
         # world reference; the setting remains described in the prompt.
         occupied = int(bool(reference)) + int(bool(prop)) + len(characters)
-        use_world_reference = not previous_end and shot["shot_size"] in director.WIDE_SIZES and occupied < 2
+        memory = visual_memory(project, shot) if not previous_end else None
+        if memory and memory.get('error'):
+            raise RuntimeError(memory['error'])
+        if memory and occupied >= 2:
+            raise RuntimeError('Visual memory needs an available picture slot; reduce cast or prop references for this shot')
+        memory_plate = self._memory_plate(project, memory, tick, job) if memory else None
+        memory_review = next((m for m in self.load(project['id']).get('memory_plates', [])
+                              if m.get('image') == memory_plate), {}) if memory else {}
+        use_world_reference = not previous_end and (bool(memory) or shot["shot_size"] in director.WIDE_SIZES) and occupied < 2
         prompt = director.shot_prompt(shot["action"], shot["shot_size"], look, continuity, has_cast=bool(reference),
                                       camera_move=shot["camera_move"], lead=lead,
                                       world=scene.strip(), identity=identity,
@@ -2302,13 +2689,20 @@ class Studio:
                 refs.append(self._upload(project['id'], character['image']))
                 prompt += f" Picture {len(refs) + 1} is the character {character['name']}; preserve that individual's distinctive face, appearance and wardrobe while following the storyboard pose."
             if use_world_reference:
-                refs.append(self._upload(project['id'], plate))
+                refs.append(self._upload(project['id'], memory_plate if memory else plate))
+                if memory:
+                    prompt += f" Picture {len(refs) + 1} shows the prepared location from an earlier frame. Preserve its setting and visual details while following the current staging and scene state; do not copy people or their poses."
         frame_backend = job.get('frame_backend', project.get('frame_backend', 'qwen'))
         opening_requirements = review_requirements(project, shot, 'start')
+        rear_identity = (staging.solo_rear_view(shot.get('start_frame', ''), opening_requirements['people'],
+                         director.lead_name(project.get('cast', '')), project.get('cast', ''), identity)
+                         if memory and reference and not previous_end and not prop and not characters
+                         and frame_backend == 'qwen' and director.medium(look) == 'photo' and opening_requirements.get('count') == 1
+                         and not opening_requirements.get('unresolved_cast') else None)
         mixed_composition = (not previous_end and bool(reference) and not prop and len(characters) == 1
                              and len(opening_requirements['people']) == 2
                              and len(staging.material_facts(look, opening_requirements['people'])) == 2
-                             and not opening_requirements['unresolved_cast'])
+                             and not opening_requirements['unresolved_cast'] and not memory)
         if mixed_composition:
             # A monochrome board can turn both a human and a puppet into the
             # same material. Anchor their distinct identities directly instead.
@@ -2323,6 +2717,19 @@ class Studio:
                                                     opening_requirements['people'])
         if camera_direction:
             prompt = camera_direction + ' ' + prompt
+        if rear_identity:
+            # A face-forward portrait can pull a one-person rear view into a
+            # portrait or invent a second person. Use its visible description,
+            # while retaining the storyboard and the remembered location.
+            visible_cast, visible_identity = rear_identity
+            refs = [self._upload(project['id'], memory_plate)]
+            prompt = staging.solo_memory_rear_prompt(
+                director.lead_name(project.get('cast', '')), visible_cast, visible_identity,
+                shot.get('start_frame', ''), shot['action'], scene.strip(), look,
+                director.MEDIUM_FRAME[director.medium(look)], continuity,
+                director.staged_framing(shot['shot_size'], shot.get('start_frame', '')),
+                director.MOVE_VIEWPOINT.get(shot['camera_move'], ''))
+            prompt += ' ' + director.state_direction(opening_requirements['state'])
         picture = self._upload(project['id'], source)
         if frame_backend == 'klein':
             graph = graphs.klein_coverage_graph(prompt, seed, picture, prefix, aspect,
@@ -2332,27 +2739,31 @@ class Studio:
                     second_reference=refs[0] if refs else None, third_reference=refs[1] if len(refs) > 1 else None,
                     detailed=project.get('image_quality') == 'detailed')
         # The full visual review already runs a neutral count; avoid a duplicate model pass.
-        recipe = {"kind": "shot", "world": plate, "lead": reference, "identity": identity, "sketch": sketch,
+        recipe = {"kind": "shot", "world": plate, "lead": None if rear_identity else reference,
+                  "lead_description_source": reference if rear_identity else None,
+                  "identity": rear_identity[1] if rear_identity else identity, "sketch": sketch,
                   "composition_version": 2, "world_reference": use_world_reference, "frame_backend": frame_backend,
                   "composition_source": "cast_portraits" if mixed_composition else "previous_end" if previous_end else "storyboard",
                   "source_frame": source, "frame_source": shot.get("frame_source", "storyboard"),
-                  "visual": visual_inputs(project, shot),
+                  "visual": visual_inputs(project, shot), "visual_memory": ({**memory, "plate": memory_plate, "plate_hash": memory_review.get("image_hash") or memory_review.get("approved_hash"), "review_outcome": memory_review.get("review_outcome"),
+                                     "findings": memory_review.get("review", {}).get("findings", [])} if memory else None),
                   "others": shot.get("others", ""), "character_references": characters,
                   "action": shot["action"], "shot_size": shot["shot_size"], "camera_move": shot["camera_move"],
                   "steps": [("FLUX.2 Klein 4B" if frame_backend == 'klein' else "Qwen-Image-Edit 2511") + " · " + ("previous performance" + (" + returning cast" if refs else "") if previous_end else
-                            ("cast portraits" if mixed_composition else "the storyboard" + (" + the lead" if reference else "")) +
+                            ("cast portraits" if mixed_composition else "the storyboard" + (" + visible lead description" if rear_identity else " + the lead" if reference else "")) +
                             (" + supporting cast" if characters and not mixed_composition else "") +
-                            (" + the world" if use_world_reference else "")) +
+                            (" + remembered location" if memory else " + the world" if use_world_reference else "")) +
                             (" · 40 steps" if frame_backend == 'qwen' and project.get("image_quality") == "detailed" else " · 4 steps")]}
         if world_optional:
             recipe['world_optional'] = True
-        # Only linked shots with a fully specified, countable cast pay for this
-        # inexpensive early check; ordinary draft cuts retain deferred review.
-        expected_count = requirements.get('count') if previous_end and not requirements.get('unresolved_cast') else None
+        # Memory references can accidentally reintroduce people from their source.
+        # Check these shots early, preserving all references on any alternate.
+        expected_count = (opening_requirements.get('count')
+                          if (previous_end or memory) and not opening_requirements.get('unresolved_cast') else None)
         if type(expected_count) is int and expected_count > 0:
             graph = graphs.verify_cast(graph, '11' if frame_backend == 'klein' else '15', expected_count)
             job['label'] = f'Keyframe {index + 1} · reframing and checking visible cast'
-        files, seed, cast_review = (self._render_checked(graph, seed, tick, job=job) if previous_end
+        files, seed, cast_review = (self._render_checked(graph, seed, tick, job=job) if previous_end or memory
                                     else self._render_checked(graph, seed, tick))
         name = f"key_{shot['id']}_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project["id"]) / name)
@@ -2360,7 +2771,8 @@ class Studio:
         if type(expected_count) is int and expected_count > 0:
             name, prompt, seed, known_review, attempted = self._recover_linked_cast(
                 project, shot, name, prompt, seed, recipe, cast_review, expected_count,
-                picture, prefix, frame_backend, tick, job, index, refs[0] if previous_end and refs else None)
+                picture, prefix, frame_backend, tick, job, index, refs[0] if refs else None,
+                refs[1] if len(refs) > 1 else None)
         self._finish_keyframe(project, shot, name, prompt, seed, recipe, tick, job, index,
                               known_review=known_review, allow_repair=not attempted and known_review is None)
 
@@ -2386,7 +2798,8 @@ class Studio:
 
     def _recover_linked_cast(self, project: dict, shot: dict, name: str, prompt: str, seed: int, recipe: dict,
                              cast_review: dict, expected: int, picture: str, prefix: str, backend: str,
-                             tick, job: dict, index: int, second_reference: str | None = None) -> tuple:
+                             tick, job: dict, index: int, second_reference: str | None = None,
+                             third_reference: str | None = None) -> tuple:
         """Try at most one alternate after two corroborating extra-cast observations."""
         if job.get('stopped'):
             pending = director.review_result([{'category':'uncertain', 'code':'pending_review', 'severity':'warning',
@@ -2432,9 +2845,11 @@ class Studio:
             return name, prompt, seed, original, False
         retry_prompt = prompt + f' Exactly {expected} distinct characters total; each appears only once, with no duplicates.'
         retry_seed = (seed + 1_000_003) % (2**31)
-        retry_graph = (graphs.klein_coverage_graph(retry_prompt, retry_seed, picture, prefix, project['aspect'])
+        retry_graph = (graphs.klein_coverage_graph(retry_prompt, retry_seed, picture, prefix, project['aspect'],
+                           second_reference=second_reference, third_reference=third_reference)
                        if backend == 'klein' else graphs.coverage_graph(retry_prompt, retry_seed, picture, prefix,
-                           project['aspect'], second_reference=second_reference, detailed=project.get('image_quality') == 'detailed'))
+                           project['aspect'], second_reference=second_reference, third_reference=third_reference,
+                           detailed=project.get('image_quality') == 'detailed'))
         job['label'] = f'Keyframe {index + 1} · trying one alternate'
         if job.get('stopped'):
             raise ComfyError('interrupted')
@@ -2787,7 +3202,19 @@ class Studio:
             job["label"] = f"Storyboard {index + 1}"
         expected_cast = review_requirements(project, shot, 'start')['count'] if "start_cast" in shot else director.character_count(lead, visible_others)
         portrait_identity = lead_identity(project) if lead and reference else ''
+        recorded_identity = portrait_identity
         cast_direction = project.get("cast", "")
+        requirements = review_requirements(project, shot, 'start')
+        rear_identity = (staging.solo_rear_view(shot.get('start_frame', ''), requirements['people'],
+                         director.lead_name(cast_direction), cast_direction, portrait_identity)
+                         if shot.get('memory_shot') and shot.get('frame_source') != 'previous_end'
+                         and shot.get('transition') != 'continue' and lead and reference
+                         and (job or {}).get('frame_backend', project.get('frame_backend', 'qwen')) == 'qwen'
+                         and director.medium(project.get('look', '')) == 'photo' and requirements.get('count') == 1
+                         and not requirements.get('unresolved_cast') and not prop_input(project, shot)
+                         and not selected_character_references(project, shot) else None)
+        if rear_identity:
+            cast_direction, portrait_identity = rear_identity
         if portrait_identity:
             cast_direction = director._join(cast_direction, 'Portrait appearance: ' + portrait_identity)
         prompt = director.sketch_prompt(shot["action"], shot["shot_size"], shot["camera_move"], has_cast=bool(reference),
@@ -2795,7 +3222,8 @@ class Studio:
                                         continuity="", start_frame=shot.get("start_frame", ""),
                                         others=visible_others, expected_cast=expected_cast,
                                         cast_uncertain=bool(shot.get('cast_roster_unresolved')) or
-                                            ('start_cast' in shot and shot['start_cast'] is None))
+                                            ('start_cast' in shot and shot['start_cast'] is None),
+                                        solo_rear_view=bool(rear_identity))
         prompt += " " + director.sketch_state_prompt(review_requirements(project, shot, 'start')['state'])
         seed = (shot["seed"] + 7_777 * len(shot.get("sketches", []))) % 2**31
         prop = prop_input(project, shot)
@@ -2818,8 +3246,8 @@ class Studio:
         name = f"sketch_{shot_id}_{uuid.uuid4().hex[:6]}.png"
         self.comfy.download(files[0], self.path(project_id) / name)
         snapshot = sketch_of(shot, plate, reference, project)
-        if not source_frame and portrait_identity:
-            snapshot['portrait_identity'] = {'reference': reference, 'description': portrait_identity}
+        if not source_frame and recorded_identity:
+            snapshot['portrait_identity'] = {'reference': reference, 'description': recorded_identity}
         review["of"] = snapshot
         with self.lock:
             fresh = self.load(project_id)
@@ -2960,9 +3388,19 @@ class Studio:
         if not plan_usable(fresh) or video_inputs(fresh, self._shot(fresh, shot["id"])) != video_inputs(project, shot):
             raise RuntimeError("The shot changed during opening-frame review. Render again to use the latest direction.")
         motion_lead, motion_others = performing_cast(project, shot)
+        motion_cast = director._join(project.get("cast", ""), lead_identity(project)).rstrip(".") if motion_lead else ""
+        visible_people = review_requirements(project, shot, 'start')['people']
+        shoulder = staging.shoulder_subject(shot.get('start_frame', ''), visible_people)
+        held_view = staging.shoulder_continuity(shot.get('start_frame', ''), shot.get('end_state', ''), visible_people)
+        if (motion_lead and not motion_others and len(visible_people) == 1
+                and shoulder and 'middle' in held_view and 'end' in held_view
+                and director.lead_name(project.get('cast', '')).casefold() == shoulder.casefold()):
+            back_view_cast = staging.back_view_description(project.get('cast', ''))
+            if back_view_cast is not None:
+                motion_cast = back_view_cast
         prompt = director.motion_prompt(shot["action"], shot["camera_move"], shot.get("sound", ""),
                                         director.look_for_state(project["look"], review_requirements(project, shot, "start")["state"]),
-                                        director._join(project.get("cast", ""), lead_identity(project)).rstrip(".") if motion_lead else "",
+                                        motion_cast,
                                         shot["shot_size"], state_design(project),
                                         motion_lead, motion_others, shot.get("line", ""),
                                         shot.get("start_frame", ""), shot.get("end_state", ""))
@@ -3007,6 +3445,12 @@ class Studio:
         job["label"] = f"Shot {index + 1} · reviewing four video samples"
         if duration(self.path(project['id']) / name) <= 0:
             raise RuntimeError('Generated clip has no playable duration; regenerate this shot')
+        render_info = {
+            'name': name, 'prompt': prompt, 'seed': seed, 'keyframe': start,
+            'performance_mode': job.get('ai_mode', 'normal'),
+            'video_render': {'end': end, 'end_strength': end_strength},
+            'of': {**video_inputs(project_snapshot, shot), 'keyframe': start},
+        }
         # Keep a completed linked clip inspectable before the optional reviews,
         # without selecting it if Stop lands at a stage boundary.
         if linked:
@@ -3016,9 +3460,7 @@ class Studio:
             with self.lock:
                 fresh = self.load(project['id'])
                 current = self._shot(fresh, shot['id'])
-                current.setdefault('takes', {}).setdefault('video', []).append({'name':name, 'review':pending,
-                    'prompt':prompt, 'seed':seed, 'keyframe':start, 'performance_mode':job.get('ai_mode','normal'),
-                    'of':{**video_inputs(project_snapshot, shot), 'keyframe':start}})
+                current.setdefault('takes', {}).setdefault('video', []).append({**render_info, 'review':pending})
                 self.save(fresh)
                 if job.get('stopped'):
                     raise ComfyError('interrupted')
@@ -3030,6 +3472,10 @@ class Studio:
             review = (self._review_video(project, shot, name, tick, job=job) if linked
                       else self._review_video(project, shot, name, tick))
         dialogue = speech.check(self.path(project['id']) / name, shot.get('line', '')) if not draft_mode(project) and shot.get('line', '').strip() else None
+        render_info['dialogue_review'] = dialogue
+        if not draft_mode(project) and self._retry_viewpoint(project, shot, render_info, review, job, tick):
+            job.setdefault('timing', {})['playable_at'] = time.time()
+            return
         with self.lock:
             if linked and job.get('stopped'):
                 raise ComfyError('interrupted')
@@ -3038,9 +3484,8 @@ class Studio:
                 current = self._shot(fresh, shot['id'])
                 if selection_state(current) != selected_guard or video_inputs(fresh, current) != guarded_inputs:
                     raise RuntimeError('The shot changed while rendering. The new clip and your current selection were kept; render again.')
-            self._record_candidate(project["id"], shot["id"], "video", name, review, prompt=prompt, seed=seed, keyframe=start,
-                                   performance_mode=job.get("ai_mode", "normal"),
-                                   of={**video_inputs(project_snapshot, shot), "keyframe": start}, dialogue_review=dialogue)
+            self._record_candidate(project["id"], shot["id"], "video", name, review,
+                                   **{key: value for key, value in render_info.items() if key != 'name'})
         with self.lock:
             fresh = self.load(project['id'])
             selected = self._shot(fresh, shot['id'])

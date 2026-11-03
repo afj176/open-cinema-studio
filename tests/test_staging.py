@@ -14,6 +14,40 @@ from benchmark_film_matrix import matrix, execute
 
 
 class StagingTests(unittest.TestCase):
+    def test_back_view_keeps_wardrobe_and_hair_without_facial_details(self):
+        source = 'Asha, short black hair, green cardigan, dark brown eyes, a scar on her cheek'
+        self.assertEqual(staging.back_view_description(source), 'Asha, short black hair, green cardigan')
+        self.assertIsNone(staging.back_view_description('Asha, brown eyes and a red jacket'))
+        self.assertIsNone(staging.back_view_description('Asha, brown eyes and a green cardigan'))
+
+    def test_solo_rear_view_needs_explicit_named_lead_and_separable_visible_cues(self):
+        people = {'Asha':'Asha, black hair, green cardigan, brown eyes'}
+        result = staging.solo_rear_view("Over Asha's shoulder", people, 'Asha', people['Asha'],
+                                       'short black hair, dark eyes')
+        self.assertEqual(result, ('Asha, black hair, green cardigan', 'short black hair'))
+        for opening, roster, lead, cast in [
+            ("Not over Asha's shoulder", people, 'Asha', people['Asha']),
+            ("Over Jo's shoulder", people, 'Asha', people['Asha']),
+            ("Over Asha's shoulder", {**people, 'Jo':'red coat'}, 'Asha', people['Asha']),
+            ("Over Asha's shoulder", people, 'Jo', people['Asha']),
+            ("Over Asha's shoulder", people, 'Asha', 'Asha, dark eyes and black hair'),
+            ("Over Asha's shoulder", people, 'Asha', 'Asha, brown eyes')]:
+            self.assertIsNone(staging.solo_rear_view(opening, roster, lead, cast, ''))
+
+    def test_explicit_shoulder_framing_does_not_require_a_face(self):
+        opening = "Over Asha's shoulder, facing the empty chair"
+        prompt = director.motion_prompt('Asha looks at the chair', 'Static', shot_size='Close-up', start_frame=opening)
+        self.assertIn('tight over-the-shoulder framing', prompt)
+        self.assertNotIn('close-up on the face', prompt)
+        self.assertIn('close-up on the face', director.motion_prompt('Asha smiles', 'Static', shot_size='Close-up'))
+        board = director.sketch_prompt('Asha looks at the chair', 'Close-up', lead=True,
+                                       cast='Asha, short black hair, green cardigan',
+                                       start_frame=opening, expected_cast=1, solo_rear_view=True)
+        self.assertIn('tight over-the-shoulder framing', board)
+        self.assertIn('back of the head and shoulder', board)
+        self.assertNotIn('close-up on the face', board)
+        self.assertNotIn('moving deeper into the scene', board)
+
     def test_named_shoulder_becomes_a_visible_geometry_contract(self):
         people = {'Jo': 'yellow coat', 'Ren': 'blue coat'}
         facts = staging.visual_facts("Over Jo’s shoulder, facing Ren", 'cel animation', people, 'start')
@@ -27,6 +61,16 @@ class StagingTests(unittest.TestCase):
         for text in ("Over someone's shoulder", "Over Joel's shoulder", "Over Jo's shoulder then over Ren's shoulder",
                      "Not over Jo's shoulder; use a profile instead"):
             self.assertEqual(staging.camera_direction(text, people), '')
+
+    def test_viewpoint_review_respects_explicit_duration_and_ending(self):
+        people = {'Jo': 'yellow coat', 'Ren': 'blue coat'}
+        opening = "Over Jo's shoulder"
+        ending = "Still over Jo's shoulder, facing Ren"
+        self.assertEqual(staging.visual_facts(opening, '', people, 'middle', ending), {})
+        self.assertIn('Jo · camera orientation', staging.visual_facts(opening, '', people, 'end', ending))
+        held = opening + ' throughout the shot'
+        self.assertIn('Jo · camera orientation', staging.visual_facts(held, '', people, 'middle', ending))
+        self.assertEqual(staging.visual_facts(held, '', people, 'end', 'Jo turns to face the viewer'), {})
 
     def test_mixed_material_contract_does_not_restyle_a_cartoon_or_puppet_film(self):
         people = {'Jo': 'adult human in blue', 'Pip': 'cloth puppet in green'}

@@ -87,6 +87,105 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertNotIn('repair_suggestion', candidate['latest_automated_review'])
         worker.enqueue.assert_not_called()
 
+    def test_viewpoint_retry_keeps_both_takes_and_only_promotes_a_pass(self):
+        for passes in (False, True):
+            with self.subTest(passes=passes), tempfile.TemporaryDirectory(dir='runtime') as temp:
+                worker, project, shot = self.harness()
+                shot.update(start_frame="Over Asha's shoulder throughout the shot",
+                            end_state="Still over Asha's shoulder", line='',
+                            start_cast=['Asha'], end_cast=['Asha'])
+                project['cast'] = 'Asha, short black hair'
+                original = studio.current_take(shot, 'video')
+                original.update(keyframe=shot['keyframe'], prompt='Hold the view', seed=7,
+                                performance_mode='normal', video_render={'end':None, 'end_strength':1.0})
+                original['of'] = studio.video_inputs(project, shot)
+                Path(temp, shot['keyframe']).touch()
+                worker.path = lambda _: Path(temp)
+                worker._require_plan = Mock(return_value=project)
+                worker._run_for_job = Mock(return_value=[{'filename':'alternate.mp4'}])
+                failures = [{'category':'content_issue', 'code':'state_mismatch', 'severity':'blocking',
+                             'message':f'Sample {sample}: Asha · camera orientation: face visible', 'sample':sample}
+                            for sample in (2, 3)]
+                failed = studio.director.review_result(failures, of=original['of'])
+                result = studio.director.review_result([], of=original['of']) if passes else failed
+                worker._review_video = Mock(side_effect=[failed, result])
+                job = {'project':project['id'], 'shot':shot['id'], 'candidate_name':original['name']}
+                with patch.object(studio, 'duration', return_value=1), patch.object(studio, 'plan_usable', return_value=True):
+                    worker._run_review(job, lambda _: None)
+                    self.assertFalse(worker._retry_viewpoint(project, shot, original, failed, job, lambda _: None))
+                alternate = shot['takes']['video'][-1]
+                self.assertEqual(alternate['retry_of'], original['name'])
+                self.assertEqual(shot['video'], alternate['name'] if passes else original['name'])
+                self.assertEqual(alternate['review'], result)
+                worker._run_for_job.assert_called_once()
+
+    def test_extra_person_retry_requires_repeated_corroboration_and_recuts_a_current_film(self):
+        worker, project, shot = self.harness()
+        shot.update(start_frame="Over Asha's shoulder throughout the shot",
+                    end_state="Asha remains seated", line='', start_cast=['Asha'], end_cast=['Asha'])
+        project['cast'] = 'Asha, short black hair, green cardigan'
+        studio.current_take(shot, 'keyframe')['recipe']['visual'] = studio.visual_inputs(project, shot)
+        original = studio.current_take(shot, 'video')
+        original.update(keyframe=shot['keyframe'], prompt='Hold the view', seed=7,
+                        performance_mode='normal', video_render={'end':None, 'end_strength':1.0})
+        original['of'] = studio.video_inputs(project, shot)
+        project['film'] = 'film.mp4'
+        project['film_of'] = studio.film_inputs(project)
+        def sample(count, reported=None):
+            issues = [] if count == 1 else [{'category':'content_issue', 'code':'cast_count_mismatch',
+                'severity':'blocking', 'message':'An extra person is visible'}]
+            return studio.director.review_result(issues, evidence={'count':count,
+                'reported_count':count if reported is None else reported})
+        failed = studio.director.combine_visual_reviews([sample(1), sample(2), sample(2), sample(2)])
+        failed['of'] = original['of']
+        accepted = studio.director.review_result([], of=original['of'])
+        worker._require_plan = Mock(return_value=project)
+        worker._run_for_job = Mock(return_value=[{'filename':'alternate.mp4'}])
+        worker._review_video = Mock(side_effect=[failed, accepted])
+        worker._queue_followup = Mock()
+        with tempfile.TemporaryDirectory(dir='runtime') as temp:
+            Path(temp, shot['keyframe']).touch()
+            worker.path = lambda _: Path(temp)
+            with patch.object(studio, 'duration', return_value=1), patch.object(studio, 'plan_usable', return_value=True):
+                worker._run_review({'project':project['id'], 'shot':shot['id'], 'candidate_name':original['name']}, lambda _: None)
+        alternate = shot['takes']['video'][-1]
+        self.assertEqual(shot['video'], alternate['name'])
+        self.assertEqual(alternate['retry_of'], original['name'])
+        self.assertIn('Only one person is visible', alternate['prompt'])
+        worker._queue_followup.assert_called_once_with('stitch', project['id'], None, 'Final cut')
+
+    def test_extra_person_retry_does_not_guess_from_weak_or_unrelated_evidence(self):
+        worker, project, shot = self.harness()
+        shot.update(start_frame="Over Asha's shoulder throughout the shot", end_state='Asha remains seated',
+                    start_cast=['Asha'], end_cast=['Asha'])
+        project['cast'] = 'Asha, short black hair'
+        def sample(count, reported):
+            issues = [] if count == 1 else [{'category':'content_issue', 'code':'cast_count_mismatch',
+                'severity':'blocking', 'message':'Extra person'}]
+            return studio.director.review_result(issues, evidence={'count':count, 'reported_count':reported})
+        cases = [[sample(1,1), sample(2,2), sample(1,1), sample(1,1)],
+                 [sample(1,1), sample(2,1), sample(2,1), sample(1,1)],
+                 [sample(2,2), sample(2,2), sample(2,2), sample(2,2)]]
+        for samples in cases:
+            result = studio.director.combine_visual_reviews(samples)
+            self.assertFalse(worker._retry_viewpoint(project, shot, {}, result, {}, lambda _: None))
+
+    def test_retry_does_not_recut_after_concurrent_film_edits(self):
+        worker, project, shot = self.harness()
+        original = studio.current_take(shot, 'video')
+        original['of'] = studio.video_inputs(project, shot)
+        project['film'] = 'film.mp4'
+        project['film_of'] = studio.film_inputs(project)
+        worker._require_plan = Mock(return_value=project)
+        worker._review_video = Mock(return_value=review('content_issue', original['of']))
+        worker._queue_followup = Mock()
+        def retry(*_):
+            project['title'] = 'Changed while retrying'
+            return True
+        worker._retry_viewpoint = retry
+        worker._run_review({'project':project['id'], 'shot':shot['id'], 'candidate_name':original['name']}, lambda _: None)
+        worker._queue_followup.assert_not_called()
+
     def test_draft_keyframe_defers_check_without_falsely_approving_it(self):
         for mode in ('normal', 'fast'):
             with self.subTest(mode=mode):
@@ -161,6 +260,40 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertNotEqual(draft['id'], strict['id'])
         self.assertEqual(worker.queue.get()[2]['id'], strict['id'])
         self.assertEqual(draft['review_policy'], 'draft')
+
+    def test_frame_reviews_for_different_candidates_are_not_deduplicated(self):
+        worker, project, shot = self.harness()
+        worker.jobs = []
+        worker.queue = queue.PriorityQueue()
+        worker.order = itertools.count()
+        worker._save_jobs = Mock()
+        first = worker.enqueue('review_frame', project['id'], shot['id'], candidate_name='first.png')
+        second = worker.enqueue('review_frame', project['id'], shot['id'], candidate_name='second.png')
+        self.assertNotEqual(first['id'], second['id'])
+
+    def test_reused_pending_frame_gets_a_review_after_interruption(self):
+        for policy in ('draft', 'strict'):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory(dir='runtime') as folder:
+                worker, project, shot = self.harness(policy)
+                candidate = studio.current_take(shot, 'keyframe')
+                Path(folder, candidate['name']).touch()
+                pending = studio.director.review_result([{'category':'uncertain', 'code':'pending_review',
+                    'severity':'warning', 'message':'Check queued'}], of=studio.visual_inputs(project, shot))
+                candidate.update(review=pending, recipe={'frame_backend':'qwen'})
+                worker.path = lambda _: Path(folder)
+                worker._require_plan = Mock(return_value=project)
+                worker._record_candidate = Mock()
+                worker._queue_followup = Mock()
+                worker._metric = Mock()
+                worker._review_image = Mock(return_value=review('passed', pending['of']))
+                with patch.object(studio, 'cast_stale', return_value=False), patch.object(studio, 'story_stale', return_value=False):
+                    worker._run_keyframe({'project':project['id'], 'shot':shot['id'], 'reuse_candidate':True}, lambda _: None)
+                if policy == 'draft':
+                    worker._review_image.assert_not_called()
+                    self.assertEqual(worker._queue_followup.call_args.kwargs['candidate_name'], candidate['name'])
+                else:
+                    worker._review_image.assert_called_once()
+                    worker._queue_followup.assert_not_called()
 
     def test_strict_reviews_precede_stitch_and_retries_keep_their_candidate(self):
         worker, project, shot = self.harness('strict')
@@ -247,6 +380,30 @@ class DraftPipelineTests(unittest.TestCase):
         self.assertEqual(recorded['issues'][0]['code'], 'pending_review')
         self.assertEqual(worker.enqueue.call_args.args[0], 'review')
         self.assertGreater(studio.PRIORITY['review'], studio.PRIORITY.get('stitch', 2))
+
+    def test_rear_view_motion_prompt_excludes_face_only_for_explicit_held_view(self):
+        cases = [
+            ("Over Asha's shoulder throughout the shot", 'Asha remains seated facing the chair', False),
+            ("Over Asha's shoulder", 'Asha turns toward the camera', True),
+        ]
+        for opening, ending, expect_face in cases:
+            with self.subTest(opening=opening):
+                worker, project, shot = self.harness()
+                project.update(cast='Asha, short black hair, green cardigan, brown eyes',
+                               reference='portrait.png', lead_identity='round face and brown eyes',
+                               lead_identity_of='portrait.png')
+                shot.update(start_frame=opening, end_state=ending, start_cast=['Asha'], end_cast=['Asha'],
+                            others='', transition='cut')
+                project['continuity_plan']['of'] = studio.continuity_inputs(project)
+                studio.current_take(shot, 'keyframe')['review'] = review('passed', studio.visual_inputs(project, shot))
+                worker._require_plan = Mock(return_value=project)
+                worker._record_candidate = Mock()
+                worker.enqueue = Mock()
+                with patch.object(studio, 'frame_stale', return_value=False), patch.object(studio, 'duration', return_value=1):
+                    worker._run_video({'project':project['id'], 'shot':shot['id'], 'ai_mode':'normal'}, lambda _: None)
+                prompt = worker.comfy.run.call_args.args[0]['9']['inputs']['text']
+                self.assertIn('green cardigan', prompt)
+                self.assertEqual('brown eyes' in prompt, expect_face)
 
     def test_empty_film_is_pending_and_a_watermark_needs_explicit_clean_cut(self):
         worker, project, shot = self.harness()
