@@ -217,6 +217,46 @@ class GenerationModesTests(unittest.TestCase):
         obj._block_dependents(root)
         self.assertEqual([j['state'] for j in obj.jobs],['failed','blocked','blocked','queued'])
 
+    def test_failed_memory_source_blocks_its_return_and_continuations(self):
+        obj,p,s=self.fake()
+        p['shots'][2]['memory_shot'] = s['id']
+        p['shots'][3]['transition'] = 'continue'
+        root=self.job('keyframe',s['id']);root['state']='failed'
+        obj.jobs=[root,self.job('video','second'),self.job('keyframe','third'),self.job('video','fourth')]
+        obj._block_dependents(root)
+        self.assertEqual([j['state'] for j in obj.jobs],['failed','queued','blocked','blocked'])
+
+    def test_failed_source_video_does_not_block_independent_memory_return(self):
+        obj,p,s=self.fake()
+        p['shots'][2]['memory_shot'] = s['id']
+        root=self.job('video',s['id']);root['state']='failed'
+        obj.jobs=[root,self.job('keyframe','third'),self.job('video','third'),self.job('stitch')]
+        obj._block_dependents(root)
+        self.assertEqual([j['state'] for j in obj.jobs],['failed','queued','queued','blocked'])
+
+    def test_failed_video_blocks_memory_of_dependent_reframe(self):
+        obj,p,s=self.fake()
+        p['shots'][1]['frame_source'] = 'previous_end'
+        p['shots'][3]['memory_shot'] = 'second'
+        root=self.job('video',s['id']);root['state']='failed'
+        obj.jobs=[root,self.job('keyframe','second'),self.job('keyframe','fourth')]
+        obj._block_dependents(root)
+        self.assertEqual([j['state'] for j in obj.jobs],['failed','blocked','blocked'])
+
+    def test_pause_cancels_queued_memory_dependents_and_resume_requeues_them(self):
+        obj,p,s=self.fake()
+        p['shots'][2]['memory_shot'] = s['id']
+        p['shots'][3]['transition'] = 'continue'
+        obj.jobs=[self.job('keyframe',s['id']),self.job('video','second'),self.job('keyframe','third'),
+                  self.job('video','fourth'),self.job('stitch')]
+        obj._save_jobs=lambda: None
+        calls=[]
+        obj.queue_film=lambda project_id, only=None: calls.append((project_id, only))
+        obj.pause_shot('film',s['id'],True)
+        self.assertEqual([j['state'] for j in obj.jobs],['cancelled','queued','cancelled','cancelled','cancelled'])
+        obj.pause_shot('film',s['id'],False)
+        self.assertEqual(calls,[('film',{s['id'],'third','fourth'})])
+
     def test_retry_uses_current_mode_and_preserves_operation_arguments(self):
         obj,p,s=self.fake();p['ai_mode']='fast'
         old={**self.job('write_story'),'state':'failed','target':'title','count':3,'ai_mode':'normal'}

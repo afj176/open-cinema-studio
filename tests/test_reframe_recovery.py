@@ -85,6 +85,17 @@ class ReframeRecoveryTests(unittest.TestCase):
         graph = worker._render_checked.call_args.args[0]
         self.assertEqual(graph['16']['inputs']['image'], 'returning.png')
 
+    def test_retry_keeps_both_memory_shot_references(self):
+        worker, project, shot = self.harness()
+        worker._review_image = Mock(side_effect=[image_review(project, shot), image_review(project, shot, 'passed', 2)])
+        worker._recover_linked_cast(project, shot, 'original.png', 'directed prompt', 1,
+            {'kind':'shot','frame_source':'storyboard','visual':studio.visual_inputs(project, shot)},
+            cast_review(), 2, 'board.png', 'scratch/frame', 'qwen', lambda _: None, {}, 1,
+            second_reference='portrait.png', third_reference='memory.png')
+        graph = worker._render_checked.call_args.args[0]
+        self.assertEqual(graph['16']['inputs']['image'], 'portrait.png')
+        self.assertEqual(graph['18']['inputs']['image'], 'memory.png')
+
     def test_uncertain_or_worse_alternate_keeps_original_and_both_takes(self):
         for result in ('uncertain', 'extra'):
             with self.subTest(result=result):

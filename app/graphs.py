@@ -249,6 +249,30 @@ def people_check_graph(image: str, question: str) -> dict[str, Any]:
     }
 
 
+def memory_comparison_graph(source: str, plate: str, state: dict | None = None) -> dict[str, Any]:
+    """Ask separate bounded visual questions about the source and prepared location."""
+    location = ('Two pictures side by side: original on the left, prepared location on the right. '
+                'Ignoring people and objects, are the visible room architecture, window, and materials '
+                'clearly inconsistent? Answer only YES, NO, or UNKNOWN.')
+    state_prompt = ('Inspect this prepared location by itself. Search for each tracked object, including small '
+                    'objects on tables, counters and the floor. Does a visible object clearly contradict its '
+                    'tracked location or state? Do not assume that an unseen object is correct. '
+                    'Answer only YES, NO, or UNKNOWN. Facts: '
+                    + json.dumps(state or {}, ensure_ascii=False))
+    graph = {'model': writer_node(), 'left': node('LoadImage', image=source),
+             'right': node('LoadImage', image=plate),
+             'pair': node('ImageStitch', image1=['left', 0], image2=['right', 0], direction='right',
+                          match_image_size=True, spacing_width=16, spacing_color='white'),
+             'compare': node('TextGenerate', clip=['model', 0], image=['pair', 0], prompt=location,
+                             max_length=8, sampling_mode='off'),
+             'location_result': node('PreviewAny', source=['compare', 0])}
+    if state:
+        graph['state_compare'] = node('TextGenerate', clip=['model', 0], image=['right', 0],
+                                      prompt=state_prompt, max_length=8, sampling_mode='off')
+        graph['state_result'] = node('PreviewAny', source=['state_compare', 0])
+    return graph
+
+
 def frames_for(seconds: float, fps: int) -> int:
     """LTX wants 8n+1 frames."""
     return max(9, round(seconds * fps / 8) * 8 + 1)

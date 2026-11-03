@@ -39,6 +39,22 @@ class RecordedFrameInputsTests(unittest.TestCase):
         paths, _ = comparison.recorded_inputs(self.folder, self.take)
         self.assertEqual([path.name for path in paths], ['board.png', 'prop.png', 'world.png'])
 
+    def test_remembered_location_replaces_world_in_recorded_inputs(self):
+        recipe = self.take['recipe']
+        recipe.update(world='world.png', world_reference=True,
+                      visual_memory={'shot':'earlier', 'image':'person.png'})
+        self.take['prompt'] = 'Picture 1, Picture 2, Picture 3'
+        paths, _ = comparison.recorded_inputs(self.folder, self.take)
+        self.assertEqual([path.name for path in paths], ['board.png', 'lead.png', 'person.png'])
+
+    def test_prepared_memory_plate_is_the_executed_reference(self):
+        recipe = self.take['recipe']
+        recipe.update(world='world.png', world_reference=True,
+                      visual_memory={'shot':'earlier', 'image':'world.png', 'plate':'person.png'})
+        self.take['prompt'] = 'Picture 1, Picture 2, Picture 3'
+        paths, _ = comparison.recorded_inputs(self.folder, self.take)
+        self.assertEqual([path.name for path in paths], ['board.png', 'lead.png', 'person.png'])
+
     def test_incomplete_linked_or_unmatched_picture_provenance_is_rejected(self):
         self.take['prompt'] += ' and Picture 3'
         with self.assertRaisesRegex(ValueError, 'missing from the recorded recipe'):

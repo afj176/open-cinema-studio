@@ -191,6 +191,102 @@ class AutoDirectionTests(unittest.TestCase):
         self.assertEqual([job['shot'] for job in jobs if job['kind'] == 'video'], ['fourth'])
         self.assertFalse(any(job['kind'] == 'stitch' for job in jobs))
 
+    def test_pausing_a_memory_source_holds_its_return(self):
+        obj, project, first = test_generation_modes.GenerationModesTests().fake()
+        first['paused'] = True
+        project['shots'][2]['memory_shot'] = first['id']
+        project['shots'][2]['video'] = None
+        project['continuity_plan']['of'] = studio.continuity_inputs(project)
+        obj._save_jobs = lambda: None
+        obj.queue_sketches = lambda *args, **kwargs: []
+        jobs = obj.queue_film('scratch')
+        self.assertNotIn('third', [job['shot'] for job in jobs if job['kind'] == 'video'])
+        self.assertFalse(any(job['kind'] == 'stitch' for job in jobs))
+
+    def test_solo_memory_rear_view_uses_description_and_not_face_portrait(self):
+        for opening, backend, look, optimized in (("Over Asha's shoulder", 'qwen', 'Naturalistic live-action', True),
+                                            ("Asha faces the camera", 'qwen', 'Naturalistic live-action', False),
+                                            ("Over Asha's shoulder", 'klein', 'Naturalistic live-action', False),
+                                            ("Over Asha's shoulder", 'qwen', 'Paper-cut animation', False)):
+            with self.subTest(opening=opening, backend=backend, look=look):
+                _, project, first = test_generation_modes.GenerationModesTests().fake()
+                project.update(cast='Asha, short black hair, green cardigan, brown eyes', look=look,
+                               lead_identity='Short black hair, oval face, brown eyes',
+                               lead_identity_of='portrait.png')
+                shot = project['shots'][2]
+                shot.update(start_frame=opening, start_cast=['Asha'], others='', memory_shot=first['id'],
+                            frame_source='storyboard', transition='cut', keyframe=None, video=None,
+                            takes={'keyframe':[], 'video':[]})
+                worker = object.__new__(studio.Studio)
+                worker.lock = threading.RLock()
+                worker.load = Mock(return_value=project)
+                worker._require_plan = Mock(return_value=project)
+                worker._current_sketch = Mock(return_value='board.png')
+                worker._memory_plate = Mock(return_value='memory.png')
+                worker._upload = lambda _, name: 'uploaded_' + name
+                worker._render_checked = Mock(return_value=([{'filename':'made.png'}], 9, {}))
+                worker._recover_linked_cast = Mock(return_value=('made.png','prompt',9,None,False))
+                worker._finish_keyframe = Mock()
+                worker.comfy = Mock()
+                with tempfile.TemporaryDirectory(dir='runtime') as folder:
+                    worker.path = lambda _: Path(folder)
+                    with patch.object(studio, 'cast_stale', return_value=False), \
+                         patch.object(studio, 'story_stale', return_value=False), \
+                         patch.object(studio, 'current_plate', return_value='world.png'), \
+                         patch.object(studio, 'visual_memory', return_value={'shot':first['id'], 'image':'first.png', 'state':{}}):
+                        worker._run_keyframe({'project':project['id'], 'shot':shot['id'], 'frame_backend':backend}, lambda _: None)
+                graph = worker._render_checked.call_args.args[0]
+                prompt = graph['4']['inputs']['text'] if backend == 'klein' else graph['8']['inputs']['prompt']
+                recipe = worker._finish_keyframe.call_args.args[5]
+                self.assertEqual(bool(recipe['lead_description_source']), optimized)
+                if optimized:
+                    self.assertEqual(graph['16']['inputs']['image'], 'uploaded_memory.png')
+                    self.assertNotIn('18', graph)
+                    self.assertNotIn('brown eyes', prompt)
+                    self.assertNotIn('oval face', prompt)
+                    self.assertIn('green cardigan', prompt)
+                    self.assertIn('only person', prompt)
+                    self.assertIsNone(recipe['lead'])
+                else:
+                    self.assertEqual(recipe['lead'], 'portrait.png')
+
+    def test_rear_storyboard_filters_face_cues_but_tracks_full_portrait_description(self):
+        _, project, first = test_generation_modes.GenerationModesTests().fake()
+        project.update(cast='Asha, short black hair, green cardigan, brown eyes', look='Naturalistic live-action',
+                       frame_backend='qwen', lead_identity='Short black hair, oval face, brown eyes',
+                       lead_identity_of='portrait.png')
+        shot = project['shots'][2]
+        shot.update(start_frame="Over Asha's shoulder", shot_size='Close-up', start_cast=['Asha'],
+                    others='', memory_shot=first['id'], frame_source='storyboard', transition='cut',
+                    keyframe=None, video=None, sketch=None, sketches=[], takes={'keyframe':[], 'video':[]})
+        worker = object.__new__(studio.Studio)
+        worker.lock = threading.RLock()
+        worker.load = Mock(return_value=project)
+        worker.save = Mock(side_effect=lambda p: p)
+        worker._require_plan = Mock(return_value=project)
+        worker._render_checked = Mock(return_value=([{'filename':'made.png'}], 9, studio.director.review_result([])))
+        worker.comfy = Mock()
+        with tempfile.TemporaryDirectory(dir='runtime') as folder:
+            worker.path = lambda _: Path(folder)
+            worker._draw_sketch(project['id'], shot['id'], lambda _: None)
+        drawing = shot['sketches'][-1]
+        self.assertNotIn('brown eyes', drawing['prompt'])
+        self.assertIn('green cardigan', drawing['prompt'])
+        self.assertIn('tight over-the-shoulder framing', drawing['prompt'])
+        self.assertEqual(drawing['of']['portrait_identity']['description'], project['lead_identity'])
+        self.assertFalse(studio.sketch_stale(project, shot))
+        project['lead_identity'] = 'New portrait description'
+        self.assertTrue(studio.sketch_stale(project, shot))
+
+    def test_rear_description_recipe_tracks_portrait_changes_without_claiming_image_input(self):
+        from test_asset_dependencies import fixture
+        project, shot = fixture()
+        recipe = studio.current_take(shot, 'keyframe')['recipe']
+        recipe.update(lead=None, lead_description_source=project['reference'])
+        self.assertFalse(studio.frame_stale(project, shot))
+        project['reference'] = 'new-portrait.png'
+        self.assertTrue(studio.frame_stale(project, shot))
+
     def test_written_direction_survives_board_placement_without_overwriting_kept_shots(self):
         rows = ('SHOT: 2 | Tavi takes the cup | Medium | Static | 4 | room tone | lead, Tavi | - | reframe | '
                 'Cup in lead hand | Cup in Tavi hand\n'

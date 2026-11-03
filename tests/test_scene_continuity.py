@@ -1,6 +1,9 @@
 import copy
 import json
 import threading
+import tempfile
+import hashlib
+from pathlib import Path
 import unittest
 from unittest.mock import Mock
 
@@ -30,6 +33,107 @@ class ContinuityTests(unittest.TestCase):
             return value
         instance.save = save
         return instance
+
+    def test_visual_memory_tracks_review_state_and_source_take(self):
+        project, first, second = self.film()
+        first['state_changes'] = {}
+        first['keyframe'] = 'first.png'
+        review = {'version': studio.director.REVIEW_VERSION, 'status': 'passed', 'outcome': 'passed'}
+        review['of'] = studio.visual_inputs(project, first)
+        first['takes']['keyframe'] = [{'name': 'first.png', 'review': review}]
+        second['memory_shot'] = first['id']
+        memory = studio.visual_memory(project, second)
+        self.assertEqual(memory['image'], 'first.png')
+        self.assertNotIn('error', memory)
+        first['state_changes'] = {'Cup · contents': 'tea'}
+        self.assertIn('error', studio.visual_memory(project, second))
+        first['state_changes'] = {}
+        first['keyframe'] = 'replacement.png'
+        self.assertIn('error', studio.visual_memory(project, second))
+        second['memory_shot'] = second['id']
+        self.assertIn('earlier shot', studio.visual_memory(project, second)['error'])
+
+    def test_source_review_completion_keeps_dependent_inputs_and_reports_live_findings(self):
+        project, first, second = self.film()
+        first['state_changes'] = {}
+        first['keyframe'] = 'first.png'
+        pending = studio.director.review_result([{'category':'uncertain', 'code':'pending_review',
+            'severity':'warning', 'message':'Visual checks are queued'}])
+        pending['of'] = studio.visual_inputs(project, first)
+        first['takes']['keyframe'] = [{'name':'first.png', 'review':pending}]
+        second['memory_shot'] = first['id']
+        before = studio.visual_inputs(project, second)
+        self.assertNotIn('source_findings', before['visual_memory'])
+        second['keyframe'] = 'return.png'
+        second['takes']['keyframe'] = [{'name':'return.png', 'recipe':{'visual_memory':{
+            'shot':first['id'], 'image':'first.png', 'plate':'memory.png', 'plate_hash':'hash',
+            'review_outcome':'uncertain'}}}]
+        project['memory_plates'] = [{'image':'memory.png', 'image_hash':'hash',
+                                     'plate_review_outcome':'passed', 'review':{'findings':[]}}]
+        source_review = studio.director.review_result([{'category':'reviewer_error', 'code':'invalid_review',
+            'severity':'warning', 'message':'Source reviewer failed'}])
+        source_review['of'] = studio.visual_inputs(project, first)
+        first['takes']['keyframe'][0]['review'] = source_review
+        self.assertEqual(before, studio.visual_inputs(project, second))
+        self.assertTrue(any('Source reviewer failed' in f['findings'] for f in studio.film_review(project)['findings']))
+        old = {'visual_memory':{'shot':first['id'], 'image':'first.png', 'state':{},
+                                'source_findings':['Old pending finding']}}
+        studio.normalize_memory_snapshots(old)
+        self.assertNotIn('source_findings', old['visual_memory'])
+
+    def test_memory_plate_review_retains_structured_plate_and_source_evidence(self):
+        project, first, _ = self.film()
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'runtime') as directory:
+            folder = Path(directory)
+            (folder / 'source.png').write_bytes(b'source')
+            worker = self.fake_studio(project)
+            worker.path = lambda _: folder
+            worker._upload = Mock(return_value='uploaded.png')
+            worker._render_checked = Mock(return_value=([{'filename':'plate.png'}], 1, {}))
+            worker._submit_for_job = Mock(return_value='job')
+            worker._checked_review = Mock(return_value=studio.director.review_result([]))
+            worker.comfy = Mock()
+            worker.comfy.download.side_effect = lambda _, path: path.write_bytes(b'plate')
+            worker.comfy.wait.side_effect = [
+                {'outputs':{'answer':{'text':['NO']}}},
+                {'outputs':{'location_result':{'text':['NO']}}},
+            ]
+            memory = {'shot':first['id'], 'image':'source.png', 'state':{}, 'source_findings':['Source check pending']}
+            name = worker._memory_plate(project, memory, lambda *_: None, {})
+            plate = next(m for m in project['memory_plates'] if m['image'] == name)
+            self.assertTrue(studio.valid_review_result(plate['review']))
+            self.assertEqual(plate['plate_review_outcome'], 'passed')
+            self.assertEqual(plate['review_outcome'], 'uncertain')
+            self.assertEqual(plate['source_findings'], ['Source check pending'])
+            project['review_policy'] = 'strict'
+            memory.pop('source_findings')  # The source review subsequently passed.
+            self.assertEqual(worker._memory_plate(project, memory, lambda *_: None, {}), name)
+            self.assertEqual(worker._render_checked.call_count, 1)
+
+    def test_memory_requires_explicit_approval_and_checks_content(self):
+        project, first, _ = self.film()
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / "runtime") as directory:
+            folder = Path(directory)
+            (folder / 'source.png').write_bytes(b'source')
+            (folder / 'plate.png').write_bytes(b'plate')
+            digest = hashlib.sha256(b'source').hexdigest()
+            project['memory_plates'] = [{'image':'plate.png', 'source':'source.png', 'source_hash':digest,
+                                         'source_shot':first['id'], 'aspect':project['aspect'], 'state':{}, 'empty':True, 'comparison_version':studio.MEMORY_COMPARISON_VERSION}]
+            worker = self.fake_studio(project)
+            worker.path = lambda _: folder
+            memory = {'image':'source.png', 'shot':first['id'], 'state':{}}
+            with self.assertRaisesRegex(RuntimeError, 'review needs attention'):
+                worker._memory_plate(project, memory, lambda *_: None, {})
+            worker.approve_memory_plate(project['id'], 'plate.png')
+            self.assertEqual(worker._memory_plate(project, memory, lambda *_: None, {}), 'plate.png')
+            (folder / 'plate.png').write_bytes(b'changed')
+            worker._render_checked = Mock(side_effect=RuntimeError('new candidate required'))
+            worker._upload = Mock(return_value='source.png')
+            with self.assertRaisesRegex(RuntimeError, 'new candidate required'):
+                worker._memory_plate(project, memory, lambda *_: None, {})
+            (folder / 'source.png').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError, 'source image changed'):
+                worker.approve_memory_plate(project['id'], 'plate.png')
 
     def test_cast_uncertainty_remains_until_director_accepts_plan(self):
         project, first, _ = self.film()

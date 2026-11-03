@@ -206,6 +206,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(data.get("continuity_rev"), int):
                     return self._json({"error": "Reload the continuity plan before fixing it"}, 400)
                 return self._json(studio.auto_fix_continuity(m.group(1), data["continuity_rev"]))
+            if m := re.fullmatch(r"/api/projects/(\w+)/memory/approve", route):
+                data = json.loads(self._body() or b"{}")
+                return self._json(studio.approve_memory_plate(m.group(1), data.get('name', '')))
             if m := re.fullmatch(r"/api/projects/(\w+)/plan-continuity", route):
                 return self._json(studio.enqueue("plan_continuity", m.group(1), label="Planning continuity"))
             if m := re.fullmatch(r"/api/projects/(\w+)/props/(\w+)/generate", route):

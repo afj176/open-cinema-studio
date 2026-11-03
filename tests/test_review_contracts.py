@@ -23,6 +23,27 @@ node_spec.loader.exec_module(review_nodes)
 
 
 class ReviewContractTests(unittest.TestCase):
+    def test_unrequested_state_does_not_invalidate_independent_cast_and_style(self):
+        expected = json.dumps({'state': {}, 'count': 1, 'people': {'Asha':'green cardigan'}})
+        report = {'count': 1, 'style': {'verdict':'pass', 'observed':'Live action'},
+                  'cast': {'verdict':'pass', 'observed':'One woman in a green cardigan'},
+                  'state': [{'Asha':'pass', 'observed':'Green cardigan'}]}
+        result = director.parse_visual_review(json.dumps(report), expected)
+        self.assertEqual(result['outcome'], 'passed')
+        self.assertEqual(result['evidence']['unsolicited_state'], report['state'])
+        report['count'] = 2
+        self.assertEqual(director.parse_visual_review(json.dumps(report), expected)['outcome'], 'content_issue')
+
+    def test_cast_count_disagreement_is_uncertain_not_a_confirmed_defect(self):
+        expected = json.dumps({'state': {}, 'count': 1})
+        report = {'count':1, 'style':{'verdict':'pass', 'observed':'Live action'},
+                  'cast':{'verdict':'pass', 'observed':'One person seen from behind'}, 'state':[]}
+        result = director.parse_visual_review(json.dumps(report), expected, observed_count='0')
+        self.assertEqual(result['outcome'], 'uncertain')
+        self.assertEqual(result['issues'][0]['code'], 'cast_count_disagreement')
+        report['count'] = 0
+        self.assertEqual(director.parse_visual_review(json.dumps(report), expected, observed_count='0')['outcome'], 'content_issue')
+
     def test_malformed_observation_reaches_parser_without_fabricated_evidence(self):
         raw = '{"count": 1, "style" "pass"}'
         result, = review_nodes.OpenCinemaAppendObservation().append(
