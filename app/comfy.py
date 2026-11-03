@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import functools
+from contextlib import closing
 import hashlib
+import shutil
 import threading
 import time
 import urllib.parse
@@ -55,13 +57,65 @@ class Comfy:
         self._event_revision = 0
         self._ws_started = False
         self._ws_connected = False
+        self._ws_connections = 0
+        self._ws_last_error = None
+        self._listener_lock = threading.Lock()
+        self._terminal_revisions: dict[str, int] = {}
+        self._last_progress: dict[str, float] = {}
+
+    def event_status(self) -> dict[str, Any]:
+        """Small diagnostic snapshot; HTTP history remains the source of truth."""
+        with self._event_condition:
+            return {"available": websocket is not None, "connected": self._ws_connected,
+                    "connections": self._ws_connections, "last_error": self._ws_last_error}
+
+    def _connection_changed(self, connected: bool, error: str | None = None) -> None:
+        with self._event_condition:
+            self._ws_connected = connected
+            if connected:
+                self._ws_connections += 1
+                self._ws_last_error = None
+            elif error:
+                self._ws_last_error = error[:200]
+            self._event_revision += 1
+            self._event_condition.notify_all()
+        if not connected and self.on_event:
+            self.on_event({"type": "studio_socket_disconnected", "data": {}})
+
+    def _receive_event(self, message: dict[str, Any]) -> None:
+        """Progress updates the UI; terminal events alone request prompt history."""
+        kind, data = message.get("type"), message.get("data")
+        if not isinstance(data, dict):
+            return
+        prompt_id = data.get("prompt_id")
+        terminal = kind in {"execution_success", "execution_error", "execution_interrupted"} or (
+            kind == "executing" and "node" in data and data["node"] is None)
+        if terminal and isinstance(prompt_id, str):
+            with self._event_condition:
+                self._terminal_revisions[prompt_id] = self._terminal_revisions.get(prompt_id, 0) + 1
+                if len(self._terminal_revisions) > 256:
+                    self._terminal_revisions.pop(next(iter(self._terminal_revisions)))
+                self._event_condition.notify_all()
+        if kind not in {"progress", "executing", "execution_start", "execution_success",
+                        "execution_error", "execution_interrupted"}:
+            return  # token streams, previews and queue broadcasts do not alter Studio jobs
+        if kind == "progress" and not terminal:
+            key = str(prompt_id or "current")
+            now = time.monotonic()
+            if now - self._last_progress.get(key, float("-inf")) < 0.25:
+                return
+            self._last_progress[key] = now
+            if len(self._last_progress) > 256:
+                self._last_progress.pop(next(iter(self._last_progress)))
+        if self.on_event:
+            self.on_event(message)
 
     def _listen(self):
         while True:
             try:
                 url = self.server.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-                with websocket.create_connection(url + "/ws?clientId=" + self.client_id, timeout=30) as connection:
-                    self._ws_connected = True
+                with closing(websocket.create_connection(url + "/ws?clientId=" + self.client_id, timeout=30)) as connection:
+                    self._connection_changed(True)
                     while True:
                         try:
                             raw = connection.recv()
@@ -72,30 +126,35 @@ class Comfy:
                             break
                         if not isinstance(raw, str):
                             continue  # binary previews are not Studio status events
-                        message = json.loads(raw)
-                        with self._event_condition:
-                            self._event_revision += 1
-                            self._event_condition.notify_all()
-                        if self.on_event:
-                            self.on_event(message)
-            except Exception:
-                pass  # history is authoritative; retry the event channel independently
+                        try:
+                            message = json.loads(raw)
+                        except ValueError:
+                            continue
+                        if isinstance(message, dict):
+                            self._receive_event(message)
+            except Exception as error:
+                self._ws_last_error = type(error).__name__ + ": " + str(error)[:160]
             finally:
-                self._ws_connected = False
+                self._connection_changed(False, self._ws_last_error)
             time.sleep(3)
 
     def _json(self, path: str, payload: dict[str, Any] | None = None, timeout: float = 60) -> Any:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(self.server + path, data=data,
                                          headers={"Content-Type": "application/json"})
-        for attempt in range(3):  # a ComfyUI busy loading weights can miss a connection; try again before failing
+        attempts = 3 if payload is None else 1
+        for attempt in range(attempts):
             try:
                 with urllib.request.urlopen(request, timeout=timeout) as response:
                     return json.loads(response.read() or b"null")
             except urllib.error.HTTPError as error:
-                raise ComfyError(f"{path}: HTTP {error.code}: {error.read().decode('utf-8', 'replace')[:2000]}") from error
+                try:
+                    detail = error.read().decode('utf-8', 'replace')[:2000]
+                finally:
+                    error.close()
+                raise ComfyError(f"{path}: HTTP {error.code}: {detail}") from error
             except (urllib.error.URLError, TimeoutError):
-                if attempt == 2 or timeout < 10:
+                if attempt == attempts - 1 or timeout < 10:
                     raise
                 time.sleep(3)
 
@@ -115,7 +174,7 @@ class Comfy:
         # Read once: hashing and multipart construction share the same snapshot.
         content = path.read_bytes()
         digest = hashlib.sha256(content).hexdigest()
-        key = (name, digest)
+        key = (Path(name).suffix.lower(), digest)
         with self._upload_lock:
             cached = self._uploads.get(key)
         if cached:
@@ -152,14 +211,18 @@ class Comfy:
 
     @timed
     def submit(self, graph: dict[str, Any]) -> str:
-        if websocket is not None and not self._ws_started:
-            self._ws_started = True
-            threading.Thread(target=self._listen, daemon=True, name="comfy-events").start()
+        with self._listener_lock:
+            if websocket is not None and not self._ws_started:
+                self._ws_started = True
+                threading.Thread(target=self._listen, daemon=True, name="comfy-events").start()
         result = self._json("/prompt", {"prompt": graph, "client_id": self.client_id})
         if result.get("node_errors"):
             raise ComfyError(f"Graph rejected: {json.dumps(result['node_errors'])[:2000]}")
         if self.on_event:
-            self.on_event({"type": "studio_submitted", "data": {"prompt_id": result["prompt_id"]}})
+            # Send only node identifiers and types, never graph inputs or prompts.
+            classes = {str(key): value.get("class_type") for key, value in graph.items()
+                       if isinstance(value, dict) and isinstance(value.get("class_type"), str)}
+            self.on_event({"type": "studio_submitted", "data": {"prompt_id": result["prompt_id"], "node_classes": classes}})
         return result["prompt_id"]
 
     @timed
@@ -169,6 +232,10 @@ class Comfy:
         while True:
             with self._event_condition:
                 revision = self._event_revision
+                terminal_revision = self._terminal_revisions.get(prompt_id, 0)
+            metrics = getattr(self._timing, "metrics", None)
+            if metrics is not None:
+                metrics["history_requests"] = metrics.get("history_requests", 0) + 1
             history = self._json(f"/history/{prompt_id}")
             record = history.get(prompt_id) if history else None
             if record:
@@ -185,7 +252,8 @@ class Comfy:
             if on_tick:
                 on_tick(elapsed)
             with self._event_condition:
-                self._event_condition.wait_for(lambda: self._event_revision != revision,
+                self._event_condition.wait_for(lambda: self._event_revision != revision or
+                                               self._terminal_revisions.get(prompt_id, 0) != terminal_revision,
                                                timeout=5 if self._ws_connected else 1)
 
     def run(self, graph: dict[str, Any], **kwargs: Any) -> list[dict[str, Any]]:
@@ -207,8 +275,16 @@ class Comfy:
                                         "subfolder": descriptor.get("subfolder", ""),
                                         "type": descriptor.get("type", "output")})
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(f"{self.server}/view?{query}", timeout=300) as response:
-            destination.write_bytes(response.read())
+        temporary = destination.with_name(destination.name + "." + uuid.uuid4().hex + ".part")
+        try:
+            with urllib.request.urlopen(f"{self.server}/view?{query}", timeout=300) as response, temporary.open("wb") as output:
+                length = getattr(response, "headers", {}).get("Content-Length")
+                shutil.copyfileobj(response, output, length=1024 * 1024)
+                if length is not None and output.tell() != int(length):
+                    raise ComfyError("Asset download ended before its declared size was received")
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
         return destination
 
     def interrupt(self) -> None:

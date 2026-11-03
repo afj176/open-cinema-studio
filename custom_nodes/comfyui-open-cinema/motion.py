@@ -388,13 +388,20 @@ def stamp_overlay(frames: np.ndarray, fps: float, text: str, highlight: str, loo
     return np.clip(out, 0, 1)
 
 
-def _card_background(W: int, H: int, style: Style, rng: np.random.Generator) -> np.ndarray:
+def _card_background_base(W: int, H: int, style: Style) -> np.ndarray:
     base = np.array(rgb(style.bg)[:3], dtype=np.float32) / 255.0
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     d = np.sqrt(((xx - W / 2) / (W * 0.7)) ** 2 + ((yy - H / 2) / (H * 0.7)) ** 2)
     lift = np.clip(1 - d, 0, 1)[..., None] * 0.06
+    return base + lift
+
+
+def _card_background(W: int, H: int, style: Style, rng: np.random.Generator,
+                     base: np.ndarray | None = None) -> np.ndarray:
+    if base is None:
+        base = _card_background_base(W, H, style)
     grain = rng.normal(0, 0.018, (H, W, 1)).astype(np.float32)
-    return np.clip(base + lift + grain, 0, 1)
+    return np.clip(base + grain, 0, 1)
 
 
 def cards(texts: list[str], fps: float, width: int, height: int, look: str, per_card: float = 1.1,
@@ -405,13 +412,14 @@ def cards(texts: list[str], fps: float, width: int, height: int, look: str, per_
     """
     style = style_for(look, palette)
     rng = np.random.default_rng(seed)
+    background_base = _card_background_base(width, height, style)
     total = int(round(per_card * len(texts) * fps))
     out = np.zeros((total, height, width, 3), dtype=np.float32)
     for i in range(total):
         t = i / fps
         k = min(len(texts) - 1, int(t // per_card))
         local_start = k * per_card
-        frame = _card_background(width, height, style, rng)
+        frame = _card_background(width, height, style, rng, background_base)
         layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         hud(layer, style, t, 0, per_card * len(texts), {"tl": "OPEN CINEMA"}, i)
         starburst(layer, style, t, local_start, 0.6, seed + k, 0.9)
@@ -424,8 +432,14 @@ def cards(texts: list[str], fps: float, width: int, height: int, look: str, per_
             lab = labels[k].upper()
             ImageDraw.Draw(layer).text((width / 2 - f.getlength(lab) / 2, height * 0.3), lab, font=f,
                                        fill=rgb(style.accent, int(255 * clamp((t - local_start) / 0.15))))
-        out[i] = _over(frame, layer)
-    return np.clip(out, 0, 1)
+        # Compose into the per-frame buffer; avoid multiple full-frame RGB
+        # temporaries and avoid a second copy of the entire video on return.
+        overlay = np.asarray(layer).astype(np.float32) / 255.0
+        alpha = overlay[..., 3:4]
+        np.multiply(frame, 1 - alpha, out=frame)
+        frame += overlay[..., :3] * alpha
+        out[i] = frame
+    return np.clip(out, 0, 1, out=out)
 
 
 def type_sheet(title: str, look: str, width: int = 1344, height: int = 768) -> Image.Image:

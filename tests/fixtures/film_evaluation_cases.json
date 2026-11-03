@@ -1,0 +1,34 @@
+[
+  {
+    "id": "live_two_characters",
+    "seed": 1101,
+    "subject": "A woman with short black hair and a green cardigan",
+    "look": "Naturalistic live-action drama, late-afternoon window light",
+    "brief": "Two friends discuss a missing key at a kitchen table. One hands the key to the other, who replies. Preserve both faces and the key across an angle change.",
+    "checks": ["identity", "continuity", "action", "dialogue"]
+  },
+  {
+    "id": "cel_cartoon",
+    "seed": 1102,
+    "subject": "A student with a curly dark bob, yellow hoodie and red lunch tray",
+    "look": "Original hand-drawn 2D cel animation with flat colour and expressive poses",
+    "brief": "A student carries a red lunch tray across a school cafeteria to join a friend. Show the action and a reaction from different shot sizes.",
+    "checks": ["identity", "style", "continuity", "action"]
+  },
+  {
+    "id": "shadow_puppet",
+    "seed": 1103,
+    "subject": "A fisher with a short hairstyle, simple smock and crooked staff",
+    "look": "Flat articulated shadow-puppet animation on a backlit parchment screen",
+    "brief": "A fisher carries a crooked staff through a village. Three villagers react as the fisher raises it. Keep the cutout style and staff shape consistent.",
+    "checks": ["identity", "style", "continuity", "action"]
+  },
+  {
+    "id": "dialogue_ensemble",
+    "seed": 1104,
+    "subject": "A handmade cloth puppet with a blue coat and a red scarf",
+    "look": "Warm stop-motion miniature set with handmade cloth puppets",
+    "brief": "Three distinct characters examine a blue parcel. One asks whether it is safe; another replies and passes it across the table.",
+    "checks": ["identity", "style", "continuity", "dialogue"]
+  }
+]

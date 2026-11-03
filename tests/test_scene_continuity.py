@@ -2,6 +2,7 @@ import copy
 import json
 import threading
 import unittest
+from unittest.mock import Mock
 
 from test_asset_dependencies import fixture
 import studio
@@ -29,6 +30,27 @@ class ContinuityTests(unittest.TestCase):
             return value
         instance.save = save
         return instance
+
+    def test_cast_uncertainty_remains_until_director_accepts_plan(self):
+        project, first, _ = self.film()
+        first['cast_roster_unresolved'] = ['Tavi']
+        project['continuity_plan']['issues'] = ['Shot 1: check cast']
+        project['continuity_rev'] = 3
+        worker = self.fake_studio(project)
+        worker.update(project['id'], {'continuity_rev':3, 'title':'Edited title'})
+        self.assertEqual(project['shots'][0]['cast_roster_unresolved'], ['Tavi'])
+        worker.update(project['id'], {'continuity_rev':3, 'accept_continuity':True})
+        self.assertNotIn('cast_roster_unresolved', project['shots'][0])
+        self.assertTrue(project['continuity_plan']['acknowledged'])
+
+    def test_ambiguous_presence_review_explains_actual_uncertainty(self):
+        project, first, _ = self.film()
+        first['cast_roster_unresolved'] = ['Tavi']
+        worker = self.fake_studio(project)
+        worker._checked_review = Mock(return_value=studio.director.review_result([]))
+        result = worker._review_image(project, first, 'frame.png', lambda _: None)
+        issue = next(issue for issue in result['issues'] if issue['code'] == 'unresolved_cast_presence')
+        self.assertIn('whether this character is visible', issue['message'])
 
     def test_ledger_inherits_result_and_edit_invalidates_downstream(self):
         project, first, second = self.film()
@@ -60,6 +82,39 @@ class ContinuityTests(unittest.TestCase):
         self.assertEqual(middle["state"], {"Cup · contents": "empty"})
         self.assertEqual(middle["allowed_counts"], [1, 2])
         self.assertEqual(studio.starting_cast(project, first), (True, ""))
+
+    def test_group_rosters_preserve_cast_evidence_without_inventing_a_count(self):
+        project, first, _ = self.film()
+        project['characters'] = 'The Patrons: a cluster of people in raincoats\nElder Fisher: an older person in grey'
+        first.update(start_cast=['Lead', 'Elder Fisher', 'trio of villagers'],
+                     end_cast=['Lead', 'Elder Fisher', 'The Patrons'])
+        opening = studio.review_requirements(project, first, 'start')
+        self.assertEqual(opening['count'], 5)
+        self.assertEqual(opening['allowed_counts'], [5])
+        self.assertEqual(opening['people']['trio of villagers'], 'trio of villagers')
+        self.assertNotIn('trio of villagers', opening['unresolved_cast'])
+        ending = studio.review_requirements(project, first, 'end')
+        self.assertIsNone(ending['count'])
+        self.assertIsNone(ending['allowed_counts'])
+        self.assertIn('The Patrons', ending['people'])
+        middle = studio.review_requirements(project, first, 'middle')
+        self.assertIsNone(middle['allowed_counts'])
+        self.assertIn('Elder Fisher', middle['people'])
+        self.assertIsNone(studio.director.character_count(True, 'The Patrons (a cluster of people in raincoats)'))
+        self.assertEqual(studio.director.character_count(True, 'trio of villagers (three people)'), 4)
+
+    def test_unregistered_proper_name_is_uncertain_not_a_visual_description(self):
+        project, first, _ = self.film()
+        project['characters'] = 'Tavi: a person in a yellow coat'
+        first['start_cast'] = ['Lead', 'Tavi', 'Mara']
+        required = studio.review_requirements(project, first, 'start')
+        self.assertNotIn('Mara', required['people'])
+        self.assertEqual(required['unresolved_cast'], ['Mara'])
+        worker = self.fake_studio(project)
+        worker._checked_review = Mock(return_value=studio.director.review_result([]))
+        result = worker._review_image(project, first, 'frame.png', lambda _: None)
+        self.assertEqual(result['outcome'], 'uncertain')
+        self.assertTrue(any(issue['code'] == 'unresolved_cast_identity' for issue in result['issues']))
 
     def test_script_edit_requires_plan_review_but_sound_does_not(self):
         project, first, _ = self.film()
@@ -143,6 +198,7 @@ class ContinuityTests(unittest.TestCase):
 
     def test_rejected_candidate_is_preserved_without_promotion(self):
         project, first, _ = self.film()
+        project['review_policy'] = 'strict'
         instance = self.fake_studio(project)
         review = {"status": "needs_review", "version": 1, "findings": ["Wrong owner"], "of": studio.visual_inputs(project, first)}
         with self.assertRaisesRegex(RuntimeError, "Wrong owner"):
@@ -156,6 +212,7 @@ class ContinuityTests(unittest.TestCase):
 
     def test_director_override_requires_reason_and_current_inputs(self):
         project, first, _ = self.film()
+        project['review_policy'] = 'strict'
         review = {"status": "needs_review", "version": 1, "findings": ["Ambiguous style"], "of": studio.visual_inputs(project, first)}
         first["takes"]["keyframe"].append({"name": "candidate.png", "review": review})
         instance = self.fake_studio(project)
@@ -171,6 +228,7 @@ class ContinuityTests(unittest.TestCase):
 
     def test_stitch_rejects_unreviewed_clips(self):
         project, _, _ = self.film()
+        project['review_policy'] = 'strict'
         instance = self.fake_studio(project)
         with self.assertRaisesRegex(RuntimeError, "passing video review"):
             instance._run_stitch({"project": project["id"]}, lambda _: None)
@@ -189,6 +247,17 @@ class ContinuityTests(unittest.TestCase):
         self.assertTrue(any('unknown' in issue for issue in recovered['issues']))
         with self.assertRaises(ValueError):
             studio.director.parse_continuity(json.dumps(plan), 1, recover_missing=False)
+
+    def test_plan_schema_accepts_capitalized_keys_but_rejects_collisions(self):
+        plan = {'Initial': {'Location': 'Kitchen'}, 'Design': 'Kitchen', 'Issues': [],
+                'Shots': [{'Index': 1, 'Changes': {}, 'start_checks': ['Location'],
+                           'end_checks': ['Location'], 'start_cast': ['Lead'], 'end_cast': ['Lead']}]}
+        parsed = studio.director.parse_continuity(json.dumps(plan), 1)
+        self.assertEqual(parsed['shots'][0]['index'], 1)
+        self.assertEqual(parsed['initial'], {'Location': 'Kitchen'})
+        plan['Shots'][0]['changes'] = {}
+        with self.assertRaisesRegex(ValueError, 'duplicate schema keys'):
+            studio.director.parse_continuity(json.dumps(plan), 1)
 
     def test_video_graph_uses_four_independent_images_and_shared_parser(self):
         graph = studio.graphs.video_review_graph("clip.mp4", "{}", "{}", "{}", "Paper-cut")

@@ -8,7 +8,9 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 import re
+import socket
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +23,22 @@ from setup import Setup  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_UPLOAD = 40 * 1024 * 1024
+
+
+class StudioHTTPServer(ThreadingHTTPServer):
+    """Reserve the Studio port exclusively, including across Windows processes."""
+
+    def __init__(self, *args, **kwargs):
+        # On Windows SO_REUSEADDR permits another process to bind the same TCP
+        # address, so the launcher and Comfy companion could both appear healthy
+        # while serving separate job queues. Unix reuse is useful for restarts.
+        self.allow_reuse_address = os.name != "nt"
+        super().__init__(*args, **kwargs)
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -90,7 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = urlparse(self.path).path
             if route == "/api/health":
-                return self._json({"service": "open-cinema", "comfy_url": self.studio.comfy.server})
+                return self._json({"service": "open-cinema", "comfy_url": self.studio.comfy.server,
+                                   "events": self.studio.comfy.event_status(),
+                                   "model_dir": str(self.studio.setup.model_dir) if self.studio.setup.model_dir else None})
             if route == "/comfy":
                 self.send_response(302)
                 self.send_header("Location", self.studio.comfy.server + "/")
@@ -159,8 +179,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             route = urlparse(self.path).path
             studio = self.studio
+            if route == "/api/setup/workflow":
+                return self._json(studio.setup.workflow_plan(json.loads(self._body() or b"{}").get('graph')))
             if route == "/api/setup/download":
                 return self._json(studio.setup.start(json.loads(self._body()).get("ids")))
+            if route == "/api/setup/model-root":
+                return self._json(studio.setup.select_model_root(json.loads(self._body() or b"{}").get("id")))
             if route == "/api/projects":
                 return self._json(studio.create(json.loads(self._body() or b"{}")))
             if m := re.fullmatch(r"/api/projects/(\w+)", route):
@@ -168,6 +192,13 @@ class Handler(BaseHTTPRequestHandler):
             if m := re.fullmatch(r"/api/projects/(\w+)/reference", route):
                 name = unquote(self.headers.get("X-Filename", "reference.png"))
                 return self._json(studio.set_reference(m.group(1), name, self._body()))
+            if m := re.fullmatch(r"/api/projects/(\w+)/characters/reference", route):
+                data = json.loads(self._body() or b"{}")
+                return self._json(studio.queue_character_reference(m.group(1), str(data.get('name', ''))))
+            if m := re.fullmatch(r"/api/projects/(\w+)/characters/reference-upload", route):
+                character = unquote(self.headers.get('X-Character', ''))
+                filename = unquote(self.headers.get('X-Filename', 'reference.png'))
+                return self._json(studio.set_character_reference(m.group(1), character, filename, self._body()))
             if m := re.fullmatch(r"/api/jobs/(\w+)/retry", route):
                 return self._json(studio.retry_job(m.group(1)))
             if m := re.fullmatch(r"/api/jobs/(\w+)/auto-fix", route):
@@ -206,6 +237,8 @@ class Handler(BaseHTTPRequestHandler):
             if m := re.fullmatch(r"/api/projects/(\w+)/render", route):
                 options = json.loads(self._body() or b"{}")
                 return self._json(studio.queue_film(m.group(1), bool(options.get("redo"))))
+            if m := re.fullmatch(r"/api/projects/(\w+)/review-reel", route):
+                return self._json(studio.enqueue('review_reel', m.group(1), label='Building review reel'))
             if m := re.fullmatch(r"/api/projects/(\w+)/cast", route):
                 return self._json(studio.enqueue("cast", m.group(1), None, "Casting"))
             if m := re.fullmatch(r"/api/projects/(\w+)/write-lead", route):
@@ -298,10 +331,11 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8420)
     parser.add_argument("--open", action="store_true", help="open the studio in a browser")
-    parser.add_argument("--models-dir", help="Local ComfyUI models folder; enables explicit downloads from Setup")
+    parser.add_argument("--models-dir", default=os.environ.get("OPEN_CINEMA_MODELS_DIR"),
+                        help="Local ComfyUI models folder; enables explicit downloads from Setup")
     args = parser.parse_args()
     # Reserve the port before creating workers or touching job history.
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    server = StudioHTTPServer((args.host, args.port), Handler)
     Handler.studio = Studio(args.comfy)
     Handler.studio.setup = Setup(Handler.studio.comfy, args.models_dir)
     url = f"http://{args.host}:{args.port}"

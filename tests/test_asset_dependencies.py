@@ -30,6 +30,41 @@ def fixture():
 
 
 class AssetDependenciesTests(unittest.TestCase):
+    def test_cast_merge_deduplicates_case_whitespace_and_lead_aliases(self):
+        project, shot = fixture()
+        project['cast'] = 'Mira, short black hair'
+        shot['start_cast'] = [' Lead ', 'Tavi']
+        shot['end_cast'] = ['mira', ' tavi ']
+        lead, others = studio.performing_cast(project, shot)
+        self.assertTrue(lead)
+        self.assertEqual(others, 'Tavi (curly hair, green coat)')
+        review = studio.review_requirements(project, shot, 'middle')
+        self.assertEqual(review['count'], 2)
+        self.assertEqual(review['allowed_counts'], [2])
+        self.assertEqual(review['visible_names'], ['Lead', 'Tavi'])
+        self.assertEqual(set(review['people']), {'Mira', 'Tavi'})
+
+    def test_frame_lineage_follows_actual_start_roster_and_trims_old_names(self):
+        project, shot = fixture()
+        shot['lead'] = True
+        shot['start_cast'] = [' Tavi ']
+        shot['end_cast'] = [' Tavi ']
+        take = studio.current_take(shot, 'keyframe')
+        take['recipe']['lead'] = None
+        take['recipe']['visual'] = studio.visual_inputs(project, shot)
+        self.assertEqual(studio.starting_cast(project, shot), (False, 'Tavi (curly hair, green coat)'))
+        self.assertEqual(studio.review_requirements(project, shot, 'start')['visible_names'], ['Tavi'])
+        self.assertFalse(studio.asset_status(project)[shot['id']]['start_lead'])
+        self.assertFalse(studio.frame_stale(project, shot))
+
+        shot['start_cast'] = [' Lead ', ' Tavi ']
+        self.assertTrue(studio.starting_cast(project, shot)[0])
+        self.assertTrue(studio.asset_status(project)[shot['id']]['start_lead'])
+        self.assertTrue(studio.frame_stale(project, shot))
+        take['recipe']['lead'] = project['reference']
+        take['recipe']['visual'] = studio.visual_inputs(project, shot)
+        self.assertFalse(studio.frame_stale(project, shot))
+
     def test_continuation_tracks_previous_video_take(self):
         project, first = fixture()
         second = copy.deepcopy(first)
@@ -175,7 +210,8 @@ class AssetDependenciesTests(unittest.TestCase):
         tight = studio.director.shot_prompt("Pass a cup", "Medium", "Paper-cut animation", has_cast=True,
                                             storyboard=True, world_reference=False, world="Huge landscape")
         self.assertNotIn("Picture 3", tight)
-        self.assertNotIn("Huge landscape", tight)
+        self.assertIn("Location context: Huge landscape", tight)
+        self.assertIn("without adding a wide establishing view", tight)
 
     def test_paper_cut_medium_wins_over_motion_adjective(self):
         look = "2D paper-cut animation with stop-motion-like movement"

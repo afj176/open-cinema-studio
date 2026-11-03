@@ -68,7 +68,7 @@ class OpenCinemaShot:
             movement += " " + cast_transition_direction(json.loads(start_cast), json.loads(end_cast))
         return (world_plate_prompt(scene, look),
                 shot_prompt(action, shot_size, frame_look, continuity, has_cast=bool(cast.strip()) and lead_in_shot,
-                            camera_move=camera_move, lead=lead_in_shot, world=scene.split(". ")[0], others=others,
+                            camera_move=camera_move, lead=lead_in_shot, world=scene.strip(), others=others,
                             line=line, start_frame=start_frame, storyboard=storyboard, world_reference=world_reference) + opening,
                 motion_prompt(action, camera_move, sound, frame_look, cast, shot_size, continuity, lead_in_shot, others, line,
                               start_frame, end_state) + movement,
@@ -135,12 +135,15 @@ class OpenCinemaCastReview:
 
     def review(self, observed, expected):
         import json, re
-        from .director import REVIEW_VERSION
+        from .director import review_result
         answer = observed.strip().rstrip(".")
         count = int(answer) if re.fullmatch(r"\d+", answer) else None
-        findings = [] if count == expected else [f"Expected {expected} visible characters; the reviewer counted {count if count is not None else 'an uncertain number'}. Inspect the drawing before using it."]
-        return (json.dumps({"version": REVIEW_VERSION, "status": "needs_review" if findings else "passed",
-                           "findings": findings, "expected_count": expected, "observed_count": count}),)
+        issues = [] if count == expected else [{
+            "category": "uncertain" if count is None else "content_issue",
+            "code": "cast_count_unverifiable" if count is None else "cast_count_mismatch",
+            "severity": "warning" if count is None else "blocking",
+            "message": f"Expected {expected} visible characters; the reviewer counted {count if count is not None else 'an uncertain number'}. Inspect the drawing before using it."}]
+        return (json.dumps(review_result(issues, expected_count=expected, observed_count=count)),)
 
 
 class OpenCinemaValidateCast:
@@ -407,7 +410,9 @@ class OpenCinemaShotsBrief:
                              "beats": ("STRING", {"multiline": True, "default": ""}),
                              "shots": ("STRING", {"multiline": True, "default": ""}),
                              "write_beats": ("STRING", {"default": ""}),
-                             "characters": ("STRING", {"multiline": True, "default": ""})}}
+                             "characters": ("STRING", {"multiline": True, "default": ""}),
+                             "dialogue_mode": (["auto", "minimal", "dialogue", "silent"], {"default": "auto"}),
+                             "idea": ("STRING", {"multiline": True, "default": ""})}}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("prompt",)
@@ -415,10 +420,10 @@ class OpenCinemaShotsBrief:
     CATEGORY = "Open Cinema"
 
     def build(self, mode, count, index, title="", logline="", world="", look="", lead="", continuity="", beats="",
-              shots="", write_beats="", characters=""):
+              shots="", write_beats="", characters="", dialogue_mode="auto", idea=""):
         from .director import shot_brief
         return (shot_brief(mode, title, logline, world, look, lead, continuity, shots, index, count, beats,
-                           write_beats, characters),)
+                           write_beats, characters, dialogue_mode, idea),)
 
 
 class OpenCinemaParseShots:
@@ -635,7 +640,7 @@ class OpenCinemaFactBrief:
     def build(self, expected_json):
         from .director import fact_observation_brief, json_object
         keys = list(json_object(expected_json).get("state", {}))
-        return (keys or [""], [fact_observation_brief(key) for key in keys] or ["Describe the visible materials briefly."])
+        return (keys or [""], [fact_observation_brief(key, expected_json) for key in keys] or ["Describe the visible materials briefly."])
 
 
 class OpenCinemaAppendObservation:
@@ -652,7 +657,12 @@ class OpenCinemaAppendObservation:
         from .director import json_object
         if len(key) != len(observation):
             raise ValueError("Each required fact needs its own visual observation")
-        result = json_object(text[0])
+        try:
+            result = json_object(text[0])
+        except (ValueError, TypeError, IndexError):
+            # Preserve the original output for the review parser. Fabricating a
+            # valid report here could turn missing evidence into an approval.
+            return (text[0] if text else "",)
         result["state"] = [{"key": k, "verdict": "observed", "observed": value.strip()} for k, value in zip(key, observation) if k]
         return (json.dumps(result),)
 

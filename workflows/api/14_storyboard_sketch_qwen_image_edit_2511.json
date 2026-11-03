@@ -157,7 +157,7 @@
         "mono",
         0
       ],
-      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
+      "prompt": "Count every separate visible character in this image, including humans, animals, anthropomorphic cartoon animals, quadrupeds, robots, creatures, puppets and dolls. A puppet or doll is a separate character even when a human holds or operates it. A cat or other animal is one character even if no human is present. Include characters in foreground, background and doorways. Count each actual figure once; do not count objects, plants, clothes, props, shadows, reflections, pictures or decorative statues as characters. Answer with only the total number as digits, and nothing else.",
       "max_length": 8,
       "sampling_mode": "off"
     }

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "live_action_keys",
+    "scene": "A quiet kitchen in late afternoon, with a wooden table and a window overlooking a garden.",
+    "look": "Naturalistic live-action drama, soft late-afternoon window light",
+    "cast": "Asha, short black hair, green cardigan, dark brown eyes",
+    "characters": "Emil: sandy hair, blue shirt, rectangular glasses",
+    "beats": ["Asha gives Emil the missing key.", "Emil replies and closes his hand around the key."],
+    "checks": ["identity", "style", "continuity", "action", "dialogue", "viewpoint"],
+    "shots": [
+      {"beat": 1, "beat_source": "Asha gives Emil the missing key.", "action": "Asha places a small brass key on the table in front of Emil", "start_frame": "Asha and Emil sit facing each other at the kitchen table, with Asha holding a small brass key", "end_state": "The key rests on the table in front of Emil", "lead": true, "others": "Emil", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Quiet room tone and distant birds", "line": "Lead: \"I found it.\"", "transition": "cut", "seed": 2101},
+      {"beat": 2, "beat_source": "Emil replies and closes his hand around the key.", "action": "Emil picks up the key and closes his hand around it", "start_frame": "Over Asha's shoulder, facing Emil with the key on the table in front of him", "end_state": "Emil holds the brass key", "lead": true, "others": "Emil", "shot_size": "Close-up", "camera_move": "Static", "seconds": 3, "sound": "Quiet room tone and distant birds", "line": "Emil: \"Thank you.\"", "transition": "cut", "frame_source": "previous_end", "seed": 2102}
+    ]
+  },
+  {
+    "id": "cel_animation_bus_stop",
+    "scene": "A quiet city bus stop at sunrise, with a metal shelter and wooden bench.",
+    "look": "Warm hand-drawn 2D animation with clean cel shading",
+    "cast": "Mira, short black hair, brown eyes and a yellow jacket",
+    "characters": "Noah: curly brown hair, blue jacket and round glasses",
+    "beats": ["Mira greets Noah at the bus stop.", "Noah answers from a new angle."],
+    "checks": ["identity", "style", "continuity", "action", "dialogue", "viewpoint"],
+    "shots": [
+      {"beat": 1, "beat_source": "Mira greets Noah at the bus stop.", "action": "Mira turns to Noah and smiles", "start_frame": "Mira and Noah stand together at a bus stop", "end_state": "Mira smiles at Noah", "lead": true, "others": "Noah", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Soft wind and distant traffic", "line": "Lead: \"You made it.\"", "transition": "cut", "seed": 1701},
+      {"beat": 2, "beat_source": "Noah answers from a new angle.", "action": "Noah nods and replies to Mira", "start_frame": "Over Mira's shoulder, facing Noah at the same bus stop", "end_state": "Noah smiles at Mira", "lead": true, "others": "Noah", "shot_size": "Close-up", "camera_move": "Static", "seconds": 3, "sound": "Soft wind and distant traffic", "line": "Noah: \"I did.\"", "transition": "cut", "frame_source": "previous_end", "seed": 1702}
+    ]
+  },
+  {
+    "id": "stop_motion_parcel",
+    "scene": "A handmade miniature workshop with a wooden table, paper tools and a blue parcel.",
+    "look": "Warm stop-motion miniature set with handmade cloth puppets and visible fabric textures",
+    "cast": "Pip, a cloth puppet with a red scarf and a green coat",
+    "characters": "Tess: a cloth puppet with a blue coat and round button eyes",
+    "beats": ["Pip points to a blue parcel.", "Tess replies and moves the parcel closer."],
+    "checks": ["identity", "style", "continuity", "action", "dialogue", "viewpoint"],
+    "shots": [
+      {"beat": 1, "beat_source": "Pip points to a blue parcel.", "action": "Pip points at a blue parcel on the workshop table", "start_frame": "Pip and Tess stand on opposite sides of a blue parcel on a small table", "end_state": "Pip points at the blue parcel", "lead": true, "others": "Tess", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Soft workshop room tone", "line": "Lead: \"Is it safe?\"", "transition": "cut", "seed": 3101},
+      {"beat": 2, "beat_source": "Tess replies and moves the parcel closer.", "action": "Tess gently slides the blue parcel closer to Pip", "start_frame": "Over Pip's shoulder, facing Tess and the blue parcel on the table", "end_state": "The blue parcel is closer to Pip", "lead": true, "others": "Tess", "shot_size": "Close-up", "camera_move": "Static", "seconds": 3, "sound": "Soft workshop room tone", "line": "Tess: \"I think so.\"", "transition": "cut", "frame_source": "previous_end", "seed": 3102}
+    ]
+  },
+  {
+    "id": "intentional_puppeteer",
+    "scene": "A human puppeteer works at a wooden table in a miniature workshop.",
+    "look": "Warm live-action photography of a miniature stop-motion workshop",
+    "cast": "Rae, an adult human puppeteer wearing a blue shirt",
+    "characters": "Pip: a cloth puppet with a red scarf and a green coat",
+    "beats": ["Rae adjusts Pip at the table.", "Pip looks up as Rae steps back."],
+    "checks": ["identity", "style", "continuity", "action", "dialogue", "viewpoint"],
+    "shots": [
+      {"beat": 1, "beat_source": "Rae adjusts Pip at the table.", "action": "Rae gently adjusts Pip's scarf", "start_frame": "Rae stands at the table with Pip in front of her", "end_state": "Pip's scarf is adjusted", "lead": true, "others": "Pip", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Soft room tone", "line": "Lead: \"There you go.\"", "transition": "cut", "seed": 5101},
+      {"beat": 2, "beat_source": "Pip looks up as Rae steps back.", "action": "Pip looks up while Rae steps back", "start_frame": "Pip faces Rae across the table", "end_state": "Rae stands back from Pip", "lead": true, "others": "Pip", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Soft room tone", "line": "Lead: \"Ready?\"", "transition": "cut", "frame_source": "previous_end", "seed": 5102}
+    ]
+  },
+  {
+    "id": "character_reentry",
+    "scene": "A quiet kitchen with a wooden table and a garden window.",
+    "look": "Naturalistic live-action drama with soft daylight",
+    "cast": "Asha, short black hair and a green cardigan",
+    "characters": "Emil: sandy hair, blue shirt and rectangular glasses",
+    "beats": ["Emil leaves the kitchen while Asha waits.", "Emil returns and greets Asha."],
+    "checks": ["identity", "continuity", "action", "dialogue", "viewpoint"],
+    "shots": [
+      {"beat": 1, "beat_source": "Emil leaves the kitchen while Asha waits.", "action": "Emil walks out of the kitchen while Asha stays by the table", "start_frame": "Asha and Emil stand beside the kitchen table", "end_state": "Asha remains alone at the table; Emil is offscreen", "lead": true, "others": "Emil", "shot_size": "Medium", "camera_move": "Static", "seconds": 3, "sound": "Quiet room tone", "line": "Lead: \"See you soon.\"", "transition": "cut", "seed": 4101},
+      {"beat": 2, "beat_source": "Emil returns and greets Asha.", "action": "Emil returns to Asha and waves", "start_frame": "Asha stands by the table as Emil enters through the doorway", "end_state": "Emil stands beside Asha", "lead": true, "others": "Emil", "shot_size": "Wide", "camera_move": "Static", "seconds": 3, "sound": "Soft footsteps", "line": "Emil: \"I am back.\"", "transition": "cut", "frame_source": "previous_end", "seed": 4102}
+    ]
+  }
+]

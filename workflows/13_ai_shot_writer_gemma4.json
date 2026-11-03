@@ -69,7 +69,7 @@
    ],
    "size": [
     300,
-    382
+    430
    ],
    "flags": {},
    "order": 2,
@@ -103,6 +103,8 @@
     "1. The glass city drifts above the dunes at dawn, steam vents sighing\n2. The artisan's lens cracks in the furnace heat\n3. He finds a shard that bends the sunlight into rainbows\n4. On the terrace he raises the new lens to the sun\n5. Through it, the invisible desert wind becomes ribbons of light",
     "",
     "1, 2, 3, 4, 5",
+    "",
+    "auto",
     ""
    ]
   },
@@ -111,7 +113,7 @@
    "type": "OpenCinemaParseShots",
    "pos": [
     490,
-    716
+    764
    ],
    "size": [
     300,
@@ -170,7 +172,7 @@
    "type": "OpenCinemaReviewShotsBrief",
    "pos": [
     490,
-    946
+    994
    ],
    "size": [
     300,
@@ -573,7 +575,7 @@
     470,
     100,
     340,
-    1032
+    1080
    ],
    "color": "#b06634",
    "font_size": 22,

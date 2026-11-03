@@ -114,9 +114,9 @@ examples["16_scene_state_gemma4.json"] = graphs.continuity_graph(json.dumps({
     "shots": [{"index": 1, "action": CLOSE, "start_frame": "The lead holds the lens at chest height",
                "end_state": "The lead raises the lens to eye level"}]}), 1)
 REVIEW_EXPECTED = json.dumps({"state": {}, "count": 1, "allowed_counts": [1], "people": {"lead": CAST}})
-examples["17_frame_state_review_gemma4.json"] = graphs.visual_review_graph("oc_shot_keyframe.jpg", REVIEW_EXPECTED, LOOK)
+examples["17_frame_state_review_gemma4.json"] = graphs.visual_review_graph("oc_shot_keyframe.jpg", REVIEW_EXPECTED, LOOK, optimize=False)
 examples["18_video_continuity_review_gemma4.json"] = graphs.video_review_graph(
-    "oc_example_shot.mp4", REVIEW_EXPECTED, REVIEW_EXPECTED, REVIEW_EXPECTED, LOOK)
+    "oc_example_shot.mp4", REVIEW_EXPECTED, REVIEW_EXPECTED, REVIEW_EXPECTED, LOOK, optimize=False)
 
 LEAD = ("The lead → Picture 2", "lead", ["16", "17"])
 EDIT_TITLES = {"8": "Instruction (sees Picture 1 + 2)", "10": "Negative (empty)", "16": "Lead portrait",

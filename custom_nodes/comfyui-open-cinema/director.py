@@ -107,6 +107,7 @@ MEDIUM_FRAME = {
     "cg": "Still frame from a computer-animated feature, following the specified visual style",
     "stopmotion": "Still frame from a stop-motion feature, following the specified materials and visual style",
     "papercut": "Flat layered cut-paper animation, crisp paper silhouettes, matte paper fibres, shallow layered depth; flat paper faces and limbs, not rounded dolls or CGI",
+    "shadow_puppet": "Shadow-puppet animation: flat articulated silhouette figures and scenery against a backlit screen, crisp cut-out contours and deliberate shadow shapes",
 }
 MEDIUM_PORTRAIT = {
     "photo": "Natural photograph with sharp, detailed skin and hair, true-to-life colours",
@@ -117,6 +118,7 @@ MEDIUM_PORTRAIT = {
     "cg": "A character design in the specified computer animation style",
     "stopmotion": "A stop-motion character in the specified materials and visual style",
     "papercut": "A flat articulated cut-paper character design, paper face and limbs, crisp cut edges and matte paper fibres; not a rounded puppet",
+    "shadow_puppet": "A single flat articulated shadow-puppet character, with a distinctive cut-out silhouette and recognizable profile, shown against a backlit screen",
 }
 MEDIUM_FINISHED = {  # what a storyboard drawing turns into
     "photo": "a real photographic film frame in full colour",
@@ -127,6 +129,7 @@ MEDIUM_FINISHED = {  # what a storyboard drawing turns into
     "cg": "a finished computer-animated film frame",
     "stopmotion": "a finished stop-motion film frame",
     "papercut": "a finished flat layered cut-paper animation frame",
+    "shadow_puppet": "a finished shadow-puppet animation frame with flat articulated silhouettes against a backlit screen",
 }
 _MEDIUM_NEGATIVE = {
     "photo": "illustration, painting, cartoon, anime, 3d render, CGI, video game, plastic skin",
@@ -137,6 +140,7 @@ _MEDIUM_NEGATIVE = {
     "cg": "live action, photograph, flat 2D line art",
     "stopmotion": "live action, real people, flat illustration",
     "papercut": "photograph, real people, 3d render, rounded doll, plastic, clay, volumetric face",
+    "shadow_puppet": "photorealistic human face, realistic skin texture, three-dimensional character, separate duplicate actor",
 }
 
 
@@ -145,6 +149,14 @@ def medium(look: str) -> str:
         return LOOK_MEDIUM[look]
     import re
     text = re.sub(r"\b(?:not|no|without|avoid|never)\s+(?:a\s+)?(?:3d|3-d|cgi|computer[- ]animated)\b|\b(?:3d|cgi)[- ]free\b", "", (look or "").lower())
+    # A live-action scene may contain a stop-motion set or puppet. Treating
+    # that as an all-puppet film would explicitly exclude its human actors.
+    live = re.sub(r"\b(?:not|no|without|avoid|never)\s+(?:a\s+)?live[- ]action\b", "", text)
+    if re.search(r"\blive[- ]action\b", live) and re.search(r"\bstop[- ]motion\b", live):
+        return "photo"
+    shadow = re.sub(r"\b(?:not|no|without|avoid|never)\s+(?:a\s+)?shadow[- ]puppet(?:ry|s)?\b", "", text)
+    if re.search(r"\bshadow[- ]puppet(?:ry|s)?\b", shadow) and not re.search(r"\b(?:live[- ]action|photorealistic|photographic|3[ -]?d|cgi)\b", shadow):
+        return "shadow_puppet"
     if any(x in text for x in ("paper-cut", "paper cut", "papercut", "cut-paper")):
         return "papercut"
     if any(x in text for x in ("claymation", "plasticine")):
@@ -510,13 +522,25 @@ def previous_frame_direction() -> str:
             "Only include the people named for this new shot. Do not reset the object's condition or replay the prior action.")
 
 
-def following_frame_prompt(staging: str, shot_size: str, people: str, state: dict) -> str:
+def following_frame_prompt(staging: str, shot_size: str, people: str, state: dict, look: str = "",
+                           camera_move: str = "", expected_count: int | None = None) -> str:
     """A local edit of an accepted performance, without competing portrait/world aesthetics."""
     facts = "; ".join(f"{key}: {value}" for key, value in state.items() if not key.startswith("Design of "))
-    return ("Edit Picture 1 into the next shot. " + shot_size + ": " + staging + ". "
+    framing = SHOT_SIZES.get(shot_size, shot_size)
+    viewpoint = MOVE_VIEWPOINT.get(camera_move, "")
+    count_direction = ("No characters are visible in this frame. " if type(expected_count) is int and expected_count == 0 else
+                       f"Exactly {expected_count} visible characters in this frame; show each individual only once, with no extra or duplicate figures. "
+                       if isinstance(expected_count, int) and not isinstance(expected_count, bool) and expected_count > 0 else "")
+    return ("Edit Picture 1 into the next shot. " + framing + ": " + staging + ". "
+            + ("Initial camera viewpoint: " + viewpoint + ". " if viewpoint else "") +
             "Preserve the exact existing face, hair, wardrobe, object shape, folds, handle, colours and paper or other rendering material from Picture 1. "
-            "Keep the same set and lighting. Change only the framing and poses specified above. "
+            "Keep the same set, lighting, physical conditions and continuity of the action. "
+            "Use the specified camera viewpoint and framing for the new shot; when a different viewpoint is specified, "
+            "show the scene from that viewpoint rather than merely cropping Picture 1. "
+            "Keep people and objects in their consistent positions in the scene, allowing their appearance and screen positions to change with perspective. "
+            + count_direction +
             "Visible cast in this shot: " + people + ". Physical condition at this instant: " + facts + ". "
+            + ("Film visual direction: " + look + ". " + MEDIUM_FRAME[medium(look)] + ". " if look else "") +
             "This is the starting pose, before the next action happens. One image, no text.")
 
 
@@ -596,12 +620,23 @@ def select_title(text: str, avoid_words: str, idea: str) -> str:
 
 
 def continuity_repair_brief(text: str, context_json: str, shot_count: int) -> str:
+    checked = None
     try:
-        parse_continuity(text, shot_count, recover_missing=False)
-        error = "The draft is structurally valid. Verify its facts against the script."
+        checked = parse_continuity(text, shot_count, recover_missing=False)
+        error = ("; ".join(checked["issues"]) if checked["issues"] else
+                 "The draft is structurally valid. Verify its facts against the script.")
     except (ValueError, TypeError, KeyError) as exc:
         error = str(exc)
-    return (continuity_brief(context_json) + "\nCorrect this draft, returning the complete JSON object. "
+    try:
+        conflicts = cast_roster_conflicts(json_object(context_json), checked)
+    except (ValueError, TypeError, KeyError):
+        conflicts = []
+    roster_note = ("Opening direction mentions omitted named cast: " +
+                   "; ".join(f"shot {x['index']}: {x['name']}" for x in conflicts) +
+                   ". Recheck whether each person is actually visible at the start; "
+                   "do not count offscreen people, future entrances, memories or depictions. "
+                   "If visibility is unclear, use null for start_cast. ") if conflicts else ""
+    return (continuity_brief(context_json) + "\nCorrect this draft, returning the complete JSON object. " + roster_note +
             "Use a small set of stable exact initial keys. Copy those keys VERBATIM into changes and check arrays; "
             "never append the value or a state name to a key. Only track visible object states; character "
             "locations can change at a cut, and offscreen locations do not need state facts. Fix starting "
@@ -676,10 +711,19 @@ def parse_story(text: str, target: str = "everything", idea: str = "") -> dict[s
 
 # ---------------------------------------------------------------- AI shot writer
 SHOT_MODES = ("board", "next", "rewrite", "beat")
+DIALOGUE_MODES = ("auto", "minimal", "dialogue", "silent")
+_DIALOGUE_DIRECTION = {
+    "auto": "Let the story, genre, and character relationships decide how much dialogue is needed. "
+            "Use natural, purposeful lines for conversations and character-driven scenes, and silence when visuals tell the story better.",
+    "minimal": "Use dialogue sparingly, only at important moments; let action and images carry most of the story.",
+    "dialogue": "Write dialogue for conversations and character-driven moments wherever it advances the scene. "
+                "Use concise, distinct voices and alternate speakers across shots when appropriate; do not force speech into every shot.",
+    "silent": "This film has no spoken dialogue. Always write - for the line field; tell the story through action and sound instead.",
+}
 _NEW_BEAT = ("BEAT: one sentence of at most 18 words saying what the lead does and where, something a camera can "
              "see, that continues the story")
 SHOT_FIELDS = ("beat", "action", "shot_size", "camera_move", "seconds", "sound", "lead", "others", "line",
-               "transition", "start_frame", "end_state")
+               "transition", "frame_source", "start_frame", "end_state")
 _LEAD_WORDS = r"\b(he|she|his|her|hers|him|himself|herself|the lead|the figure|the artisan|the hero|the heroine)\b"
 
 
@@ -696,7 +740,8 @@ def shot_line(shot: dict) -> str:
                        shot.get("shot_size", "Wide"), shot.get("camera_move", "Static"),
                        str(int(round(float(shot.get("seconds", 4) or 4)))), str(shot.get("sound", "")).replace("|", "/"),
                        shot_who(shot), str(shot.get("line") or "-").replace("|", "/"),
-                       "continue" if shot.get("transition") == "continue" else "cut",
+                       ("continue" if shot.get("transition") == "continue" else
+                        "reframe" if shot.get("frame_source") == "previous_end" else "cut"),
                        str(shot.get("start_frame") or "-").replace("|", "/"),
                        str(shot.get("end_state") or "-").replace("|", "/")])
 
@@ -711,7 +756,7 @@ def beat_list_text(beats: list) -> str:
 
 def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", look: str = "", lead: str = "",
                continuity: str = "", shots: str = "", index: int = 1, count: int = 5, beats: str = "",
-               write_beats: str = "", characters: str = "") -> str:
+               write_beats: str = "", characters: str = "", dialogue_mode: str = "auto", idea: str = "") -> str:
     """Instruction for an open LLM (Gemma 4 12B (8-bit)) to write the storyboard. `beats` is the story as numbered beats
     (optional); `shots` the board so far as numbered shot lines, which stay as they are; `index` is 1-based.
     board: the shots for the beats in `write_beats` (or `count` shots that start, or continue and end, the film);
@@ -737,11 +782,22 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
            "described in a few words; none for a shot of only the place or an object. A POV shot excludes the "
            "lead unless their body is actually visible\n"
            "line: what is said aloud in this shot, as Speaker: \"words\" (Lead or a character's name, at most 14 "
-           "words), or - for no speech. Most shots have none; speak only when it matters\n"
-           "transition: cut, or continue only when the camera keeps rolling in one unbroken take from the shot before\n"
+           "words), or - for no speech. The speaker must be visible in who and in the start frame. "
+           "Write only one speaker per shot, with a line short enough to say naturally in the available seconds.\n"
+           "transition: choose cut, reframe, or continue. Use cut for a new scene, time jump, or independent view. "
+           "Use reframe when the very next moment needs a different angle on the same ongoing action: the new view "
+           "is made from the preceding shot's ending, retaining people, props and their positions. For a reframe, "
+           "specify the actual new camera viewpoint in the start frame (for example over a named person's shoulder, "
+           "or from a named side); a shot size alone is a crop, not a viewpoint. Describe whose face is visible, "
+           "whose back or shoulder is in the foreground, and which named people are outside the frame when relevant. "
+           "A foreground shoulder belongs to that same person and must not appear as another figure. "
+           "Include only people actually visible in who; do not invent an angle, person, or exclusion contrary to the story. "
+           "Use continue when the camera keeps rolling without a cut from the preceding shot's ending. "
+           "Choose only when the story supports it; the first shot of the film, with no preceding shot, must be cut.\n"
            "start frame: one frozen moment BEFORE the action completes. Specify viewpoint, foreground subject, "
            "left/right placement, hands and prop ownership. For an entrance, the arriving person is initially offscreen; "
-           "for an exchange, both participants are already visible. Never ask an already visible actor to appear again. "
+           "for a visible handoff, show the participants and object needed for the action; a reaction shot may leave "
+           "other people offscreen. Never ask an already visible actor to appear again. "
            "This becomes the storyboard and first video frame, not the action's aftermath\n"
            "end state: the visible result at the end of the action, including who now holds the important object. "
            "The next shot must begin from this result, not reset it")
@@ -754,7 +810,9 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
             "character, a close detail (an object, the light, the weather on a surface) or the opening view of the "
             "world; avoid repeating a wide view of the world.\n"
             "- Choose coverage to make the action legible: establish geography, show a meaningful action or reaction, "
-            "and preserve screen direction and the position of people and props across cuts. Change location only "
+            "and preserve screen direction and the position of people and props across cuts. For an exchange or "
+            "reaction within the same scene, a reframe can follow the preceding performance from another angle; "
+            "continue can extend an uninterrupted camera move. Change location only "
             "when the story does; do not invent travel or a new angle merely for variety.\n"
             "- Each shot picks up the consequence of the preceding beat and advances the goal, obstacle or decision. "
             "Keep time, weather and character placement consistent unless the story changes them.\n"
@@ -763,10 +821,16 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
             "- Every detail fits the world exactly.\n\nTHE FILM\n" + (film or "(nothing yet)"))
     head += ("\nDIRECTABLE COVERAGE\nChoose the subject the audience must see to understand each beat. "
              "Use inserts for decisive object changes, close views for reactions, and two-shots for exchanges. "
-             "Do not stage every beat as a full-body figure in the same wide landscape. An exchange must show "
-             "both people and the object between their hands. Keep a recurring prop's shape, material and owner "
+             "Do not stage every beat as a full-body figure in the same wide landscape. When showing a handoff, "
+             "make the object and the relevant hands legible; a reaction or reply may leave other people offscreen. "
+             "Keep a recurring prop's shape, material and owner "
              "consistent; state changes only when an action causes them. Use one achievable action per shot, "
              "not a montage or multiple locations. Use screen-left and screen-right to hold the action axis.")
+    head += "\n\nDIALOGUE DIRECTION\n" + _DIALOGUE_DIRECTION.get(dialogue_mode, _DIALOGUE_DIRECTION["auto"])
+    if idea.strip():
+        head += ("\n\nORIGINAL CREATIVE BRIEF OR SCRIPT\n" + idea.strip() +
+                 "\nRespect explicitly requested dialogue and character voices where they fit the story and "
+                 "the dialogue direction. Do not mistake instructions about style for spoken lines.")
     story = f"\n\nTHE STORY, BEAT BY BEAT (the film tells these in order)\n{beats}" if beats.strip() else ""
     board = (f"\n\nTHE FILM SO FAR (these shots stay exactly as they are)\n{shots}" if shots.strip() else "")
     vary = "Choose shot size and camera movement for clarity and dramatic purpose; hold still when appropriate."
@@ -784,7 +848,7 @@ def shot_brief(mode: str, title: str = "", logline: str = "", world: str = "", l
         task = ("Write the ONE shot that comes right after the film so far: the next moment of the story" +
                 (", a new beat that continues the story past its last beat" if extend else
                  f", telling beat {write_beats.strip()}" if story and write_beats.strip() else "") +
-                ", with a different size or camera move from the shot before so the cut feels deliberate.")
+                ", choosing framing and movement that serve this next moment.")
         reply = ("Reply with exactly two lines, the BEAT line then the SHOT line, and nothing else:\n" if extend
                  else one)
     elif mode == "rewrite":
@@ -844,8 +908,9 @@ def shot_review_brief(brief: str, draft: str) -> str:
             "3. Important props keep the same shape, material, construction and number. Retain every stated "
             "design detail; choose a simple consistent shape if unspecified and repeat its compact description "
             "in every start frame where it is visible. Never replace the prop with a different kind of object.\n"
-            "4. Every person required for an exchange must be visible in the first frame, with separated "
-            "positions and the object placed between the correct hands. List every participant in who. "
+            "4. For an on-screen handoff, stage the people and object needed for the action with clear positions "
+            "and the object at the correct hands. For a reaction or reply, other people may remain offscreen. "
+            "List only visible people in who, including anyone partly visible in the foreground. "
             "For lead dialogue, use the speaker name Lead, not the lead's proper name. Do not combine an entrance "
             "and an exchange in one shot. If the actor is already visible, describe their movement, not their appearance.\n"
             "5. Make the decisive action large enough to read. Use an insert for object manipulation, a "
@@ -853,7 +918,10 @@ def shot_review_brief(brief: str, draft: str) -> str:
             "of full-body poses in a wide landscape. Respect the shot size in the start frame: a close-up "
             "cannot simultaneously show everyone's feet and the entire location.\n"
             "6. Keep start frame and end state concise but concrete. The start is a frozen preparatory moment, "
-            "not the completed action. Preserve the director's story rather than inventing extra events.")
+            "not the completed action. For a reframe, describe the camera viewpoint and who is seen face-on, "
+            "from behind or partly in the foreground; say who is offscreen where needed. A foreground person "
+            "is the same individual, not another copy. Preserve the director's story rather than inventing "
+            "extra events, people or exclusions.")
 
 
 def lead_name(description: str) -> str:
@@ -920,7 +988,8 @@ def parse_shots(text: str, lead_description: str = "") -> list[dict]:
                       "seconds": float(min(10, max(2, round(seconds)))), "sound": parts[4], "lead": lead,
                       "others": others, "line": line,
                       "start_frame": parts[8].strip("-— "), "end_state": parts[9].strip("-— "),
-                      "transition": "continue" if transition.lower().startswith("cont") else "cut"})
+                      "transition": "continue" if transition.lower().startswith("cont") else "cut",
+                      "frame_source": "previous_end" if transition.lower().startswith("reframe") else "storyboard"})
         if pending:
             shots[-1]["new_beat"], pending = pending, None
     return [normalize_shot_cast(s, lead_description) for s in shots]
@@ -937,7 +1006,8 @@ def parse_new_beats(text: str) -> list[str]:
 # ---------------------------------------------------------------- storyboard sketches
 def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: bool = False, lead: bool = True,
                   world: str = "", previous: bool = False, scene: str = "", others: str = "",
-                  cast: str = "", continuity: str = "", start_frame: str = "", expected_cast: int | None = None) -> str:
+                  cast: str = "", continuity: str = "", start_frame: str = "", expected_cast: int | None = None,
+                  cast_uncertain: bool = False) -> str:
     """Plan composition from text, without a location photograph biasing every panel toward the same view.
 
     Legacy reference arguments remain accepted by saved integrations; no image references are used.
@@ -949,7 +1019,7 @@ def sketch_prompt(action: str, shot_size: str, camera_move: str = "", has_cast: 
     # Descriptions often repeat the film medium. A planning drawing must not inherit that rendering style.
     def design(text):
         return re.sub(r"\b(?:handmade\s+)?(?:paper[- ]cut|cut[- ]paper|2d|3d|stop[- ]motion|claymation|photorealistic|anime)\b", "", text, flags=re.I)
-    count = expected_cast if expected_cast is not None else character_count(lead, others)
+    count = None if cast_uncertain else expected_cast if expected_cast is not None else character_count(lead, others)
     roster = [entry.strip() for entry in others.split(";") if entry.strip()]
     # A scene ledger can select one member of a group described in the character bible.
     # Scope that costume to one performer, without shrinking intentional crowds.
@@ -1027,11 +1097,57 @@ def _join(*parts: str) -> str:
 def cast_prompt(cast: str, scene: str, look: str) -> str:
     """Character reference portrait for HiDream-O1, reused by every later frame. Drawn in the look's medium, so
     an anime film's lead is an anime character from the start."""
+    import re
+    if medium(look) == "shadow_puppet":
+        return _join("A flat silhouette shadow-puppet cutout character design, not a photograph. The entire subject "
+                     "is one flat articulated puppet with a recognizable silhouette and carved ornamental details, "
+                     "made in the materials and palette requested for the film. Shown against a luminous screen. "
+                     "No realistic skin or three-dimensional person",
+                     "Translate this description into silhouette shapes only, never realistic skin or clothing: " + cast,
+                     LOOKS.get(look, look), "Flat 2D shadow-puppet cutout in the requested palette and materials, "
+                     "no separate cast shadow, no realistic person", "No text")
+    backdrop = ("A plain backlit screen behind the single flat puppet, with no separate projected person or figure"
+                if medium(look) == "shadow_puppet" else
+                "The background is one seamless, plain, light grey colour that fills the whole frame, with no "
+                "equipment, props or edges visible. Even, soft, frontal lighting")
+    mixed_human = (medium(look) == 'photo' and bool(re.search(r'\bstop[- ]motion\b', look, re.I))
+                   and bool(re.search(r'\b(?:human|person|woman|man|adult)\b', cast, re.I))
+                   and not re.search(r'\b(?:puppet|doll|figurine|toy|miniature)\b', cast, re.I))
+    portrait_look = re.sub(r'\b(?:miniature|stop[- ]motion)\b', '', look, flags=re.I) if mixed_human else look
+    return _join("Three-quarter body shot, eye-level, front view. A casting reference image of a single character "
+                 "standing alone and facing the camera with a neutral expression", cast,
+                 "A real full-sized living human with natural skin, not a toy or figurine" if mixed_human else "",
+                 backdrop,
+                 MEDIUM_PORTRAIT[medium(look)], LOOKS.get(portrait_look, portrait_look),
+                 cartoon_render_direction(portrait_look), "No text")
+
+
+def legacy_mixed_cast_prompt(cast: str, look: str) -> str | None:
+    """Prior portrait direction for mixed live-action/stop-motion projects."""
+    import re
+    if not re.search(r'\blive[- ]action\b', look or '', re.I) or not re.search(r'\bstop[- ]motion\b', look or '', re.I):
+        return None
+    text = (look or '').lower()
+    if any(x in text for x in ('paper-cut', 'paper cut', 'papercut', 'cut-paper')):
+        old_medium = 'papercut'
+    elif any(x in text for x in ('claymation', 'plasticine')):
+        old_medium = 'clay'
+    else:
+        old_medium = 'stopmotion'
     return _join("Three-quarter body shot, eye-level, front view. A casting reference image of a single character "
                  "standing alone and facing the camera with a neutral expression", cast,
                  "The background is one seamless, plain, light grey colour that fills the whole frame, with no "
                  "equipment, props or edges visible. Even, soft, frontal lighting",
-                 MEDIUM_PORTRAIT[medium(look)], LOOKS.get(look, look), cartoon_render_direction(look), "No text")
+                 MEDIUM_PORTRAIT[old_medium], LOOKS.get(look, look), cartoon_render_direction(look), "No text")
+
+
+def anchor_review_question(look: str) -> str:
+    """Ask for a conservative check of the visible medium, not creative quality or identity."""
+    description = MEDIUM_PORTRAIT[medium(look)]
+    return ("Look at the character image. Is its visible medium consistent with this direction: " + description +
+            "? Answer YES only if the medium visibly matches, NO only if it clearly conflicts, "
+            "or UNCERTAIN if the image or the requested style could reasonably be interpreted either way. "
+            "Do not judge the character's name, story or artistic quality. Answer with exactly one word.")
 
 
 def people_note(lead: bool, others: str = "") -> str:
@@ -1062,14 +1178,36 @@ def character_count(lead: bool, others: str) -> int | None:
     if not others.strip():
         return int(bool(lead))
     entries = [x.strip() for x in others.split(";") if x.strip()]
-    if any(not re.match(r"^[\w '’-]+\s*\(", x) or
-           re.search(r"\b(crowd|group|pair|team|family|twins|workers|soldiers|people|passers-by)\b", x, re.I) for x in entries):
+    if any(not re.match(r"^[\w '’-]+\s*\(", x) for x in entries):
         return None
-    return int(bool(lead)) + len(entries)
+    counts = [roster_entry_count(*((entry.split("(", 1) + [""])[:2])) for entry in entries]
+    return None if any(count is None for count in counts) else int(bool(lead)) + sum(counts)
+
+
+def roster_entry_count(name: str, description: str = "") -> int | None:
+    """Count an individual or an explicitly sized group; unknown groups remain uncountable."""
+    import re
+    name = name.strip()
+    # Only accept cardinal words attached to a group, not a person's name such as "Three".
+    match = re.match(r"^(?:a\s+|the\s+)?(pair|couple|twins|trio|quartet|quintet)\s+of\s+\S", name, re.I)
+    if match:
+        return {"pair": 2, "couple": 2, "twins": 2, "trio": 3, "quartet": 4, "quintet": 5}[match.group(1).lower()]
+    match = re.match(r"^(?:the\s+)?(\d+|two|three|four|five|six)\s+(?:people|persons|characters|villagers|patrons|workers|soldiers|guards|figures|children|animals)\b", name, re.I)
+    if match:
+        value = match.group(1).lower()
+        count = int(value) if value.isdigit() else {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6}[value]
+        return count if 1 <= count <= 50 else None
+    group = r"\b(?:crowds?|groups?|clusters?|teams?|famil(?:y|ies)|twins|trios?|quartets?|quintets?|pairs?|villagers|patrons|workers|soldiers|guards|people|passers-by)\b"
+    # A name can itself denote a group; in descriptions, a group must be the described subject,
+    # rather than a person who happens to stand near other people.
+    if re.search(group, name, re.I) or re.match(r"\s*(?:an?\s+|the\s+)?(?:crowd|group|cluster|team|family|trio|quartet|pair|twins)\b", description, re.I):
+        return None
+    return 1
 
 
 CAST_COUNT_CHECK = ("Count every separate visible character in this image, including humans, animals, "
-                    "anthropomorphic cartoon animals, quadrupeds, robots and creatures. A cat or other animal "
+                    "anthropomorphic cartoon animals, quadrupeds, robots, creatures, puppets and dolls. "
+                    "A puppet or doll is a separate character even when a human holds or operates it. A cat or other animal "
                     "is one character even if no human is present. Include characters in foreground, background "
                     "and doorways. Count each actual figure once; do not count objects, plants, clothes, props, "
                     "shadows, reflections, pictures or decorative statues as characters. "
@@ -1083,7 +1221,7 @@ def world_plate_prompt(scene: str, look: str) -> str:
     from it; the lead and the other characters are added shot by shot."""
     return _join("Wide establishing view of this world, from wherever it looks most striking", scene,
                  "The place is completely deserted and uninhabited: nobody is there, no people, no figures, "
-                 "no silhouettes", LOOKS.get(look, look), MEDIUM_FRAME[medium(look)] + ", no text or lettering")
+                 "no human silhouettes", LOOKS.get(look, look), MEDIUM_FRAME[medium(look)] + ", no text or lettering")
 
 
 PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure, silhouette, face or body part "
@@ -1093,7 +1231,8 @@ PEOPLE_CHECK = ("Look carefully at this image. Is there any person, human figure
 def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", has_cast: bool = False,
                 camera_move: str = "", lead: bool = True, world: str = "", identity: str = "", cast: str = "",
                 storyboard: bool = False, others: str = "", line: str = "", start_frame: str = "",
-                world_reference: bool = True) -> str:
+                world_reference: bool = True, world_picture_index: int | None = None,
+                cast_uncertain: bool = False) -> str:
     """Storyboard = Picture 1, lead = Picture 2, optional world = last. Without a board the world is first."""
     framing = ", ".join(x for x in (SHOT_SIZES.get(shot_size, shot_size), MOVE_VIEWPOINT.get(camera_move, "")) if x)
     who = ("The lead is the character from Picture 2 with the same species, face, distinctive markings, colouring, build and wardrobe. "
@@ -1101,19 +1240,23 @@ def shot_prompt(action: str, shot_size: str, look: str, continuity: str = "", ha
            "action, not from Picture 2, and play it with the emotion the moment calls for. Ignore the studio "
            "backdrop of Picture 2" if has_cast else lead and cast and "The lead: " + cast)
     speaker = line.split(":", 1)[0].strip() if ":" in line else ""
-    world_picture = ((3 if has_cast else 2) if world_reference else None) if storyboard else 1
+    world_picture = ((world_picture_index or (3 if has_cast else 2)) if storyboard else 1) if world_reference else None
     return _join(
         ("Transform the storyboard in Picture 1 into a finished film frame. Preserve its crop, subject scale, "
          "viewpoint, poses and the number and placement of characters and props. " if storyboard else "") +
         "Create this shot in the specific location described below: " + framing,
         "Visible first frame: " + (start_frame or action),
-        world and world_picture and f"Location context from Picture {world_picture}: " + world,
+        world and ((f"Location context from Picture {world_picture}: " if world_picture else "Location context: ")
+                   + world + ". Use the location and atmosphere; do not add offscreen characters or actions from this description"),
         (storyboard_guide(1, lead, look, others, world_picture) +
          (f". Picture {world_picture} is only a materials, palette and lighting reference; its wide camera view is not this shot"
-          if world_picture else ". Keep the storyboard's background and crop; do not add an establishing landscape")) if storyboard else
-        "Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its era, "
-        "weather, light and colour",
-        lead and who, people_note(lead, others), lead and identity and "The lead: " + identity, continuity,
+          if world_picture else ". Keep the storyboard's camera view, crop and subject placement. Preserve any sketched scenery; "
+          "complete a plain or incomplete background using the location context without adding a wide establishing view")) if storyboard else
+        ("Choose the camera position this shot needs; do not copy the layout of Picture 1, but keep its era, weather, light and colour"
+         if world_picture else "Choose the camera position this shot needs and use the described location and atmosphere"),
+        lead and who, ("Follow the opening staging for who is visible; do not invent additional figures"
+                       if cast_uncertain else people_note(lead, others)),
+        lead and identity and "The lead: " + identity, continuity,
         speaker and f"{'The lead' if speaker.lower() == 'lead' else speaker} is caught mid-sentence, speaking",
         LOOKS.get(look, look) and "Same color grade: " + LOOKS.get(look, look),
         cartoon_render_direction(look),
@@ -1130,23 +1273,28 @@ def motion_prompt(action: str, camera_move: str, sound: str = "", look: str = ""
     style = LOOKS.get(look, look)
     speaker, _, words = line.partition(":")
     spoken = words.strip().strip('"').strip() if words else ""
-    speaker = "The lead" if speaker.strip().lower() == "lead" else speaker.strip()
+    lead_speaking = speaker.strip().lower() == "lead"
+    speaker = (cast or "The lead") if lead_speaking else speaker.strip()
     return _join(action, move, shot_size and "Framing: " + SHOT_SIZES.get(shot_size, shot_size),
                  start_frame and "At the beginning: " + start_frame,
                  end_state and "By the end of this single shot: " + end_state,
                  lead and cast and "The character: " + cast,
                  continuity and "These details stay exactly the same throughout: " + continuity,
                  people_note(lead, others),
-                 spoken and f'{speaker} says "{spoken}" clearly, lips moving in sync',
+                 spoken and (f'The only speaker is {speaker}, saying "{spoken}" clearly. '
+                             + ('Their lips move in sync; the other visible characters listen silently.'
+                                if not lead_speaking or lead else 'The voice is offscreen; visible characters listen.')),
                  style and "Cinematic style: " + style,
                  cartoon_render_direction(look),
-                 ("Flat cut-paper pieces articulate with small deliberate jointed movements; preserve paper edges and flat faces" if medium(look) == "papercut" else
+                 ("Flat shadow-puppet silhouettes articulate with small deliberate jointed movements against the backlit screen; keep each figure's cut-out profile and flat materials throughout" if medium(look) == "shadow_puppet" else
+                  "Flat cut-paper pieces articulate with small deliberate jointed movements; preserve paper edges and flat faces" if medium(look) == "papercut" else
                   "Natural, physically plausible motion") + ", consistent faces, no cuts, no captions or on-screen text",
                  sound and "Audio: " + sound + ("" if not spoken else ", under the spoken line"))
 
 
 # ---------------------------------------------------- continuity contracts and visual acceptance
-REVIEW_VERSION = 2
+REVIEW_VERSION = 3
+REVIEW_PROMPT_VERSION = 3  # invalidate inference caches without invalidating saved/director-approved takes
 
 
 def json_object(text: str) -> dict:
@@ -1176,6 +1324,10 @@ def continuity_brief(context_json: str) -> str:
             "Separate permanent DESIGN (shape, size, material, wardrobe) from changing STATE (owner, position, "
             "lit/unlit, intact/broken, open/closed, location). A general design note about glow must NOT override "
             "a beat that explicitly starts with the object unlit.\n"
+            "For environment, copy short, exact phrases from the WORLD text describing the location, "
+            "architecture, weather, lighting, time and physical surroundings. Include every such detail "
+            "that is present, but omit character names, people, actions and story events. Do not paraphrase, "
+            "infer or add details: each phrase must occur verbatim in WORLD. If none is usable, return an empty list.\n"
             "DESIGN must preserve the supplied objects' exact materials, colours, shapes and handles, and "
             "fixed set materials. Do not merely repeat the film's rendering style. Character appearance and "
             "wardrobe are already supplied separately for only the people visible in each shot: do not "
@@ -1185,12 +1337,18 @@ def continuity_brief(context_json: str) -> str:
             "Use a small set of concrete, human-readable fact names, e.g. 'Parcel · held by', 'Parcel · seal', "
             "'Location'. Values are short phrases. Names and values are open-ended, not a fixed vocabulary. "
             "Track only facts that matter to this story.\n"
+            "Prefer 2–5 plot-critical prop facts. Ordinary seating, table labels, character locations, "
+            "wardrobe and visible presence belong in staging/cast, not additional state facts. "
+            "A cut to another angle is not a change of location.\n"
             "initial is the state BEFORE shot 1. Each shot's changes are applied AFTER its action. "
             "The next shot automatically inherits that result; never reset it. An action's result must not already "
             "exist in its starting state. No unexplained relocation, ownership change or magically repaired object. "
             "Every changes key must exist in initial. Use ONE fact for an object's holder, whose value changes "
             "between people; never create a separate holder fact for each person. Do not introduce new facts "
             "in later shots. Put every tracked fact in initial, even if its starting value is 'none'. "
+            "Use 'none' only for explicit physical absence, never as a placeholder for an unexamined starting "
+            "condition. Read shot 1's first-frame staging to establish initial values. If that staging does "
+            "not establish a necessary value, use 'Unknown before first change' and report the question in issues. "
             "Use readable spaces in fact names, not underscores. checks lists only facts visibly verifiable in that shot; "
             "do not require inspecting an offscreen object or recognizing an exact geographical name. "
             "If visibility changes, use separate start_checks and end_checks. List all visibly present character "
@@ -1199,7 +1357,7 @@ def continuity_brief(context_json: str) -> str:
             "If a roster is uncountable, use null rather than inventing a number.\n"
             "Report story contradictions in issues as short actionable sentences. Do not report issues just "
             "because a camera cuts to a different view of the same place. Include EVERY shot, once, in order.\n"
-            'Schema: {"design":"immutable design only", "initial":{"fact name":"starting value"}, '
+            'Schema: {"environment":["exact setting phrase from WORLD"], "design":"immutable design only", "initial":{"fact name":"starting value"}, '
             '"shots":[{"index":1,"changes":{"fact name":"new value"},"start_checks":["fact name"],'
             '"end_checks":["fact name"],"start_cast":["name"],"end_cast":["name"]}],"issues":[]}\n'
             "design must be a STRING, not an object. Before returning, check each changes/checks key against "
@@ -1208,8 +1366,71 @@ def continuity_brief(context_json: str) -> str:
             "FILM\n" + context_json)
 
 
+def cast_roster_conflicts(context: dict, plan: dict) -> list[dict]:
+    """Find named cast mentioned in the opening but absent from its roster.
+
+    Mentions alone do not prove visibility. Only a narrow explicit physical
+    staging pattern supports correction; ambiguous cases remain unresolved.
+    """
+    import re
+    if not isinstance(context, dict) or not isinstance(plan, dict):
+        return []
+    names = []
+    lead = lead_name(context.get('cast') or '')
+    if lead and roster_entry_count(lead, context.get('cast') or '') == 1:
+        names.append(lead)
+    for line in (context.get('characters') or '').splitlines():
+        name, separator, description = line.partition(':')
+        if (separator and name.strip() and description.strip() and roster_entry_count(name.strip(), description) == 1
+                and name.strip().casefold() not in {entry.casefold() for entry in names}):
+            names.append(name.strip())
+    shots, rows = context.get('shots'), plan.get('shots')
+    if not isinstance(shots, list) or not isinstance(rows, list) or len(shots) != len(rows):
+        return []
+    conflicts = []
+    for index, (shot, row) in enumerate(zip(shots, rows), 1):
+        if not isinstance(shot, dict) or not isinstance(row, dict) or not isinstance(row.get('start_cast'), list):
+            continue
+        staging = shot.get('start_frame') or ''
+        if not isinstance(staging, str) or not staging.strip():
+            continue
+        roster = {name.strip().casefold() for name in row['start_cast'] if isinstance(name, str)}
+        # Negative, hypothetical and depicted mentions do not prove presence.
+        ambiguous = bool(re.search(r"\b(?:offscreen|off-screen|no|not|never|neither|absent|outside|enters|entering|arrives|"
+                                   r"photograph|photo|picture|portrait|painting|drawing|reflection|memory|dream|"
+                                   r"imagines|imagined|imaginary|if|unless|later|without)\b|[\"“”]",
+                                   staging, re.I))
+        for name in names:
+            escaped = re.escape(name)
+            present = name.casefold() in roster or (lead and name.casefold() == lead.casefold()
+                                                     and bool(roster & {'lead', 'the lead'}))
+            if present or not re.search(r'(?<!\w)' + escaped + r'(?!\w)', staging, re.I):
+                continue
+            if (re.search(r'(?<!\w)' + escaped + r"\s+(?:is\s+)?(?:offscreen|off-screen|not visible|absent|outside the frame)\b",
+                          staging, re.I)
+                    or re.search(r'\bwithout\s+' + escaped + r'(?!\w)', staging, re.I)):
+                continue  # Explicitly offscreen, so omission is not a conflict.
+            direct = bool(re.search(r'\bwith\s+' + escaped + r'\s+(?:in front of|beside|next to|opposite|at the table)\b',
+                                    staging, re.I))
+            pair = bool(re.search(r'(?<!\w)' + escaped + r'\s+and\s+[\w -]+\s+(?:stand|sit|face)\b', staging, re.I)
+                        or re.search(r'\b[\w -]+\s+and\s+' + escaped + r'\s+(?:stand|sit|face)\b', staging, re.I))
+            conflicts.append({'index': index, 'name': name, 'explicit': not ambiguous and (direct or pair)})
+    return conflicts
+
+
 def parse_continuity(text: str, shot_count: int, recover_missing: bool = True) -> dict:
-    plan = json_object(text)
+    def normalize_schema(value, fields):
+        if not isinstance(value, dict):
+            return value
+        result = {}
+        for key, item in value.items():
+            canonical = key.strip().casefold() if isinstance(key, str) else key
+            canonical = canonical if canonical in fields else key
+            if canonical in result:
+                raise ValueError("Continuity plan has duplicate schema keys")
+            result[canonical] = item
+        return result
+    plan = normalize_schema(json_object(text), {'initial', 'design', 'issues', 'shots', 'environment'})
     initial = state_map(plan.get("initial"))
     design = plan.get("design")
     issues = plan.get("issues")
@@ -1218,6 +1439,8 @@ def parse_continuity(text: str, shot_count: int, recover_missing: bool = True) -
         raise ValueError("Continuity plan is missing design or issues")
     if not isinstance(rows, list) or len(rows) != shot_count:
         raise ValueError("Continuity plan must cover every shot exactly once")
+    rows = [normalize_schema(row, {'index', 'changes', 'start_checks', 'end_checks', 'start_cast', 'end_cast'})
+            for row in rows]
     # A writer can introduce a new fact in a change even after the repair pass.
     # Preserve the change, but do not invent its preceding value. Surface the
     # missing starting condition as a director decision instead of losing the
@@ -1268,12 +1491,52 @@ def parse_continuity(text: str, shot_count: int, recover_missing: bool = True) -
             item[field] = keys
         for field in ("start_cast", "end_cast"):
             names = row.get(field)
-            if names is not None and (not isinstance(names, list) or any(not isinstance(n, str) or not n.strip() for n in names)
-                                      or len(set(n.casefold() for n in names)) != len(names)):
-                raise ValueError("Visible cast must be unique names or null for an uncountable group")
+            if names is not None:
+                if not isinstance(names, list) or any(not isinstance(n, str) or not n.strip() for n in names):
+                    raise ValueError("Visible cast must be unique names or null for an uncountable group")
+                names = [name.strip() for name in names]
+                if len(set(n.casefold() for n in names)) != len(names):
+                    raise ValueError("Visible cast must be unique names or null for an uncountable group")
             item[field] = names
         clean.append(item)
-    return {"design": design.strip(), "initial": initial, "shots": clean, "issues": issues}
+    # A visible actor cannot simultaneously have an absent location. Flag the
+    # contradiction without guessing where that actor should actually be.
+    first = clean[0] if clean else {}
+    visible = {name.casefold() for name in (first.get("start_cast") or [])}
+    for key in first.get("start_checks", []):
+        subject, separator, field = key.partition(" · ")
+        if (separator and subject.casefold() in visible and field.casefold() in ("location", "position")
+                and initial[key].casefold() in ("none", "unknown", "n/a", "unknown before first change")):
+            message = f"Set the initial value of '{key}': this actor is visible in shot 1 but their starting position is unspecified."
+            if message not in issues:
+                issues.append(message)
+    # Optional in model output and historical plans. An invalid environmental
+    # extraction should never break continuity planning; Studio verifies each
+    # phrase against the actual scene before using it for a world plate.
+    environment = plan.get("environment")
+    if not isinstance(environment, list) or len(environment) > 20 or any(
+            not isinstance(fragment, str) or not fragment.strip() or len(fragment) > 300 for fragment in environment):
+        environment = []
+    else:
+        environment = [fragment.strip() for fragment in environment]
+    return {"design": design.strip(), "environment": environment, "initial": initial, "shots": clean, "issues": issues}
+
+
+def scope_shared_design(design: str, people) -> str:
+    """Keep prop/set design separate from clauses describing named cast.
+
+    Only explicit leading cast labels/appearance clauses are removed. Ambiguous
+    prose is retained rather than deleting a set or prop that happens to share a
+    name. Callers still supply the relevant cast through their dedicated inputs.
+    """
+    import re
+    names = [str(name).strip() for name in people if str(name).strip()]
+    if not names:
+        return design.strip()
+    cast_prefix = re.compile(r"^(?:" + "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True)) +
+                             r")(?:\s*:|\s+(?:wears|has|is|looks like)\b)", re.I)
+    clauses = re.split(r"(?<=[.!?])\s+|;\s*|\n+", design.strip())
+    return " ".join(clause.strip() for clause in clauses if clause.strip() and not cast_prefix.match(clause.strip()))
 
 
 def state_direction(state: dict, changes: dict | None = None, visible_keys: list | None = None) -> str:
@@ -1299,14 +1562,16 @@ def visual_review_brief(expected_json: str, look: str, phase: str = "start") -> 
             "Do not infer success from the instructions. Do not invent hidden objects or treat the intended "
             "story as visible evidence. Return ONLY JSON, no markdown.\n"
             "Count separate visible characters, including humans, animals, anthropomorphic cartoon animals, "
-            "quadrupeds, robots and creatures, including small background figures. Exclude objects, props, "
+            "quadrupeds, robots, creatures, puppets and dolls, including small background figures. "
+            "A puppet being operated by a human counts separately from that human. Exclude objects, props, "
             "plants, shadows, reflections, pictures and decorative statues. "
             "Use null if the number cannot be determined. For each requested state fact, describe what is "
             "actually visible and assign verdict pass, fail, or uncertain. Missing, hidden or ambiguous evidence "
             "is uncertain, not pass. Include EVERY requested fact exactly once. "
             "Owner means who physically holds the object, not who it belongs to in the story. "
             "An object emitting visible light fails an unlit requirement. "
-            "Judge rendering style against the FILM LOOK, not incidental medium words in character descriptions. " +
+            "Judge rendering style against the FILM LOOK. In a mixed-media scene, preserve each character's "
+            "explicit material: a photographed human and a cloth puppet must not both become puppets. " +
             ("Flat layered paper should have cut edges and flat shapes; smooth rounded CGI or ordinary painted "
              "illustration does not prove paper-cut style. " if medium(look) == "papercut" else "") +
             "Match named characters using the provided appearance descriptions; report clear identity substitutions.\n"
@@ -1334,6 +1599,15 @@ def state_evidence_brief(text: str, expected_json: str) -> str:
             "Use ONLY the observations as evidence; never assume the requirement is true. "
             "An observation that contradicts the required value is fail, even if other facts match. "
             "Bind each observation to the object or person it explicitly describes. "
+            "Camera orientation and actor-to-actor orientation are different relations: facing away from "
+            "the viewer can be correct when facing a person farther into the scene. Do not infer a "
+            "contradiction from a camera-relative observation alone. Likewise, standing on a surface "
+            "does not contradict being at a location containing that surface. If the relevant relation "
+            "was not observed, return uncertain rather than fail. "
+            "Names identify subjects by their supplied appearance; names and furniture labels do not need "
+            "to be printed in the image. Compare visible relations such as seated beside a window with "
+            "the corresponding staging label. Do not fail a match merely because the observation uses "
+            "different ordinary words. Missing evidence is uncertain, not a confirmed contradiction. "
             "A required unlit object fails when the observer describes emission from THAT SAME OBJECT. "
             "Emission from a separate nearby object does not contradict an unlit requirement. "
             "An explicit observation that the required object has no flame or internal glow supports unlit, "
@@ -1348,14 +1622,56 @@ def state_evidence_brief(text: str, expected_json: str) -> str:
             "\nObserved facts (no verdicts): " + json.dumps(observed, ensure_ascii=False))
 
 
-def fact_observation_brief(key: str) -> str:
+def fact_observation_brief(key: str, expected_json: str | dict | None = None, phase: str = "start") -> str:
+    import json
+    import re
+    expected = json_object(expected_json) if isinstance(expected_json, str) else expected_json or {}
+    phase = expected.get('phase', phase)
+    people = expected.get("people") or {}
+    objects = expected.get("objects") or {}
+    subject = key.split(" · ", 1)[0].strip()
+    person = next((name for name in people if name.casefold() == subject.casefold()), None)
+    if not person:
+        # The planner can emit both "Mira · position" and "Mira's position".
+        # Match only a direct person-position fact: "Mira's jacket position"
+        # is an object fact and must not be treated as the actor's position.
+        person = next((name for name in people if re.fullmatch(
+            rf"{re.escape(name)}['’]s\s+(?:position|location|place)(?:\s+.*)?", subject, re.IGNORECASE)
+            or re.fullmatch(rf"(?:position|location|place)\s+of\s+{re.escape(name)}", subject, re.IGNORECASE)), None)
     holder = any(word in key.lower() for word in ("holder", "held by", "owner"))
     design = key.lower().startswith("design of ")
     position = any(word in key.lower() for word in ("position", "location", "place"))
     illumination = any(word in key.lower() for word in ("light", "lit", "lantern", "lamp", "candle"))
-    return ("Describe ONLY what is visibly true in this image about this scene fact: " + key +
+    orientation = key.endswith(' · camera orientation')
+    material = key.endswith(' · rendering material')
+    if material:
+        # Identity cues may themselves name the requested medium. Hide those
+        # labels from this observer so a failed puppet/human rendering is not
+        # "verified" by repeating the cast description.
+        people = {name: re.sub(r'\b(?:(?:real|living|photographed)\s+)?human\b|'
+                              r'\b(?:cloth|felt|fabric)\s+puppet\b|\breal person\b',
+                              '', description, flags=re.I).strip()
+                  for name, description in people.items()}
+    # Observers receive identity cues, never the required state value. The
+    # independent comparison pass is the only place the target value appears.
+    identities = json.dumps({"people": people, "objects": objects}, ensure_ascii=False)
+    return ("Inspect the actual image, using these descriptions only to identify subjects: " + identities +
+            ". Names are reference labels, not lettering that must appear in the image. "
+            "For example, a named character is recognized by their appearance, never by a printed name. "
+            f"Frame phase: {phase}. Describe ONLY what is visibly true about this scene fact: " + key +
             ". One or two short factual sentences, no JSON and no pass/fail verdict. "
-            + ("Describe the object's colour, body shape, surface folds or pattern, handle and material. " if design else
+            + ("Identify this character by their clothes and hair. Is the face visible, in profile, or is the "
+               "back of the head visible? Is this character in the near foreground or farther away? "
+               "Report each matching figure separately if the character appears more than once. " if orientation else
+               "Describe this character's visible surface and construction: skin and hair, cloth and stitching, "
+               "clay, painted illustration, or another material. Describe the head, hands and clothing separately; "
+               "include visible textile texture. A smooth face alone does not establish the material of the body. "
+               "Report what the image shows, not the "
+               "material suggested by the identity description. " if material else
+               "Identify the person from their appearance. Describe their visible posture and whether they face "
+               "another person, and their position relative to visible people, furniture or landmarks. "
+               "A table's story label or a geographical name need not be readable. " if person and position else
+               "Describe the object's colour, body shape, surface folds or pattern, handle and material. " if design else
                "This asks WHICH PERSON has their hand physically connected to the object's handle, not a stand or fixture. "
                "Describe the holder's clothes and their position in frame. If the object rests on a surface and nobody holds it, say nobody holds it. " if holder else
                "Describe the object's position: is its base resting on a surface, or suspended above it? Name the visible support. " if position else
@@ -1366,16 +1682,29 @@ def fact_observation_brief(key: str) -> str:
                "Distinguish red or yellow material from emitted light: colour alone is not evidence of illumination. " if illumination else
                "Describe the object's visible physical condition. ") +
             "Do not infer an intended story. "
-            "If the relevant object is hidden or the fact cannot be established, say it is not visible.")
+            "If the relevant subject is hidden or the fact cannot be established, say it is not visible. "
+            "Do not interpret a person's name as a month, word, sign or object.")
 
 
 def parse_visual_review(text: str, expected_json: str, observed_count: str | None = None,
                         state_audit: str | None = None) -> dict:
-    """Strict evidence coverage; uncertainty and malformed replies cannot silently pass."""
+    """Separate actual visual defects from uncertainty and broken reviewer output."""
     import json
-    expected = json.loads(expected_json)
-    findings, report = [], None
+    issues, report = [], None
+
+    def add(category, code, message, severity="warning"):
+        issues.append({"category": category, "code": code, "message": message, "severity": severity})
+
+    def verdict(value, code, message, severity="blocking"):
+        if value == "fail":
+            add("content_issue", code, message, severity)
+        elif value == "uncertain":
+            add("uncertain", code, message)
+        elif value != "pass":
+            raise ValueError("Invalid verdict for " + code)
+
     try:
+        expected = json_object(expected_json)
         report = json_object(text)
         count = report.get("count")
         if observed_count is not None:
@@ -1385,14 +1714,19 @@ def parse_visual_review(text: str, expected_json: str, observed_count: str | Non
             report["reported_count"], report["count"] = report.get("count"), count
         wanted = expected.get("count")
         allowed = expected.get("allowed_counts", [wanted] if wanted is not None else None)
-        if allowed is not None and (type(count) is not int or count not in allowed):
-            findings.append(f"Visible cast count: expected {allowed}, observed {count}")
+        if allowed is not None:
+            if count is None:
+                add("uncertain", "cast_count_unverifiable", f"Visible cast count: expected {allowed}, observed {count}")
+            elif type(count) is not int or count < 0:
+                raise ValueError("Invalid visible cast count")
+            elif count not in allowed:
+                add("content_issue", "cast_count_mismatch", f"Visible cast count: expected {allowed}, observed {count}", "blocking")
         for field in ("style", "cast"):
             evidence = report.get(field)
             if not isinstance(evidence, dict) or not isinstance(evidence.get("observed"), str) or not evidence["observed"].strip():
                 raise ValueError("Missing " + field + " evidence")
-            if evidence.get("verdict") != "pass":
-                findings.append(field + ": " + evidence["observed"])
+            verdict(evidence.get("verdict"), field + "_mismatch", field + ": " + evidence["observed"],
+                    "warning" if field == "style" else "blocking")
         state = report.get("state")
         keys = set(expected.get("state", {}))
         # Accept the equivalent keyed-object representation without inventing evidence.
@@ -1407,31 +1741,72 @@ def parse_visual_review(text: str, expected_json: str, observed_count: str | Non
         for row in state:
             if not isinstance(row.get("observed"), str) or not row["observed"].strip():
                 raise ValueError("Missing observation for " + row["key"])
-            if row.get("verdict") != "pass" and not (row.get("verdict") == "observed" and state_audit is not None):
-                findings.append(row["key"] + ": " + row["observed"])
+            if row.get("verdict") == "observed":
+                if state_audit is None:
+                    add("uncertain", "state_comparison_missing", row["key"] + ": observation has not been compared")
+            else:
+                verdict(row.get("verdict"), "state_mismatch", row["key"] + ": " + row["observed"])
         if state_audit is not None:
             audit = json_object(state_audit).get("state")
-            if not isinstance(audit, list) or any(not isinstance(row, dict) for row in audit) or \
-                    len(audit) != len(keys) or {row.get("key") for row in audit} != keys:
+            if not isinstance(audit, list) or any(not isinstance(row, dict) or not isinstance(row.get('key'), str) for row in audit):
+                raise ValueError("State comparison does not cover the required facts")
+            # Accept only outer whitespace differences; never guess between
+            # different fact names or merge colliding audit entries.
+            audit = [{**row, 'key': row['key'].strip()} for row in audit]
+            audit_names = [row['key'] for row in audit]
+            if len(audit_names) != len(keys) or len(set(audit_names)) != len(audit_names) or set(audit_names) != keys:
                 raise ValueError("State comparison does not cover the required facts")
             report["state_comparison"] = audit
             for row in audit:
                 if not isinstance(row.get("reason"), str) or not row["reason"].strip():
                     raise ValueError("Missing state comparison reason")
                 contradiction = any(term in row["reason"].lower() for term in ("contradicts", "a contradiction", "does not match", "fails the"))
-                if row.get("verdict") != "pass" or contradiction:
-                    findings.append(row["key"] + ": " + row["reason"])
-        return {"version": REVIEW_VERSION, "status": "passed" if not findings else "needs_review",
-                "findings": findings, "evidence": report}
+                if contradiction and row.get("verdict") == "pass":
+                    raise ValueError("State comparison verdict contradicts its reason")
+                uncertain_reason = any(term in row['reason'].lower() for term in (
+                    'cannot determine', 'cannot be determined', 'cannot confirm', 'insufficient evidence',
+                    'not enough evidence', 'does not explicitly confirm or deny'))
+                result = row.get('verdict')
+                if uncertain_reason and not contradiction and result in ('pass', 'fail'):
+                    # Retain the original evidence, but never call explicitly
+                    # inconclusive reasoning a verified success or defect.
+                    row['interpreted_verdict'] = result = 'uncertain'
+                if row['key'] in expected.get('advisory_facts', []) and result == 'fail':
+                    # Calibration still confuses felt, painted wood and skin.
+                    # A material-only allegation must not spend a repair budget
+                    # or replace a useful take; preserve it as an advisory check.
+                    row['interpreted_verdict'] = result = 'uncertain'
+                verdict(result, "state_mismatch", row["key"] + ": " + row["reason"])
+        return review_result(issues, evidence=report)
     except (ValueError, TypeError, KeyError) as error:
-        return {"version": REVIEW_VERSION, "status": "needs_review", "findings": findings + [str(error)],
-                "evidence": report, "raw": text[:8000]}
+        add("reviewer_error", "invalid_review_schema", str(error))
+        return review_result(issues, evidence=report, raw=text[:8000],
+                             state_audit_raw=state_audit[:8000] if isinstance(state_audit, str) else state_audit)
+
+
+def review_result(issues: list[dict], **extra) -> dict:
+    """Keep the legacy status while exposing a machine-actionable outcome."""
+    categories = {issue["category"] for issue in issues}
+    outcome = next((value for value in ("reviewer_error", "content_issue", "uncertain") if value in categories), "passed")
+    return {"version": REVIEW_VERSION, "status": "passed" if outcome == "passed" else "needs_review",
+            "outcome": outcome, "issues": issues, "findings": [issue["message"] for issue in issues], **extra}
 
 
 def combine_visual_reviews(reports: list[dict]) -> dict:
-    findings = [f"Sample {i + 1}: {finding}" for i, report in enumerate(reports) for finding in report.get("findings", [])]
-    passed = len(reports) == 4 and all(r.get("status") == "passed" and r.get("version") == REVIEW_VERSION for r in reports)
-    return {"version": REVIEW_VERSION, "status": "passed" if passed else "needs_review",
-            "findings": findings or ([] if passed else ["All four video samples must be reviewed"]), "samples": reports}
+    issues = []
+    if len(reports) != 4:
+        issues.append({"category": "reviewer_error", "code": "incomplete_video_review",
+                       "message": "All four video samples must be reviewed", "severity": "warning"})
+    for index, report in enumerate(reports, 1):
+        if not isinstance(report, dict):
+            issues.append({"category": "reviewer_error", "code": "invalid_video_sample", "severity": "warning",
+                           "message": f"Sample {index}: reviewer returned no structured report", "sample": index})
+            continue
+        current = report.get("issues") or []
+        if not current and (report.get("status") != "passed" or report.get("version") != REVIEW_VERSION):
+            current = [{"category": "uncertain", "code": "legacy_or_incomplete_review", "severity": "warning", "message": message}
+                       for message in report.get("findings") or ["Sample requires current review"]]
+        issues.extend({**issue, "message": f"Sample {index}: {issue['message']}", "sample": index} for issue in current)
+    return review_result(issues, samples=reports)
 
 

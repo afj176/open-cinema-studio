@@ -57,9 +57,10 @@ class PropTests(unittest.TestCase):
         worker.queue=queue.PriorityQueue()
         worker.lock=threading.RLock()
         worker.load=lambda _:p
-        worker.queue_sketches=lambda *_:[]
+        worker.queue_sketches=lambda *_, **__:[]
         worker.queue_film(p['id'])
         ordered=[worker.queue.get()[2] for _ in range(worker.queue.qsize())]
+        ordered=[job for job in ordered if job['kind']!='character_reference']
         self.assertEqual([(j['kind'],j['shot']) for j in ordered],
                          [('video',first['id']),('video','second'),('stitch',None)])
 

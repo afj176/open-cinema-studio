@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 from contextlib import contextmanager
 from contextvars import ContextVar
+import json
 
 _writer_mode = ContextVar("writer_mode", default="normal")
 
@@ -29,6 +30,9 @@ def writer_node():
 
 MODELS = {
     "hidream": "hidream_o1_image_fp8_scaled.safetensors",
+    "klein": "flux-2-klein-4b.safetensors",
+    "klein_te": "qwen_3_4b.safetensors",
+    "klein_vae": "flux2-vae.safetensors",
     "qwen_edit": "qwen_image_edit_2511_int8_convrot.safetensors",
     "qwen_te": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
     "qwen_vae": "qwen_image_vae.safetensors",
@@ -56,6 +60,10 @@ ASPECTS = {
 # Qwen-Image-Edit works best around 1.5 MP; coverage canvases at the film's aspect.
 COVERAGE_SIZES = {"16:9": (1664, 928), "2.39:1": (1792, 768), "9:16": (928, 1664), "1:1": (1328, 1328)}
 CAST_SIZE = (1728, 2304)  # 3:4 portrait, a HiDream-O1 trained size
+# Klein targets an interactive draft: around one megapixel, preserving each film aspect.
+KLEIN_IMAGE_SIZES = {"16:9": (1280, 704), "2.39:1": (1536, 640), "9:16": (704, 1280), "1:1": (1024, 1024)}
+KLEIN_SKETCH_SIZES = {"16:9": (1024, 576), "2.39:1": (1152, 480), "9:16": (576, 1024), "1:1": (768, 768)}
+KLEIN_CAST_SIZE = (768, 1024)
 
 
 def node(class_type: str, **inputs: Any) -> dict[str, Any]:
@@ -63,10 +71,18 @@ def node(class_type: str, **inputs: Any) -> dict[str, Any]:
 
 
 def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
-                   size: tuple[int, int] | None = None, negative: str = "") -> dict[str, Any]:
+                   size: tuple[int, int] | None = None, negative: str = "", backend: str = "hidream",
+                   preview: bool = False) -> dict[str, Any]:
     """HiDream-O1-Image text-to-image, official Full recipe: 40 steps, cfg 5, seam smoothing."""
-    width, height = size or ASPECTS[aspect][:2]
-    return {
+    if backend == "klein":
+        # Portrait callers request CAST_SIZE, the full-resolution HiDream shape.
+        # Other explicit dimensions (e.g. storyboard size) are honored.
+        width, height = KLEIN_CAST_SIZE if size == CAST_SIZE else size or KLEIN_IMAGE_SIZES[aspect]
+        return klein_graph(prompt, seed, prefix, width, height)
+    if backend != "hidream":
+        raise ValueError("Choose a supported image backend")
+    width, height = (KLEIN_CAST_SIZE if size == CAST_SIZE else size or KLEIN_IMAGE_SIZES[aspect]) if preview else (size or ASPECTS[aspect][:2])
+    graph = {
         "1": node("CheckpointLoaderSimple", ckpt_name=MODELS["hidream"]),
         "2": node("ModelNoiseScale", model=["1", 0], noise_scale=8.0),
         "3": node("HiDreamO1PatchSeamSmoothing", model=["2", 0], start_percent=0.8, end_percent=1.0,
@@ -81,6 +97,62 @@ def keyframe_graph(prompt: str, seed: int, aspect: str, prefix: str,
         "10": node("VAEDecode", samples=["9", 0], vae=["1", 2]),
         "11": node("SaveImage", images=["10", 0], filename_prefix=prefix),
     }
+    if preview:
+        # The seam-smoothing patch performs extra model passes near the end.
+        # Keep it for full-resolution work; small previews favor responsiveness.
+        graph["9"]["inputs"]["model"] = ["2", 0]
+        graph.pop("3")
+    return graph
+
+
+def klein_graph(prompt: str, seed: int, prefix: str, width: int, height: int) -> dict[str, Any]:
+    """FLUX.2 Klein 4B distilled: the publisher's four-step Euler graph."""
+    return {
+        "1": node("UNETLoader", unet_name=MODELS["klein"], weight_dtype="default"),
+        "2": node("CLIPLoader", clip_name=MODELS["klein_te"], type="flux2", device="default"),
+        "3": node("VAELoader", vae_name=MODELS["klein_vae"]),
+        "4": node("CLIPTextEncode", clip=["2", 0], text=prompt),
+        "5": node("ConditioningZeroOut", conditioning=["4", 0]),
+        "6": node("EmptyFlux2LatentImage", width=width, height=height, batch_size=1),
+        "7": node("Flux2Scheduler", steps=4, width=width, height=height),
+        "8": node("KSamplerSelect", sampler_name="euler"),
+        "8n": node("RandomNoise", noise_seed=seed),
+        "8g": node("CFGGuider", model=["1", 0], positive=["4", 0], negative=["5", 0], cfg=1.0),
+        "9": node("SamplerCustomAdvanced", noise=["8n", 0], guider=["8g", 0], sampler=["8", 0],
+                  sigmas=["7", 0], latent_image=["6", 0]),
+        "10": node("VAEDecode", samples=["9", 0], vae=["3", 0]),
+        "11": node("SaveImage", images=["10", 0], filename_prefix=prefix),
+    }
+
+
+def klein_coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: str,
+                         second_reference: str | None = None, third_reference: str | None = None) -> dict[str, Any]:
+    """Four-step FLUX.2 Klein multi-reference frame using ComfyUI's reference latents.
+
+    Each supplied image is encoded separately and appended in order to both
+    conditioning branches. The output canvas uses the film's target aspect,
+    rather than inheriting the dimensions of a portrait reference.
+    """
+    if not reference:
+        raise ValueError("A composition reference is required")
+    if third_reference and not second_reference:
+        raise ValueError("A third reference requires the second reference")
+    graph = klein_graph(prompt, seed, prefix, *KLEIN_IMAGE_SIZES[aspect])
+    positive, negative = ["4", 0], ["5", 0]
+    for index, image in enumerate((reference, second_reference, third_reference), start=1):
+        if not image:
+            continue
+        load, scale, latent = f"ref{index}", f"scale{index}", f"latent{index}"
+        pos, neg = f"positive{index}", f"negative{index}"
+        graph[load] = node("LoadImage", image=image)
+        graph[scale] = node("ImageScaleToTotalPixels", image=[load, 0], upscale_method="nearest-exact",
+                            megapixels=1.0, resolution_steps=1)
+        graph[latent] = node("VAEEncode", pixels=[scale, 0], vae=["3", 0])
+        graph[pos] = node("ReferenceLatent", conditioning=positive, latent=[latent, 0])
+        graph[neg] = node("ReferenceLatent", conditioning=negative, latent=[latent, 0])
+        positive, negative = [pos, 0], [neg, 0]
+    graph["8g"]["inputs"].update(positive=positive, negative=negative)
+    return graph
 
 
 def coverage_graph(prompt: str, seed: int, reference: str, prefix: str, aspect: str,
@@ -147,11 +219,12 @@ def verify_cast(graph: dict[str, Any], save: str, expected: int | None) -> dict[
     return graph
 
 
-def storyboard_graph(prompt: str, seed: int, aspect: str, prefix: str, expected_cast: int | None = None) -> dict[str, Any]:
+def storyboard_graph(prompt: str, seed: int, aspect: str, prefix: str, expected_cast: int | None = None,
+                     backend: str = "hidream", preview: bool = False) -> dict[str, Any]:
     """Independent composition, then deterministic grayscale in both the app and exported canvas."""
     from director import SKETCH_NEGATIVE
-    size = {"16:9": (1280, 704), "2.39:1": (1536, 640), "9:16": (704, 1280), "1:1": (1024, 1024)}[aspect]
-    graph = keyframe_graph(prompt, seed, aspect, prefix, size=size, negative=SKETCH_NEGATIVE)
+    size = KLEIN_SKETCH_SIZES[aspect] if backend == "klein" else KLEIN_IMAGE_SIZES[aspect]
+    graph = keyframe_graph(prompt, seed, aspect, prefix, size=size, negative=SKETCH_NEGATIVE, backend=backend, preview=preview)
     graph["mono"] = node("OpenCinemaMonochrome", images=["10", 0])
     graph["11"]["inputs"]["images"] = ["mono", 0]
     return verify_cast(graph, "11", expected_cast)
@@ -196,8 +269,9 @@ def continuity_graph(context_json: str, shot_count: int) -> dict[str, Any]:
     }
 
 
-def _review_nodes(graph: dict, prefix: str, image: list, expected_json: str, look: str, phase: str):
+def _review_nodes(graph: dict, prefix: str, image: list, expected_json: str, look: str, phase: str, optimize: bool = True):
     from director import CAST_COUNT_CHECK
+    required = json.loads(expected_json)
     graph[prefix + "requirements"] = node("OpenCinemaReviewRequirements", expected_json=expected_json)
     expected_json = [prefix + "requirements", 0]
     graph[prefix + "brief"] = node("OpenCinemaVisualReviewBrief", expected_json=expected_json, look=look, phase=phase, style_only=True)
@@ -205,6 +279,10 @@ def _review_nodes(graph: dict, prefix: str, image: list, expected_json: str, loo
                                     prompt=[prefix + "brief", 0], max_length=1200, sampling_mode="off")
     graph[prefix + "count"] = node("TextGenerate", clip=["review_model", 0], image=image,
                                    prompt=CAST_COUNT_CHECK, max_length=8, sampling_mode="off")
+    if optimize and not required.get('state'):
+        graph[prefix + 'parsed'] = node('OpenCinemaParseVisualReview', text=[prefix + 'vision', 0],
+            expected_json=expected_json, observed_count=[prefix + 'count', 0])
+        return  # no state facts means no fact-observation or comparison inference
     graph[prefix + "fact_briefs"] = node("OpenCinemaFactBrief", expected_json=expected_json)
     graph[prefix + "fact_observations"] = node("TextGenerate", clip=["review_model", 0], image=image,
                                                prompt=[prefix + "fact_briefs", 1], max_length=140, sampling_mode="off")
@@ -213,27 +291,27 @@ def _review_nodes(graph: dict, prefix: str, image: list, expected_json: str, loo
     observations = [prefix + "observations", 0]
     graph[prefix + "compare_brief"] = node("OpenCinemaStateEvidenceBrief", text=observations, expected_json=expected_json)
     graph[prefix + "compare"] = node("TextGenerate", clip=["review_model", 0], prompt=[prefix + "compare_brief", 0],
-                                     max_length=1200, sampling_mode="off")
+                                     max_length=min(4096, max(1200, 220 * len(required['state']))), sampling_mode="off")
     graph[prefix + "parsed"] = node("OpenCinemaParseVisualReview", text=observations, expected_json=expected_json,
                                     observed_count=[prefix + "count", 0], state_audit=[prefix + "compare", 0])
 
 
-def visual_review_graph(image: str, expected_json: str, look: str) -> dict[str, Any]:
+def visual_review_graph(image: str, expected_json: str, look: str, optimize: bool = True) -> dict[str, Any]:
     graph = {"review_model": writer_node(),
              "image": node("LoadImage", image=image)}
-    _review_nodes(graph, "", ["image", 0], expected_json, look, "start")
+    _review_nodes(graph, "", ["image", 0], expected_json, look, "start", optimize)
     graph["review"] = node("PreviewAny", source=["parsed", 0])
     return graph
 
 
-def video_review_graph(video: str, start_json: str, middle_json: str, end_json: str, look: str) -> dict[str, Any]:
+def video_review_graph(video: str, start_json: str, middle_json: str, end_json: str, look: str, optimize: bool = True) -> dict[str, Any]:
     """Four independent visual inspections share one loaded vision model; no contact-sheet counting ambiguity."""
     graph = {"review_model": writer_node(),
              "video": node("LoadVideo", file=video), "components": node("GetVideoComponents", video=["video", 0]),
              "samples": node("OpenCinemaReviewSamples", images=["components", 0])}
     for i, (expected, phase) in enumerate(((start_json, "start"), (middle_json, "middle"),
                                           (middle_json, "middle"), (end_json, "end"))):
-        _review_nodes(graph, str(i), ["samples", i], expected, look, phase)
+        _review_nodes(graph, str(i), ["samples", i], expected, look, phase, optimize)
     graph["combined"] = node("OpenCinemaCombineReviews", **{f"review_{i + 1}": [str(i) + "parsed", 0] for i in range(4)})
     graph["review"] = node("PreviewAny", source=["combined", 0])
     return graph
@@ -444,13 +522,13 @@ def lead_writer_graph(mode: str, title: str, world: str, look: str, draft: str =
 
 def shot_writer_graph(mode: str, title: str, logline: str, world: str, look: str, lead: str, continuity: str,
                       shots: str, index: int = 1, count: int = 5, seed: int = 1, beats: str = "",
-                      write_beats: str = "", characters: str = "") -> dict[str, Any]:
+                      write_beats: str = "", characters: str = "", dialogue_mode: str = "auto", idea: str = "") -> dict[str, Any]:
     """Gemma 4 12B (8-bit) writes the storyboard (or the next shot, or one shot again) through ComfyUI's TextGenerate."""
     graph = {
         "1": writer_node(),
         "2": node("OpenCinemaShotsBrief", mode=mode, count=count, index=index, title=title, logline=logline,
                   world=world, look=look, lead=lead, continuity=continuity, beats=beats, shots=shots,
-                  write_beats=write_beats, characters=characters),
+                  write_beats=write_beats, characters=characters, dialogue_mode=dialogue_mode, idea=idea),
         "3": node("TextGenerate", clip=["1", 0], prompt=["2", 0], max_length=320 * count if mode == "board" else 400,
                   sampling_mode="on",
                   **{"sampling_mode.temperature": 0.75, "sampling_mode.top_k": 64, "sampling_mode.top_p": 0.95,

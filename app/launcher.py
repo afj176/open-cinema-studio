@@ -77,17 +77,28 @@ def spawn(arguments, name, cwd=None):
                                 start_new_session=os.name != 'nt')
 
 
-def ensure_studio(comfy_url, port=8420):
+def ensure_studio(comfy_url, port=8420, models_dir=None):
+    configured_dir = models_dir or os.environ.get('OPEN_CINEMA_MODELS_DIR')
+    if configured_dir:
+        configured_dir = str(Path(configured_dir).expanduser().resolve())
     url = f'http://127.0.0.1:{port}'
-    status = health(url + '/api/health')
-    if status:
+    def check_identity(status):
         if status.get('service') != 'open-cinema' or status.get('comfy_url') != comfy_url:
             raise RuntimeError(f'Port {port} belongs to another service or a Studio using a different ComfyUI backend.')
+        if configured_dir and os.path.normcase(status.get('model_dir') or '') != os.path.normcase(configured_dir):
+            raise RuntimeError('Studio is already running with a different model download folder. '
+                               'Stop it after current work finishes and start it again with --models-dir.')
+
+    status = health(url + '/api/health')
+    if status:
+        check_identity(status)
         return url
-    process = spawn([sys.executable, '-u', str(ROOT / 'app/server.py'), '--comfy', comfy_url, '--port', str(port)], 'studio')
+    command = [sys.executable, '-u', str(ROOT / 'app/server.py'), '--comfy', comfy_url, '--port', str(port)]
+    if configured_dir:
+        command += ['--models-dir', configured_dir]
+    process = spawn(command, 'studio')
     status = wait_ready(url + '/api/health', process, 30)
-    if status.get('service') != 'open-cinema' or status.get('comfy_url') != comfy_url:
-        raise RuntimeError('Studio identity or backend does not match.')
+    check_identity(status)
     return url
 
 
@@ -96,9 +107,16 @@ def main():
     parser.add_argument('--comfy-dir', type=Path, default=os.environ.get('COMFYUI_PATH'))
     parser.add_argument('--comfy-port', type=int, default=8288)
     parser.add_argument('--comfy-python', default=os.environ.get('COMFYUI_PYTHON'))
+    parser.add_argument('--models-dir', default=os.environ.get('OPEN_CINEMA_MODELS_DIR'),
+                        help='ComfyUI-scanned models folder for explicit downloads in Studio Setup')
     parser.add_argument('--port', type=int, default=int(os.environ.get('OPEN_CINEMA_PORT', '8420')))
     parser.add_argument('--no-browser', action='store_true')
     args = parser.parse_args()
+    if args.models_dir:
+        # The ComfyUI companion may start Studio first; both processes must inherit
+        # the same explicit destination rather than racing with different settings.
+        args.models_dir = str(Path(args.models_dir).expanduser().resolve())
+        os.environ['OPEN_CINEMA_MODELS_DIR'] = args.models_dir
     comfy_url = f'http://127.0.0.1:{args.comfy_port}'
     if health(comfy_url + '/system_stats') is None:
         directory = discover_comfy(args.comfy_dir)
@@ -120,7 +138,7 @@ def main():
         os.environ['OPEN_CINEMA_PORT'] = str(args.port)
         wait_ready(comfy_url + '/system_stats', spawn(command, 'comfy', cwd=directory))
     print('ComfyUI ready. Starting Studio…', flush=True)
-    url = ensure_studio(comfy_url, args.port)
+    url = ensure_studio(comfy_url, args.port, args.models_dir)
     print(f'Open Cinema is ready: {url}', flush=True)
     if not args.no_browser:
         webbrowser.open(url)

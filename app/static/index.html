@@ -36,7 +36,7 @@
       <span class="workspace-label"><span>ComfyUI</span><span class="workspace-caption">Workflows</span></span>
       <svg class="workspace-arrow" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12 12 4M4 4h8v8"/></svg>
     </a>
-    <button id="setupBtn" class="ghost small" type="button">Setup</button>
+    <button id="setupBtn" class="ghost small" type="button" aria-haspopup="dialog">Studio settings</button>
     <button id="statusPill" class="status-pill" aria-controls="queue" aria-expanded="false"><span class="dot" id="comfyDot"></span><span id="statusText">Idle</span></button>
     <button id="renderFilm" class="primary">Render film <span aria-hidden="true">▶</span></button>
   </div>
@@ -51,29 +51,43 @@
 </div>
 
 <main>
-  <section id="setupPanel" class="glass setup-panel" hidden aria-label="Studio setup"></section>
+  <dialog id="studioSettings" aria-labelledby="studioSettingsTitle">
+    <div class="settings-header"><h2 class="serif" id="studioSettingsTitle">Studio settings</h2><button id="closeStudioSettings" class="ghost small" aria-label="Close studio settings">Close</button></div>
   <section class="production-bar glass" aria-label="Generation controls">
     <div class="performance-heading">
-      <span class="performance-title" id="performanceLabel">Performance</span>
-      <fieldset class="performance-options" aria-labelledby="performanceLabel" aria-describedby="aiModeHelp">
-        <legend class="visually-hidden">Performance mode</legend>
-        <label><input type="radio" name="performance" data-ai-mode value="normal" checked><span>Standard</span></label>
-        <label><input type="radio" name="performance" data-ai-mode value="fast"><span>Fast</span></label>
+      <span class="visually-hidden" id="performanceLabel">Generation mode</span>
+      <fieldset class="studio-mode" aria-labelledby="performanceLabel" aria-describedby="aiModeHelp">
+        <legend>Generation mode</legend>
+        <label><input type="radio" name="performance" data-ai-mode value="normal" checked><span><strong>Standard</strong><small>Detailed writing · Full-resolution video</small></span></label>
+        <label><input type="radio" name="performance" data-ai-mode value="fast"><span><strong>Fast</strong><small>Quicker writing · Draft video</small></span></label>
       </fieldset>
-      <p id="aiModeHelp" class="performance-description">Full-resolution video and more detailed writing.</p>
+      <p id="aiModeHelp" class="performance-description">Full-resolution video and more detailed writing. Image quality is chosen separately.</p>
       <div class="row-actions"><button id="resumeWork" class="primary small" hidden>Resume missing work</button>
         <button id="productionDetails" class="ghost small" aria-controls="queue" aria-expanded="false">Activity</button></div>
     </div>
     <p id="productionSummary" class="production-summary" role="status" aria-live="polite"></p>
+    <button id="playReadyShot" class="ghost small" type="button" hidden></button>
+    <details class="review-approach">
+      <summary>Review approach <span id="reviewPolicyLabel">Draft first</span></summary>
+      <fieldset class="review-options" aria-describedby="reviewPolicyHelp">
+        <legend class="visually-hidden">Review approach</legend>
+        <label><input type="radio" name="review-policy" data-review-policy value="draft" checked><span><strong>Draft first</strong><small>Keep creating. Gather improvements after you can watch the film.</small></span></label>
+        <label><input type="radio" name="review-policy" data-review-policy value="strict"><span><strong>Strict continuity</strong><small>Resolve visual findings before moving to dependent work.</small></span></label>
+      </fieldset>
+      <p class="hint" id="reviewPolicyHelp">Drafts keep unresolved findings visible. Review approach is independent of speed and frame quality.</p>
+    </details>
     <details class="performance-details">
       <summary>Details</summary>
       <div class="performance-explainer">
         <div><strong>Writing and review</strong><p id="performanceWriting">Gemma 4 12B at 8-bit.</p></div>
         <div><strong>Video</strong><p id="performanceVideo">Two-stage, full-resolution video.</p></div>
-        <p class="performance-note">New jobs only; existing work stays. Frame quality is selected separately.</p>
+        <div><strong>Images</strong><p>Image generator and quality are set in The look. Each image may also need a review or repair.</p></div>
+        <p class="performance-note">New jobs only; existing work stays.</p>
       </div>
     </details>
   </section>
+    <section id="setupPanel" class="setup-panel" hidden aria-label="Models and installation"></section>
+  </dialog>
   <!-- STORY -->
   <section class="stage" id="story">
     <div class="spark glass" id="sparkField">
@@ -84,6 +98,19 @@
     <div class="spark-foot">
       <span class="hint" id="aiStoryStatus">Title, logline, world, look &amp; colours, and the lead, written locally by Gemma 4 12B (8-bit) (open, Apache-2.0). Every field also has its own ✨.</span>
       <button id="aiUndo" class="link" type="button" hidden>Undo AI change</button>
+    </div>
+    <div class="story-auto-render"><label class="switch"><input id="storyAutoRender" type="checkbox"><span></span>Create a draft after writing</label><p class="hint">For a film with no shots, write the shots and render them automatically. Existing shots are kept.</p></div>
+    <div class="creative-direction" aria-label="Creative direction">
+      <div><strong>Give your film a voice</strong><p class="hint">For newly written shots, the director chooses framing and continuity to fit the story. You can adjust every shot.</p></div>
+      <label for="dialogueMode">Dialogue
+        <select id="dialogueMode" aria-describedby="dialogueModeHelp">
+          <option value="auto">Automatic · follow the story</option>
+          <option value="minimal">Minimal · mostly visual</option>
+          <option value="dialogue">Dialogue-rich</option>
+          <option value="silent">No dialogue</option>
+        </select>
+      </label>
+      <p class="hint" id="dialogueModeHelp">Guides newly written shots. The video model is prompted to speak; listen to the result when reviewing your film.</p>
     </div>
 
     <div class="story-hero">
@@ -105,6 +132,7 @@
             <b>The world plate</b>
             <p class="hint">The film's location, materials and light. Each shot follows its own storyboard composition; the world plate supplies the setting and palette.</p>
             <p class="wp-stale" id="worldStale" hidden>The world, look or aspect changed since this plate was painted. A new one is painted before the next frame, or press New world plate now.</p>
+            <p class="wp-stale" id="worldCheck" hidden></p>
             <div class="takes" id="worldTakes"></div>
             <button id="worldBtn" class="ghost small" type="button">Paint the world</button>
           </div>
@@ -143,7 +171,8 @@
               <div class="field-head"><span>Other characters</span>
                 <span class="ai-actions"><button class="ai small" data-ai="characters" type="button">✨ Characters</button></span></div>
               <textarea id="characters" class="grow" rows="2" placeholder="One per line, as Name: what they look like. Mara: a wiry old woman in a grey shawl…"></textarea>
-              <p class="hint">Name the people visible in each shot. New characters use these descriptions; following shots can carry established appearances forward from the preceding frame.</p>
+              <p class="hint">Recurring named people can have a reusable portrait. The director casts them automatically when needed, or you can add your own.</p>
+              <div id="characterReferences" class="character-references" aria-label="Supporting character portraits"></div>
             </div>
           </div>
         </div>
@@ -152,6 +181,7 @@
             <button id="redescribe" class="link" type="button">Describe again</button></div>
           <p id="identityText"></p>
         </div>
+        <div class="identity-note" id="visualAnchorNote" role="status" hidden></div>
         <div class="lead-usage" id="leadUsage" hidden></div>
       </article>
 
@@ -159,8 +189,13 @@
         <div class="card-head"><h2 class="serif">The look</h2><button class="ai small" data-ai="look" type="button">✨ Film look</button></div>
         <label for="filmLook" class="look-label">Film look · image and video</label>
         <textarea id="filmLook" class="grow" rows="3" placeholder="Describe the medium, light, colour, texture and camera style…"></textarea>
-        <label>Frame generation<select id="imageQuality"><option value="fast">Fast previews</option><option value="detailed">Detailed frames · slower</option></select></label>
-        <p class="hint">Detailed frames use the full image editor. State repairs use it automatically when a frame fails review.</p>
+        <label>Image generator<select id="imageBackend" aria-describedby="imageBackendHelp"><option value="hidream">HiDream · established quality</option><option value="klein">FLUX.2 Klein 4B · faster images</option></select></label>
+        <p class="hint" id="imageBackendHelp">The image generator is independent of the performance mode and applies to new portraits, world plates, and storyboard drawings.</p>
+        <label>Shot frame editor<select id="frameBackend" aria-describedby="frameBackendHelp"><option value="qwen">Qwen · established reference matching</option><option value="klein">FLUX.2 Klein 4B · experimental faster editing</option></select></label>
+        <p class="hint" id="frameBackendHelp">Used for new opening frames. Klein editing is experimental and may change or duplicate people; check character and prop consistency.</p>
+        <button id="fastImageSetup" class="link" type="button" hidden>Set up faster images</button>
+        <label>Image quality<select id="imageQuality"><option value="fast">Fast previews</option><option value="detailed">Detailed images · slower</option></select></label>
+        <p class="hint">With HiDream, Fast uses smaller portraits and worlds and quicker storyboard generation; Detailed uses full-size portraits and worlds and refined storyboards. Shot frames also use a faster editor in Fast and a more detailed editor in Detailed. Klein uses its own preview sizes in either setting.</p>
         <p class="hint look-hint">This direction follows the film from casting and world through frames and motion. Write your own, generate one, or start with a preset.</p>
         <div class="look-label">Starting points</div>
         <div id="looks" class="look-grid"></div>
@@ -233,6 +268,7 @@
           </div>
         </div>
       </div>
+      <section id="editPolish" class="glass polish-panel" aria-label="Draft improvements" hidden></section>
         <div class="timeline glass">
           <div class="track-label">Story</div><div class="track story-track" id="storyTrack"></div>
           <div class="track-label">Titles</div><div class="track titles-track" id="titlesTrack"></div>
@@ -299,6 +335,7 @@
           <a id="download" class="button ghost" download>Download</a>
         </div>
       </div>
+      <section id="screenPolish" class="glass polish-panel" aria-label="Draft improvements" hidden></section>
       <p class="credits-line" id="modelsLine">HiDream-O1 · Qwen-Image-Edit-2511 · LTX 2.5 · SeedVR2 — open models, rendered locally</p>
     </div>
   </section>
