@@ -313,7 +313,7 @@ async function deleteFilm(film) {
 let queueSignature = '';
 function latestJobs() {
   const latest = new Map();
-  jobs.filter(j=>j.project===project.id).forEach(j=>{
+  jobs.filter(j=>j.project===project.id).sort((a,b)=>(a.created||0)-(b.created||0)).forEach(j=>{
     const key=[j.kind,j.shot,j.target,j.mode,j.prop,j.value,j.character].join('|'), previous=latest.get(key);
     if(['cancelled','blocked'].includes(j.state) && previous && ['failed','needs_review','interrupted'].includes(previous.state)) return;
     latest.set(key,j);
@@ -327,6 +327,7 @@ function storyboardSuperseded(shot) {
 function unresolvedJob(j) {
   if (!['failed','needs_review','interrupted'].includes(j.state)) return false;
   if (j.kind==='plan_continuity' && project.continuity_status==='ready') return false;
+  if (j.kind==='stitch' && project.film && project.film_of && project.film_now && !filmChanges().length) return false;
   const shot=project.shots.find(s=>s.id===j.shot);
   // A current approved opening frame supersedes its earlier planning drawing.
   // Keep the failed drawing in history without blocking a completed shot.

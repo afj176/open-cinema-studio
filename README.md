@@ -2,6 +2,8 @@
 
 **Write a shot list. Get a film.** An open-source, open-weights take on "cinema studio" apps, built on ComfyUI.
 
+**[Watch the 90-second studio demo](https://github.com/afj176/open-cinema-studio/raw/refs/heads/master/docs/media/open-cinema-demo.mp4)** — a narrated walkthrough of writing, directing, model setup and editing, with generated film examples.
+
 You describe the world and the lead character, then plan shots like a director: shot size, camera move (dolly, crane, orbit, whip pan, dolly zoom and more), film look, duration and sound. Open Cinema Studio then:
 
 1. **Casts the lead.** The selected image engine (FLUX.2 Klein in Fast, HiDream-O1 in Standard) renders a studio reference portrait from your character description. You can also upload a photo of a real actor instead.
